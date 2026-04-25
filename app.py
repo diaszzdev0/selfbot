@@ -7,6 +7,7 @@ from bot_logic import run_selfbot
 
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "manager_secret_key")
+app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
 _db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "selfbot.db")
 _database_url = os.getenv("DATABASE_URL", f"sqlite:///{_db_path}")
 # Heroku/Railway/SquareCloud retornam postgres://, SQLAlchemy exige postgresql://
