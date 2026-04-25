@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-bs-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>VolueTech SelfBot</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <style>
+    :root { --sidebar-w: 230px; }
+    * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
+    body { background: #0d1117; margin: 0; overflow-x: hidden; }
+
+    /* Sidebar */
+    .sidebar {
+      position: fixed; top: 0; left: 0;
+      width: var(--sidebar-w); height: 100vh;
+      background: #161b22; border-right: 1px solid #30363d;
+      display: flex; flex-direction: column;
+      z-index: 100; transition: transform .25s;
+    }
+    .sidebar-brand {
+      padding: 20px 18px 14px;
+      font-size: 1.1rem; font-weight: 700; color: #58a6ff;
+      border-bottom: 1px solid #30363d;
+      letter-spacing: .3px;
+    }
+    .sidebar-brand small { display: block; font-size: .72rem; color: #6e7681; font-weight: 400; margin-top: 2px; }
+    .nav-link-side {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 18px; color: #8b949e;
+      font-size: .88rem; border-radius: 0;
+      cursor: pointer; border: none; background: none; width: 100%;
+      text-align: left; transition: background .15s, color .15s;
+      text-decoration: none;
+    }
+    .nav-link-side:hover { background: #21262d; color: #c9d1d9; }
+    .nav-link-side.active { background: #1f2937; color: #58a6ff; border-left: 3px solid #58a6ff; }
+    .nav-link-side i { font-size: 1rem; width: 18px; text-align: center; }
+    .sidebar-footer {
+      margin-top: auto; padding: 14px 18px;
+      border-top: 1px solid #30363d;
+    }
+
+    /* Main */
+    .main { margin-left: var(--sidebar-w); min-height: 100vh; }
+    .topbar {
+      background: #161b22; border-bottom: 1px solid #30363d;
+      padding: 12px 24px; display: flex; align-items: center; justify-content: space-between;
+    }
+    .content { padding: 24px; }
+
+    /* Cards */
+    .card { background: #161b22; border: 1px solid #30363d; }
+    .page { display: none; }
+    .page.active { display: block; }
+
+    /* Status */
+    .status-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+    .dot-on { background: #3fb950; box-shadow: 0 0 6px #3fb950; }
+    .dot-off { background: #f85149; }
+
+    /* Botões bot */
+    .btn-ligar    { background: #238636; border-color: #2ea043; color: #fff; }
+    .btn-ligar:hover { background: #2ea043; color: #fff; }
+    .btn-desligar { background: #b62324; border-color: #f85149; color: #fff; }
+    .btn-desligar:hover { background: #f85149; color: #fff; }
+    .btn-reiniciar { background: #9e6a03; border-color: #d29922; color: #fff; }
+    .btn-reiniciar:hover { background: #d29922; color: #fff; }
+
+    /* Form */
+    .form-control, .form-select, textarea {
+      background: #0d1117 !important; border-color: #30363d !important; color: #c9d1d9 !important;
+    }
+    .form-control:focus, textarea:focus {
+      border-color: #58a6ff !important; box-shadow: 0 0 0 2px rgba(88,166,255,.2) !important;
+    }
+    label { color: #8b949e; font-size: .82rem; }
+
+    /* Console */
+    .console {
+      background: #010409; color: #58a6ff;
+      font-family: 'Courier New', monospace; font-size: .8rem;
+      height: 400px; overflow-y: auto; padding: 12px;
+      border-radius: 6px; border: 1px solid #21262d;
+      white-space: pre-wrap; word-break: break-all;
+    }
+
+    /* Mobile */
+    .sidebar-toggle { display: none; }
+    .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 99; }
+    .overlay.show { display: block; }
+    @media (max-width: 768px) {
+      :root { --sidebar-w: 0px; }
+      .sidebar { transform: translateX(-260px); width: 75vw; max-width: 280px; }
+      .sidebar.open { transform: translateX(0); }
+      .main { margin-left: 0; }
+      .sidebar-toggle { display: inline-flex; }
+      .content { padding: 10px; }
+      .topbar { padding: 10px 12px; }
+      .console { height: 220px; font-size: .73rem; }
+      .col-sm-3 { width: 50% !important; }
+      .btn-ligar, .btn-desligar, .btn-reiniciar { font-size: .8rem; padding: 8px 12px; min-height: 40px; }
+      .card { border-radius: 10px; }
+      h6 { font-size: .9rem; }
+      .card.p-4 { padding: 14px !important; }
+      .card.p-3 { padding: 10px !important; }
+      input, textarea, select { font-size: 16px !important; }
+    }
+    @media (max-width: 400px) {
+      .col-sm-3 { width: 100% !important; }
+      .d-flex.gap-2.flex-wrap { gap: 6px !important; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="overlay" id="overlay" onclick="toggleSidebar()"></div>
+
+  <!-- Sidebar -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      ⚡ VolueTech SelfBot
+      <small>{{ user.username }}</small>
+    </div>
+
+    <nav class="mt-2 d-flex flex-column">
+      <button class="nav-link-side active" onclick="showPage('dashboard', this)">
+        <i class="bi bi-speedometer2"></i> Dashboard
+      </button>
+      <button class="nav-link-side" onclick="showPage('configuracoes', this)">
+        <i class="bi bi-gear"></i> Configurações
+      </button>
+      <button class="nav-link-side" onclick="showPage('logs', this)">
+        <i class="bi bi-terminal"></i> Logs
+      </button>
+    </nav>
+
+    <div class="sidebar-footer">
+      {% if user.is_admin %}
+      <a href="http://127.0.0.1:5000/admin" class="btn btn-outline-warning btn-sm w-100 mb-2">
+        <i class="bi bi-shield-lock"></i> Painel Admin
+      </a>
+      {% endif %}
+      <a href="/cliente/logout" class="btn btn-outline-danger btn-sm w-100">
+        <i class="bi bi-box-arrow-left"></i> Sair
+      </a>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <div class="main">
+
+    <!-- Topbar -->
+    <div class="topbar">
+      <div class="d-flex align-items-center gap-3">
+        <button class="btn btn-sm btn-outline-secondary sidebar-toggle" onclick="toggleSidebar()">
+          <i class="bi bi-list"></i>
+        </button>
+        <span class="text-white fw-semibold" id="page-title">Dashboard</span>
+      </div>
+      <div class="d-flex align-items-center gap-2">
+        <span class="status-dot {{ 'dot-on' if ativo else 'dot-off' }}"></span>
+        <span class="small {{ 'text-success' if ativo else 'text-danger' }}">
+          {{ 'Online' if ativo else 'Offline' }}
+        </span>
+      </div>
+    </div>
+
+    <div class="content">
+
+      <!-- ── DASHBOARD ── -->
+      <div class="page active" id="page-dashboard">
+        <div class="row g-4">
+          {% if msg %}
+          <div class="col-12">
+            <div class="alert alert-{{ msg_tipo }} fw-bold text-center">⚠️ {{ msg }}</div>
+          </div>
+          {% endif %}
+
+          <!-- Status card -->
+          <div class="col-12">
+            <div class="card p-3 d-flex flex-row align-items-center justify-content-between flex-wrap gap-3">
+              <div class="d-flex align-items-center gap-2">
+                <span class="status-dot {{ 'dot-on' if ativo else 'dot-off' }}"></span>
+                <span class="fw-semibold text-white">
+                  Bot está <strong>{{ 'ONLINE' if ativo else 'OFFLINE' }}</strong>
+                </span>
+              </div>
+              <div class="d-flex gap-2 flex-wrap">
+                <a href="/cliente/start_bot/{{ user.id }}" class="btn btn-ligar btn-sm px-3">▶ Ligar</a>
+                <a href="/cliente/stop_bot/{{ user.id }}" class="btn btn-desligar btn-sm px-3">■ Desligar</a>
+                <a href="/cliente/restart_bot/{{ user.id }}" class="btn btn-reiniciar btn-sm px-3">↺ Reiniciar</a>
+              </div>
+            </div>
+          </div>
+
+          <!-- Info cards -->
+          <div class="col-sm-3">
+            <div class="card p-3 text-center">
+              <div class="text-secondary small mb-1">Usuário</div>
+              <div class="fw-bold text-info">{{ user.username }}</div>
+            </div>
+          </div>
+          <div class="col-sm-3">
+            <div class="card p-3 text-center">
+              <div class="text-secondary small mb-1">Plano</div>
+              <div class="fw-bold text-warning">
+                {% if user.license %}{{ user.license.tipo.capitalize() }}{% else %}—{% endif %}
+              </div>
+            </div>
+          </div>
+          <div class="col-sm-3">
+            <div class="card p-3 text-center">
+              <div class="text-secondary small mb-1">Dias Restantes</div>
+              <div class="fw-bold {% if dias_restantes is not none and dias_restantes <= 3 %}text-danger{% else %}text-success{% endif %}">
+                {% if dias_restantes is none %}∞{% else %}{{ dias_restantes }} dias{% endif %}
+              </div>
+            </div>
+          </div>
+          <div class="col-sm-3">
+            <div class="card p-3 text-center" id="api-salas-card">
+              <div class="text-secondary small mb-1">Salas na API</div>
+              <div class="fw-bold text-info" id="api-salas-num">—</div>
+            </div>
+          </div>
+          <div class="col-sm-3">
+            <div class="card p-3 text-center">
+              <div class="text-secondary small mb-1">API Total / Disponíveis</div>
+              <div class="fw-bold text-warning" id="user-salas-display">
+                {% if bot_status %}{{ bot_status.limite_salas - bot_status.salas_usadas }} / <span id="api-total-display">{{ api_total if api_total else '...' }}</span>{% else %}0 / 0{% endif %}
+              </div>
+            </div>
+          </div>
+          <div class="col-sm-3">
+            <div class="card p-3 text-center">
+              <div class="text-secondary small mb-1">Limite Total</div>
+              <div class="fw-bold text-success">
+                {% if bot_status %}{{ bot_status.limite_salas }}{% else %}0{% endif %}
+              </div>
+            </div>
+          </div>
+
+          <!-- Mini console preview -->
+          <div class="col-12">
+            <div class="card p-4">
+              <div class="d-flex justify-content-between align-items-center mb-3">
+                <h6 class="text-white mb-0"><i class="bi bi-terminal me-2"></i>Logs Recentes</h6>
+                <button onclick="showPage('logs', document.querySelector('[onclick*=logs]'))" class="btn btn-sm btn-outline-secondary">
+                  Ver tudo
+                </button>
+              </div>
+              <div class="console" id="console-mini">Aguardando logs...</div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ── CONFIGURAÇÕES ── -->
+      <div class="page" id="page-configuracoes">
+        <div class="row justify-content-center">
+          <div class="col-lg-7">
+            <div class="card p-4">
+              <h6 class="text-white mb-4"><i class="bi bi-gear me-2"></i>Configurações do Bot</h6>
+              <form method="POST" action="/cliente/salvar_config" autocomplete="off">
+
+                <div class="mb-3">
+                  <label>Discord Token</label>
+                  <input name="discord_token" class="form-control font-monospace"
+                    value="{{ cfg.discord_token if cfg else '' }}" required>
+                </div>
+
+                <div class="row g-3 mb-3">
+                  <div class="col-sm-6">
+                    <label>Server ID</label>
+                    <input name="server_id" class="form-control"
+                      value="{{ cfg.server_id if cfg else '' }}" required>
+                  </div>
+                  <div class="col-sm-6">
+                    <label>Categoria ID</label>
+                    <input name="categoria_id" class="form-control"
+                      value="{{ cfg.categoria_id if cfg else '' }}" required>
+                  </div>
+                </div>
+
+                <div class="row g-3 mb-3">
+                  <div class="col-sm-6">
+                    <label>E-mail (IMAP)</label>
+                    <input name="email_user" class="form-control" autocomplete="new-password"
+                      value="{{ cfg.email_user if cfg else '' }}" required>
+                  </div>
+                  <div class="col-sm-6">
+                    <label>Senha do E-mail</label>
+                    <input name="email_pass" type="password" class="form-control" autocomplete="new-password"
+                      value="{{ cfg.email_pass if cfg else '' }}" required>
+                  </div>
+                </div>
+
+                <div class="mb-3">
+                  <label>Servidor IMAP</label>
+                  <input name="imap_server" class="form-control"
+                    value="{{ cfg.imap_server if cfg else 'imap.gmail.com' }}" required>
+                </div>
+
+                <div class="mb-4">
+                  <label>Mensagem de Entrada nas Threads</label>
+                  <textarea name="mensagem_entrada" class="form-control" rows="3">{{ cfg.mensagem_entrada if cfg else '👋 Olá! Use `pg Nome Sobrenome` para verificar seu pagamento.' }}</textarea>
+                  <div class="form-text text-secondary" style="font-size:.75rem">
+                    Enviada automaticamente quando o bot entra em uma thread da categoria.
+                  </div>
+                </div>
+
+                <div class="mb-4">
+                  <label>Imagem de Entrada (URL)</label>
+                  <input name="imagem_entrada" class="form-control" placeholder="https://i.imgur.com/exemplo.png"
+                    value="{{ cfg.imagem_entrada if cfg and cfg.imagem_entrada else '' }}">
+                  <div class="form-text text-secondary" style="font-size:.75rem">
+                    Opcional. Se preenchida, será enviada junto com a mensagem de entrada.
+                  </div>
+                </div>
+
+                <div class="mb-4">
+                  <label>Formato de Envio da Sala</label>
+                  <div class="d-flex align-items-center gap-3 mt-1">
+                    <div class="form-check form-switch mb-0">
+                      <input class="form-check-input" type="checkbox" id="usarPrefixo" name="usar_prefixo"
+                        {{ 'checked' if cfg and cfg.prefixo_sala }} onchange="togglePrefixo(this)">
+                      <label class="form-check-label text-secondary small" for="usarPrefixo">Usar comando</label>
+                    </div>
+                  </div>
+                  <div class="mt-2" id="campoPrefixo" style="display:{{ 'block' if cfg and cfg.prefixo_sala else 'none' }}">
+                    <input name="prefixo_sala" class="form-control font-monospace"
+                      placeholder="ex: !sala"
+                      value="{{ cfg.prefixo_sala if cfg and cfg.prefixo_sala else '' }}">
+                    <div class="form-text text-secondary" style="font-size:.75rem">
+                      Ativado: <code>!sala 123456789 22</code> &nbsp;|&nbsp; Desativado: <code>123456789 22</code>
+                    </div>
+                  </div>
+                </div>
+
+                <button class="btn btn-primary w-100">
+                  <i class="bi bi-floppy me-1"></i> Salvar Configurações
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── LOGS ── -->
+      <div class="page" id="page-logs">
+        <div class="card p-4">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <h6 class="text-white mb-0"><i class="bi bi-terminal me-2"></i>Console de Logs</h6>
+            <button onclick="limparConsole()" class="btn btn-sm btn-outline-secondary">
+              <i class="bi bi-trash"></i> Limpar
+            </button>
+          </div>
+          <div class="console" id="console-full">Aguardando logs...</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    function togglePrefixo(el) {
+      document.getElementById('campoPrefixo').style.display = el.checked ? 'block' : 'none';
+    }
+
+    const userId = {{ user.id }};
+
+    // ── Navegação ──
+    function showPage(name, btn) {
+      document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('.nav-link-side').forEach(b => b.classList.remove('active'));
+      document.getElementById('page-' + name).classList.add('active');
+      if (btn) btn.classList.add('active');
+      const titles = { dashboard: 'Dashboard', configuracoes: 'Configurações', logs: 'Logs' };
+      document.getElementById('page-title').textContent = titles[name] || name;
+    }
+
+    function toggleSidebar() {
+      document.getElementById('sidebar').classList.toggle('open');
+      document.getElementById('overlay').classList.toggle('show');
+    }
+
+    // ── Logs ──
+    function limparConsole() {
+      document.getElementById('console-full').innerHTML = '';
+      document.getElementById('console-mini').innerHTML = '';
+    }
+
+    function appendLog(text) {
+      let color = '#8b949e';
+      if (text.includes('✅') || text.includes('confirmado')) color = '#3fb950';
+      else if (text.includes('❌') || text.includes('Erro') || text.includes('💥')) color = '#f85149';
+      else if (text.includes('⏱️') || text.includes('⏳')) color = '#d29922';
+      else if (text.includes('🔍') || text.includes('📬')) color = '#a5d6ff';
+
+      ['console-full', 'console-mini'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el.textContent === 'Aguardando logs...') el.textContent = '';
+        const line = document.createElement('div');
+        line.style.color = color;
+        line.textContent = text;
+        el.appendChild(line);
+        el.scrollTop = el.scrollHeight;
+      });
+    }
+
+    function updateApiSalas() {
+      fetch('/cliente/api_saldo').then(r => r.json()).then(data => {
+        if (data.status === 'ok') {
+          document.getElementById('api-salas-num').textContent = data.salas !== undefined ? data.salas : data.user_disponiveis + '/' + data.user_limite;
+        }
+      }).catch(() => {
+        document.getElementById('api-salas-num').textContent = '--';
+      });
+    }
+    updateApiSalas();
+    setInterval(updateApiSalas, 30000);
+
+    var es = new EventSource('/cliente/stream_logs/' + userId);
+    es.onmessage = function(e) { appendLog(e.data); };
+    es.onerror = function() { appendLog('[stream] Conexão perdida. Reconectando...'); };
+  </script>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

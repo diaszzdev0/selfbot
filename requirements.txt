@@ -1,0 +1,9 @@
+discord.py-self
+imap-tools
+python-dotenv
+flask
+flask-sqlalchemy
+werkzeug
+aiohttp>=3.10.0
+psycopg2-binary
+requests

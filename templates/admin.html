@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-bs-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Admin — SelfBot Manager</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <style>
+    :root { --sidebar-w: 230px; }
+    * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
+    body { background: #0d1117; margin: 0; overflow-x: hidden; }
+    .sidebar {
+      position: fixed; top: 0; left: 0;
+      width: var(--sidebar-w); height: 100vh;
+      background: #161b22; border-right: 1px solid #30363d;
+      display: flex; flex-direction: column; z-index: 100;
+    }
+    .sidebar-brand { padding: 20px 18px 14px; font-size: 1.1rem; font-weight: 700; color: #f85149; border-bottom: 1px solid #30363d; }
+    .sidebar-brand small { display: block; font-size: .72rem; color: #6e7681; font-weight: 400; margin-top: 2px; }
+    .nav-link-side {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 18px; color: #8b949e; font-size: .88rem;
+      cursor: pointer; border: none; background: none; width: 100%;
+      text-align: left; transition: background .15s, color .15s; text-decoration: none;
+    }
+    .nav-link-side:hover { background: #21262d; color: #c9d1d9; }
+    .nav-link-side.active { background: #1f2937; color: #f85149; border-left: 3px solid #f85149; }
+    .nav-link-side i { font-size: 1rem; width: 18px; text-align: center; }
+    .stat-box { margin: 12px; padding: 12px; background: #0d1117; border: 1px solid #30363d; border-radius: 8px; }
+    .stat-box .num { font-size: 1.6rem; font-weight: 700; color: #f85149; }
+    .stat-box .lbl { font-size: .75rem; color: #6e7681; }
+    .sidebar-footer { margin-top: auto; padding: 14px 18px; border-top: 1px solid #30363d; }
+    .main { margin-left: var(--sidebar-w); min-height: 100vh; }
+    .topbar { background: #161b22; border-bottom: 1px solid #30363d; padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; }
+    .content { padding: 24px; }
+    .page { display: none; }
+    .page.active { display: block; }
+    .card { background: #161b22; border: 1px solid #30363d; }
+    .table { --bs-table-bg: transparent; --bs-table-color: #c9d1d9; }
+    .table thead th { color: #8b949e; border-color: #30363d; font-size: .8rem; text-transform: uppercase; }
+    .table td { border-color: #21262d; vertical-align: middle; font-size: .88rem; }
+    .badge-semanal { background: #1f6feb; }
+    .badge-mensal { background: #388bfd; }
+    .badge-permanente { background: #3fb950; }
+    .status-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+    .dot-on { background: #3fb950; box-shadow: 0 0 5px #3fb950; }
+    .dot-off { background: #6e7681; }
+    .key-text { font-family: monospace; font-size: .85rem; color: #d29922; letter-spacing: .5px; }
+    .form-control, .form-select, textarea { background: #0d1117 !important; border-color: #30363d !important; color: #c9d1d9 !important; }
+    .btn-copy { background: #21262d; border: 1px solid #30363d; color: #8b949e; padding: 2px 8px; font-size: .75rem; border-radius: 4px; cursor: pointer; }
+    .btn-copy:hover { background: #30363d; color: #c9d1d9; }
+    .btn-copy.copied { color: #3fb950; border-color: #3fb950; }
+    .serial-box { background: #010409; border: 1px solid #21262d; border-radius: 6px; padding: 12px; font-family: monospace; font-size: .8rem; color: #3fb950; max-height: 200px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; }
+    .sidebar-toggle { display: none; }
+    .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 99; }
+    .overlay.show { display: block; }
+    @media (max-width: 768px) {
+      :root { --sidebar-w: 0px; }
+      .sidebar { transform: translateX(-260px); width: 75vw; max-width: 280px; transition: transform .25s; }
+      .sidebar.open { transform: translateX(0); }
+      .main { margin-left: 0; }
+      .sidebar-toggle { display: inline-flex !important; }
+      .content { padding: 10px; }
+      .topbar { padding: 10px 12px; }
+      .table td, .table th { font-size: .78rem; padding: 6px 4px; }
+      .stat-box .num { font-size: 1.2rem; }
+      h6 { font-size: .88rem; }
+      .card.p-4 { padding: 12px !important; }
+      input, textarea, select { font-size: 16px !important; min-height: 44px; }
+      .btn { min-height: 40px; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="overlay" id="overlay" onclick="toggleSidebar()"></div>
+
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      🛡️ Admin Panel
+      <small>Manager</small>
+    </div>
+    <div class="stat-box mt-2">
+      <div class="num">{{ users|length }}</div>
+      <div class="lbl">Usuários cadastrados</div>
+    </div>
+    <div class="stat-box">
+      <div class="num" style="color:#3fb950">{{ status.values()|select|list|length }}</div>
+      <div class="lbl">Bots online</div>
+    </div>
+    <div class="stat-box">
+      <div class="num" style="color:#388bfd">{{ keys|selectattr('usado', 'equalto', false)|list|length }}</div>
+      <div class="lbl">Keys disponíveis</div>
+    </div>
+    <nav class="mt-2 d-flex flex-column">
+      <button class="nav-link-side active" onclick="showPage('usuarios', this)">
+        <i class="bi bi-people"></i> Usuários
+      </button>
+      <button class="nav-link-side" onclick="showPage('keys', this)">
+        <i class="bi bi-key"></i> Keys
+      </button>
+      <button class="nav-link-side" onclick="showPage('bots', this)">
+        <i class="bi bi-robot"></i> Bots
+      </button>
+      <button class="nav-link-side" onclick="showPage('salas', this)">
+        <i class="bi bi-controller"></i> Salas FF
+      </button>
+    </nav>
+    <div class="sidebar-footer">
+      <a href="/logout" class="btn btn-outline-danger btn-sm w-100">
+        <i class="bi bi-box-arrow-left"></i> Sair
+      </a>
+    </div>
+  </aside>
+
+  <div class="main">
+    <div class="topbar">
+      <div class="d-flex align-items-center gap-2">
+        <button class="btn btn-sm btn-outline-secondary sidebar-toggle" onclick="toggleSidebar()">
+          <i class="bi bi-list"></i>
+        </button>
+        <span class="text-white fw-semibold" id="page-title">Usuários</span>
+      </div>
+    </div>
+
+    <div class="content">
+
+      <!-- ── USUÁRIOS ── -->
+      <div class="page active" id="page-usuarios">
+        <div class="row g-4">
+          <div class="col-lg-4">
+            <div class="card p-4">
+              <h6 class="text-white mb-3"><i class="bi bi-person-plus me-1"></i> Criar Usuário</h6>
+              {% if msg %}<div class="alert alert-{{ msg_tipo }} py-2 small">{{ msg }}</div>{% endif %}
+              <form method="POST" action="/admin/criar_usuario">
+                <div class="mb-2">
+                  <label class="text-secondary small">Usuário</label>
+                  <input name="username" class="form-control" placeholder="nome do cliente" required>
+                </div>
+                <div class="mb-3">
+                  <label class="text-secondary small">Tipo de Licença</label>
+                  <select name="tipo" class="form-select">
+                    <option value="semanal">Semanal (7 dias)</option>
+                    <option value="mensal" selected>Mensal (30 dias)</option>
+                    <option value="permanente">Permanente</option>
+                  </select>
+                </div>
+                <button class="btn btn-success w-100">+ Criar Usuário</button>
+              </form>
+            </div>
+            <div class="card p-4 mt-4">
+              <h6 class="text-white mb-3"><i class="bi bi-shield-plus me-1"></i> Criar Admin</h6>
+              <form method="POST" action="/admin/criar_admin">
+                <div class="mb-2">
+                  <input name="username" class="form-control" placeholder="Usuário" required>
+                </div>
+                <div class="mb-3">
+                  <input name="password" type="password" class="form-control" placeholder="Senha" required>
+                </div>
+                <button class="btn btn-outline-warning w-100 btn-sm">Criar Admin</button>
+              </form>
+            </div>
+          </div>
+          <div class="col-lg-8">
+            <div class="card p-4">
+              <h6 class="text-white mb-3"><i class="bi bi-people me-1"></i> Usuários Cadastrados</h6>
+              <div class="table-responsive">
+                <table class="table table-hover">
+                  <thead>
+                    <tr><th>ID</th><th>Usuário</th><th>Licença</th><th>Validade</th><th>Ações</th></tr>
+                  </thead>
+                  <tbody>
+                    {% for u in users %}
+                    <tr>
+                      <td class="text-secondary">{{ u.id }}</td>
+                      <td class="text-white fw-semibold">{{ u.username }}</td>
+                      <td>
+                        {% if u.license %}<span class="badge badge-{{ u.license.tipo }}">{{ u.license.tipo.capitalize() }}</span>
+                        {% else %}<span class="text-secondary">—</span>{% endif %}
+                      </td>
+                      <td class="text-secondary small">
+                        {% if u.license and u.license.expira_em %}{{ u.license.expira_em.strftime('%d/%m/%Y') }}
+                        {% elif u.license %}∞{% else %}—{% endif %}
+                      </td>
+                      <td>
+                        <div class="d-flex gap-1 flex-wrap align-items-center">
+                          <a href="/admin/deletar_usuario/{{ u.id }}" class="btn btn-sm btn-outline-danger"
+                             onclick="return confirm('Deletar {{ u.username }}?')">🗑</a>
+                          <button class="btn btn-sm btn-outline-info" onclick="abrirRenovar({{ u.id }}, '{{ u.username }}')">🔄 Renovar</button>
+                        </div>
+                      </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="5" class="text-center text-secondary">Nenhum usuário.</td></tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── KEYS ── -->
+      <div class="page" id="page-keys">
+        <div class="card p-4">
+          <h6 class="text-white mb-3"><i class="bi bi-key me-1"></i> Keys Geradas</h6>
+          <div class="table-responsive">
+            <table class="table table-hover">
+              <thead>
+                <tr><th>Key</th><th>Tipo</th><th>Expira em</th><th>Status</th><th></th></tr>
+              </thead>
+              <tbody>
+                {% for k in keys %}
+                <tr>
+                  <td>
+                    <span class="key-text">{{ k.key }}</span>
+                    <button class="btn-copy ms-2" onclick="copiarKey('{{ k.key }}', this)">
+                      <i class="bi bi-clipboard"></i> Copiar
+                    </button>
+                  </td>
+                  <td><span class="badge badge-{{ k.tipo }}">{{ k.tipo.capitalize() }}</span></td>
+                  <td class="text-secondary">{{ k.expira_em.strftime('%d/%m/%Y') if k.expira_em else '∞ Permanente' }}</td>
+                  <td>
+                    {% if k.usado %}<span class="badge bg-secondary">Usada</span>
+                    {% elif not k.valida() %}<span class="badge bg-danger">Expirada</span>
+                    {% else %}<span class="badge bg-success">Disponível</span>{% endif %}
+                  </td>
+                  <td>
+                    <a href="/admin/revogar_key/{{ k.id }}" class="btn btn-sm btn-outline-danger"
+                       onclick="return confirm('Revogar esta key?')">Revogar</a>
+                  </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="5" class="text-center text-secondary">Nenhuma key gerada.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── BOTS ── -->
+      <div class="page" id="page-bots">
+        <div class="card p-4">
+          {% if msg %}<div class="alert alert-{{ msg_tipo }} fw-bold">⚠️ {{ msg }}</div>{% endif %}
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <h6 class="text-white mb-0"><i class="bi bi-robot me-1"></i> Status dos Bots</h6>
+            <span class="text-secondary small">Atualiza a cada 5s</span>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-hover" id="tabela-bots">
+              <thead>
+                <tr><th>Usuário</th><th>Bot</th><th>Salas</th><th>Ações</th></tr>
+              </thead>
+              <tbody>
+                {% for u in users %}
+                {% set bs = salas_info.get(u.id, {}) %}
+                <tr>
+                  <td class="text-white fw-semibold">{{ u.username }}</td>
+                  <td>
+                    <span class="status-dot {{ 'dot-on' if status.get(u.id) else 'dot-off' }}"></span>
+                    <span class="ms-1 small {{ 'text-success' if status.get(u.id) else 'text-secondary' }}">
+                      {{ 'Online' if status.get(u.id) else 'Offline' }}
+                    </span>
+                  </td>
+                  <td>
+                    <span class="text-warning">{{ bs.get('usadas', 0) }}/{{ bs.get('limite', 10) }}</span>
+                    <button class="btn btn-sm btn-outline-secondary ms-2" onclick="abrirLimite({{ u.id }}, '{{ u.username }}', {{ bs.get('limite', 10) }})">✏️</button>
+                    <a href="/admin/resetar_salas/{{ u.id }}" class="btn btn-sm btn-outline-info ms-1"
+                       onclick="return confirm('Resetar contador de {{ u.username }}?')">↺</a>
+                  </td>
+                  <td>
+                    <div class="d-flex gap-1 flex-wrap">
+                      <a href="/admin/start_bot/{{ u.id }}" class="btn btn-sm btn-success">▶</a>
+                      <a href="/admin/stop_bot/{{ u.id }}" class="btn btn-sm btn-danger"
+                         onclick="return confirm('Forçar parada de {{ u.username }}?')">■ Stop</a>
+                      <a href="/admin/restart_bot/{{ u.id }}" class="btn btn-sm btn-warning text-dark">↺</a>
+                    </div>
+                  </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="4" class="text-center text-secondary">Nenhum usuário.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── SALAS FF ── -->
+      <div class="page" id="page-salas">
+        <div class="row g-4">
+
+          <!-- Saldo + Resgatar -->
+          <div class="col-lg-5">
+
+            <!-- Saldo na API -->
+            <div class="card p-4 mb-4" id="saldo-api-card">
+              <h6 class="text-white mb-3"><i class="bi bi-wallet2 me-1"></i> Saldo API Salas <span id="saldo-loading" class="spinner-border spinner-border-sm ms-1" style="display:none"></span></h6>
+              <div id="saldo-display" class="text-center py-4">
+                <div class="spinner-border spinner-border-sm text-info mx-auto mb-2" style="width:2rem;height:2rem"></div>
+                <div class="text-secondary small">Carregando saldo API...</div>
+              </div>
+            </div>
+
+            <!-- Salas Utilizadas por Usuário -->
+            <div class="card p-4 mb-4">
+              <h6 class="text-white mb-3"><i class="bi bi-people me-1"></i> Salas por Usuário</h6>
+              <div class="row g-3">
+                {% for u in users %}
+                {% set bs = salas_info.get(u.id, {}) %}
+                <div class="col-6">
+                  <div class="p-2 rounded" style="background:#0d1117;border:1px solid #30363d">
+                    <div class="text-secondary small">{{ u.username }}</div>
+                    <div class="fw-bold text-warning">{{ bs.get('usadas', 0) }}/{{ bs.get('limite', 0) }}</div>
+                  </div>
+                </div>
+                {% else %}
+                <div class="text-secondary small">Nenhum usuário.</div>
+                {% endfor %}
+              </div>
+            </div>
+
+            <!-- Resgatar Seriais -->
+            <div class="card p-4">
+              <h6 class="text-white mb-3"><i class="bi bi-arrow-repeat me-1"></i> Resgatar Seriais na API</h6>
+              <div class="alert alert-warning py-2 small">
+                ⚠️ Gere os seriais pelo bot <strong>@flashconfigbot</strong> no Telegram e cole aqui.
+              </div>
+              <form method="POST" action="/admin/resgatar_seriais">
+                <div class="mb-3">
+                  <label class="text-secondary small">Seriais (um por linha ou separados por vírgula)</label>
+                  <textarea name="seriais" class="form-control" rows="6" placeholder="SALAMKVKM7GIMAL4&#10;SALAKMUXMZI0NQ8D"></textarea>
+                </div>
+                <button class="btn btn-primary w-100">Resgatar na API</button>
+              </form>
+              {% if resultado_resgate %}
+              <div class="mt-3 p-3 rounded" style="background:#0d1117;border:1px solid #30363d">
+                <div class="text-success small">✅ Resgatados: {{ resultado_resgate.resgatados|length }}</div>
+                <div class="text-danger small">❌ Não resgatados: {{ resultado_resgate.nao_resgatados|length }}</div>
+                <div class="text-warning small mt-1" style="white-space:pre-wrap">{{ resultado_resgate.mensagem }}</div>
+              </div>
+              {% endif %}
+            </div>
+          </div>
+
+          <!-- Instrucoes -->
+          <div class="col-lg-7">
+            <div class="card p-4">
+              <h6 class="text-white mb-3"><i class="bi bi-info-circle me-1"></i> Como adicionar salas</h6>
+              <ol class="text-secondary" style="font-size:.88rem;line-height:2">
+                <li>Acesse o Telegram e abra o bot <strong class="text-white">@flashconfigbot</strong></li>
+                <li>Gere os seriais de salas pelo bot</li>
+                <li>Copie os seriais gerados</li>
+                <li>Cole no campo <strong class="text-white">Resgatar Seriais</strong> ao lado</li>
+                <li>Clique em <strong class="text-white">Resgatar na API</strong></li>
+                <li>Consulte o saldo para confirmar que as salas foram adicionadas</li>
+              </ol>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Modal Renovar Key -->
+  <div class="modal fade" id="modalRenovar" tabindex="-1">
+    <div class="modal-dialog modal-sm">
+      <div class="modal-content" style="background:#161b22;border:1px solid #30363d">
+        <div class="modal-header border-secondary">
+          <h6 class="modal-title text-white">🔄 Renovar Key</h6>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <form id="formRenovar" method="POST">
+          <div class="modal-body">
+            <p class="text-secondary small mb-2">Usuário: <strong class="text-white" id="renovar-username"></strong></p>
+            <label class="text-secondary small">Novo Plano</label>
+            <select name="tipo" class="form-select mt-1">
+              <option value="semanal">Semanal (7 dias)</option>
+              <option value="mensal" selected>Mensal (30 dias)</option>
+              <option value="permanente">Permanente</option>
+            </select>
+          </div>
+          <div class="modal-footer border-secondary">
+            <button type="submit" class="btn btn-success btn-sm w-100">Confirmar Renovação</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Limite Salas -->
+  <div class="modal fade" id="modalLimite" tabindex="-1">
+    <div class="modal-dialog modal-sm">
+      <div class="modal-content" style="background:#161b22;border:1px solid #30363d">
+        <div class="modal-header border-secondary">
+          <h6 class="modal-title text-white">🎮 Limite de Salas</h6>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <form id="formLimite" method="POST">
+          <div class="modal-body">
+            <p class="text-secondary small mb-2">Usuário: <strong class="text-white" id="limite-username"></strong></p>
+            <label class="text-secondary small">Quantidade de Salas</label>
+            <input type="number" name="limite" id="limite-valor" class="form-control mt-1" min="0" value="10">
+          </div>
+          <div class="modal-footer border-secondary">
+            <button type="submit" class="btn btn-warning btn-sm w-100 text-dark">Salvar Limite</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    function showPage(name, btn) {
+      document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('.nav-link-side').forEach(b => b.classList.remove('active'));
+      document.getElementById('page-' + name).classList.add('active');
+      if (btn) btn.classList.add('active');
+      const titles = { usuarios: 'Usuários', keys: 'Keys', bots: 'Bots', salas: 'Salas FF' };
+      document.getElementById('page-title').textContent = titles[name];
+      // fecha sidebar no mobile ao navegar
+      document.getElementById('sidebar').classList.remove('open');
+      document.getElementById('overlay').classList.remove('show');
+    }
+
+    function toggleSidebar() {
+      document.getElementById('sidebar').classList.toggle('open');
+      document.getElementById('overlay').classList.toggle('show');
+    }
+
+    function copiarKey(key, btn) {
+      navigator.clipboard.writeText(key).then(() => {
+        btn.classList.add('copied');
+        btn.innerHTML = '<i class="bi bi-check2"></i> Copiado!';
+        setTimeout(() => { btn.classList.remove('copied'); btn.innerHTML = '<i class="bi bi-clipboard"></i> Copiar'; }, 2000);
+      });
+    }
+
+    function copiarTodos() {
+      const txt = document.getElementById('serial-box').textContent;
+      navigator.clipboard.writeText(txt);
+    }
+
+    function abrirLimite(userId, username, limiteAtual) {
+      document.getElementById('limite-username').textContent = username;
+      document.getElementById('limite-valor').value = limiteAtual;
+      document.getElementById('formLimite').action = '/admin/limite_salas/' + userId;
+      new bootstrap.Modal(document.getElementById('modalLimite')).show();
+    }
+
+    function abrirRenovar(userId, username) {
+      document.getElementById('renovar-username').textContent = username;
+      document.getElementById('formRenovar').action = '/admin/renovar_key/' + userId;
+      new bootstrap.Modal(document.getElementById('modalRenovar')).show();
+    }
+
+    // Refresh saldo API
+    function updateSaldoAPI() {
+      var loading = document.getElementById('saldo-loading');
+      if (loading) loading.style.display = 'inline-block';
+      fetch('/admin/api_saldo_total').then(function(r) { return r.json(); }).then(function(data) {
+        if (loading) loading.style.display = 'none';
+        var display = document.getElementById('saldo-display');
+        if (data.status === 'ok') {
+          display.innerHTML = '<div class="num text-success fs-1">' + data.salas + '</div><div class="text-secondary small mt-1">salas disponíveis</div>';
+        } else {
+          display.innerHTML = '<div class="text-warning small">Erro: ' + data.status + '</div>';
+        }
+      }).catch(function() {
+        if (loading) loading.style.display = 'none';
+        var display = document.getElementById('saldo-display');
+        display.innerHTML = '<div class="text-danger small">Falha conexão</div>';
+      });
+    }
+
+    // Auto refresh status bots + saldo
+    setInterval(function() {
+      fetch('/admin/status_json').then(function(r) { return r.json(); }).then(function(data) {
+        var rows = document.querySelectorAll('#tabela-bots tbody tr');
+        for (var i = 0; i < rows.length; i++) {
+          var row = rows[i];
+          var link = row.querySelector('a[href*="start_bot"]');
+          if (!link) continue;
+          var uid = link.href.split('/').pop();
+          var dot = row.querySelector('.status-dot');
+          var lbl = row.querySelector('.ms-1.small');
+          var online = data[uid] === true;
+          dot.className = 'status-dot ' + (online ? 'dot-on' : 'dot-off');
+          lbl.className = 'ms-1 small ' + (online ? 'text-success' : 'text-secondary');
+          lbl.textContent = online ? 'Online' : 'Offline';
+        }
+      });
+      var pageSalas = document.getElementById('page-salas');
+      if (pageSalas && pageSalas.classList.contains('active')) {
+        updateSaldoAPI();
+      }
+    }, 30000);
+
+    // Load initial when page shown
+    if (document.addEventListener) {
+      document.addEventListener('DOMContentLoaded', function() {
+        var pageSalas = document.getElementById('page-salas');
+        if (pageSalas && pageSalas.classList.contains('active')) {
+          updateSaldoAPI();
+        }
+      });
+    }
+  </script>
+</body>
+</html>
