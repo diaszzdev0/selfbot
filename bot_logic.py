@@ -363,7 +363,7 @@ def run_selfbot(config: dict, user_id: int):
             asyncio.ensure_future(atualizar_cache_imap())
 
     async def atualizar_cache_imap():
-        while True:
+        while not _stop_flags.get(user_id):
             try:
                 mb = MailBox(config["imap_server"])
                 mb.login(config["email_user"], config["email_pass"], initial_folder="INBOX")
@@ -376,6 +376,7 @@ def run_selfbot(config: dict, user_id: int):
             except Exception as e:
                 log_msg(user_id, f"Erro ao atualizar cache IMAP: {e}")
             await asyncio.sleep(10)
+        _imap_cache.pop(user_id, None)
 
     async def monitorar_threads():
         em_envio: set[int] = set()
