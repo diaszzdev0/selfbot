@@ -254,7 +254,7 @@ def parar_selfbot(user_id: int):
 
 
 def run_selfbot(config: dict, user_id: int):
-    log_msg(user_id, "Iniciando selfbot...")
+        log_msg(user_id, f"🚀 Iniciando selfbot...")
 
     TOKEN = config.get("discord_token", "").strip()
     if not TOKEN:
@@ -270,7 +270,7 @@ def run_selfbot(config: dict, user_id: int):
     _clientes[user_id] = client
 
     threads_com_mensagem: set[int] = _carregar_threads(user_id)
-    log_msg(user_id, f"{len(threads_com_mensagem)} thread(s) carregada(s).")
+        log_msg(user_id, f"🧵 {len(threads_com_mensagem)} thread(s) carregada(s).")
     pagamentos_por_thread: dict[int, int] = {}
     salas_ativas: dict[int, str] = {}
     go_por_thread: dict[int, set] = {}
@@ -348,14 +348,14 @@ def run_selfbot(config: dict, user_id: int):
     @client.event
     async def on_ready():
         nonlocal _monitor_iniciado
-        log_msg(user_id, f"Sessao: {client.user} (ID: {client.user.id})")
+        log_msg(user_id, f"✅ Sessao: {client.user} (ID: {client.user.id})")
         guild = client.get_guild(SERVER_ID)
         if guild:
             cat = guild.get_channel(CATEGORIA_ID)
-            log_msg(user_id, f"Servidor: {guild.name}")
-            log_msg(user_id, f"Categoria: {cat.name if cat else 'NAO ENCONTRADA'}")
+            log_msg(user_id, f"🌐 Servidor: {guild.name}")
+            log_msg(user_id, f"📂 Categoria: {cat.name if cat else 'NAO ENCONTRADA'}")
         else:
-            log_msg(user_id, f"Servidor {SERVER_ID} nao encontrado.")
+            log_msg(user_id, f"❌ Servidor {SERVER_ID} nao encontrado.")
         if not _monitor_iniciado:
             _monitor_iniciado = True
             await asyncio.sleep(3)
@@ -396,7 +396,7 @@ def run_selfbot(config: dict, user_id: int):
                                     em_envio.add(thread.id)
                                     threads_com_mensagem.add(thread.id)
                                     _salvar_thread(user_id, thread.id)
-                                    log_msg(user_id, f"Nova thread: '{thread.name}'")
+                                    log_msg(user_id, f"🧵 Nova thread: '{thread.name}'")
                                     async def _enviar(t=thread):
                                         await asyncio.sleep(8)
                                         await _enviar_mensagem_entrada(t)
@@ -429,9 +429,9 @@ def run_selfbot(config: dict, user_id: int):
         if re.fullmatch(r"go+", cmd) and channel.id in salas_ativas:
             if message.author != client.user:
                 go_por_thread.setdefault(channel.id, set()).add(message.author.id)
-                log_msg(user_id, f"Go de {message.author} ({len(go_por_thread[channel.id])}/2)")
+                log_msg(user_id, f"🎮 Go de {message.author} ({len(go_por_thread[channel.id])}/2)")
                 if len(go_por_thread[channel.id]) >= 2:
-                    log_msg(user_id, "Dois go - iniciando sala...")
+                    log_msg(user_id, "🎮 Dois go - iniciando sala...")
                     await message.reply("⚡ **Sala deu go!** Tentando iniciar a partida.")
                     await _dar_go(channel, salas_ativas[channel.id])
             return
@@ -447,7 +447,7 @@ def run_selfbot(config: dict, user_id: int):
         if chave_pg in pg_em_processamento:
             return
         pg_em_processamento.add(chave_pg)
-        log_msg(user_id, f"pg detectado: {nome_busca} | {message.author}")
+                log_msg(user_id, f"💰 pg detectado: {nome_busca} | {message.author}")
 
         msg_fila = await message.reply("⏳ **Verificando Pagamento…** aguarde!")
 
@@ -472,7 +472,7 @@ def run_selfbot(config: dict, user_id: int):
                 segundos = (agora - usados[chave_pag]).total_seconds()
                 if segundos < 120:
                     await message.reply("⚠️ Atenção esse pagamento já foi utilizado em outro tópico, faça um pagamento e tente novamente!")
-                    log_msg(user_id, f"Pagamento duplicado bloqueado: {nome_busca} ({int(segundos)}s atras)")
+                log_msg(user_id, f"⚠️ Pagamento duplicado bloqueado: {nome_busca} ({int(segundos)}s atras)")
                     return
             # registra uso
             usados[chave_pag] = agora
@@ -483,14 +483,14 @@ def run_selfbot(config: dict, user_id: int):
                 f"ID: {random.randint(100, 999)}"
             )
             pagamentos_por_thread[channel.id] = pagamentos_por_thread.get(channel.id, 0) + 1
-            log_msg(user_id, f"Pagamentos: {pagamentos_por_thread[channel.id]}/2")
+                log_msg(user_id, f"💰 Pagamentos: {pagamentos_por_thread[channel.id]}/2")
 
             if pagamentos_por_thread[channel.id] >= 2:
                 pagamentos_por_thread[channel.id] = 0
                 usadas, limite = _get_salas_info(user_id)
                 if usadas >= limite:
                     await channel.send(f"Limite de salas atingido ({usadas}/{limite}).")
-                    log_msg(user_id, f"Limite: {usadas}/{limite}")
+                    log_msg(user_id, f"⛔ Limite: {usadas}/{limite}")
                     return
                 await asyncio.sleep(5)
                 msg_req = await channel.send("Solicitando Sala...")
@@ -529,4 +529,4 @@ def run_selfbot(config: dict, user_id: int):
         _clientes.pop(user_id, None)
         _loops.pop(user_id, None)
         _stop_flags.pop(user_id, None)
-        log_msg(user_id, "Selfbot encerrado.")
+        log_msg(user_id, "🔴 Selfbot encerrado.")
