@@ -334,7 +334,7 @@ def run_selfbot(config: dict, user_id: int):
             async def go_auto(ch=channel, pid=pedidoid):
                 await asyncio.sleep(300)
                 if salas_ativas.get(ch.id) == pid:
-                log_msg(user_id, f"🎮 Go automatico...")
+                    log_msg(user_id, f"🎮 Go automatico...")
                     await _dar_go(ch, pid)
             asyncio.ensure_future(go_auto())
             return True
