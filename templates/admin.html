@@ -133,9 +133,9 @@
 
       <!-- ── USUÁRIOS ── -->
       <div class="page active" id="page-usuarios">
-        <div class="row g-4">
+        <div class="row g-3">
           <div class="col-lg-4">
-            <div class="card p-4">
+            <div class="card p-3">
               <h6 class="text-white mb-3"><i class="bi bi-person-plus me-1"></i> Criar Usuário</h6>
               {% if msg %}<div class="alert alert-{{ msg_tipo }} py-2 small">{{ msg }}</div>{% endif %}
               <form method="POST" action="/admin/criar_usuario">
@@ -154,7 +154,7 @@
                 <button class="btn btn-success w-100">+ Criar Usuário</button>
               </form>
             </div>
-            <div class="card p-4 mt-4">
+            <div class="card p-3 mt-3">
               <h6 class="text-white mb-3"><i class="bi bi-shield-plus me-1"></i> Criar Admin</h6>
               <form method="POST" action="/admin/criar_admin">
                 <div class="mb-2">
@@ -163,45 +163,35 @@
                 <div class="mb-3">
                   <input name="password" type="password" class="form-control" placeholder="Senha" required>
                 </div>
-                <button class="btn btn-outline-warning w-100 btn-sm">Criar Admin</button>
+                <button class="btn btn-outline-warning w-100">Criar Admin</button>
               </form>
             </div>
           </div>
           <div class="col-lg-8">
-            <div class="card p-4">
+            <div class="card p-3">
               <h6 class="text-white mb-3"><i class="bi bi-people me-1"></i> Usuários Cadastrados</h6>
-              <div class="table-responsive">
-                <table class="table table-hover">
-                  <thead>
-                    <tr><th>ID</th><th>Usuário</th><th>Licença</th><th>Validade</th><th>Ações</th></tr>
-                  </thead>
-                  <tbody>
-                    {% for u in users %}
-                    <tr>
-                      <td class="text-secondary">{{ u.id }}</td>
-                      <td class="text-white fw-semibold">{{ u.username }}</td>
-                      <td>
-                        {% if u.license %}<span class="badge badge-{{ u.license.tipo }}">{{ u.license.tipo.capitalize() }}</span>
-                        {% else %}<span class="text-secondary">—</span>{% endif %}
-                      </td>
-                      <td class="text-secondary small">
+              {% for u in users %}
+              <div class="p-3 mb-2 rounded" style="background:#0d1117;border:1px solid #30363d">
+                <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+                  <div>
+                    <div class="text-white fw-semibold">{{ u.username }}</div>
+                    <div class="mt-1">
+                      {% if u.license %}<span class="badge badge-{{ u.license.tipo }}">{{ u.license.tipo.capitalize() }}</span>{% endif %}
+                      <span class="text-secondary small ms-1">
                         {% if u.license and u.license.expira_em %}{{ u.license.expira_em.strftime('%d/%m/%Y') }}
-                        {% elif u.license %}∞{% else %}—{% endif %}
-                      </td>
-                      <td>
-                        <div class="d-flex gap-1 flex-wrap align-items-center">
-                          <a href="/admin/deletar_usuario/{{ u.id }}" class="btn btn-sm btn-outline-danger"
-                             onclick="return confirm('Deletar {{ u.username }}?')">🗑</a>
-                          <button class="btn btn-sm btn-outline-info" onclick="abrirRenovar({{ u.id }}, '{{ u.username }}')">🔄 Renovar</button>
-                        </div>
-                      </td>
-                    </tr>
-                    {% else %}
-                    <tr><td colspan="5" class="text-center text-secondary">Nenhum usuário.</td></tr>
-                    {% endfor %}
-                  </tbody>
-                </table>
+                        {% elif u.license %}∞{% endif %}
+                      </span>
+                    </div>
+                  </div>
+                  <div class="d-flex gap-2">
+                    <a href="/admin/deletar_usuario/{{ u.id }}" class="btn btn-sm btn-outline-danger" onclick="return confirm('Deletar {{ u.username }}?')">🗑</a>
+                    <button class="btn btn-sm btn-outline-info" onclick="abrirRenovar({{ u.id }}, '{{ u.username }}')">🔄 Renovar</button>
+                  </div>
+                </div>
               </div>
+              {% else %}
+              <div class="text-secondary text-center py-3">Nenhum usuário.</div>
+              {% endfor %}
             </div>
           </div>
         </div>
@@ -209,88 +199,63 @@
 
       <!-- ── KEYS ── -->
       <div class="page" id="page-keys">
-        <div class="card p-4">
+        <div class="card p-3">
           <h6 class="text-white mb-3"><i class="bi bi-key me-1"></i> Keys Geradas</h6>
-          <div class="table-responsive">
-            <table class="table table-hover">
-              <thead>
-                <tr><th>Key</th><th>Tipo</th><th>Expira em</th><th>Status</th><th></th></tr>
-              </thead>
-              <tbody>
-                {% for k in keys %}
-                <tr>
-                  <td>
-                    <span class="key-text">{{ k.key }}</span>
-                    <button class="btn-copy ms-2" onclick="copiarKey('{{ k.key }}', this)">
-                      <i class="bi bi-clipboard"></i> Copiar
-                    </button>
-                  </td>
-                  <td><span class="badge badge-{{ k.tipo }}">{{ k.tipo.capitalize() }}</span></td>
-                  <td class="text-secondary">{{ k.expira_em.strftime('%d/%m/%Y') if k.expira_em else '∞ Permanente' }}</td>
-                  <td>
-                    {% if k.usado %}<span class="badge bg-secondary">Usada</span>
-                    {% elif not k.valida() %}<span class="badge bg-danger">Expirada</span>
-                    {% else %}<span class="badge bg-success">Disponível</span>{% endif %}
-                  </td>
-                  <td>
-                    <a href="/admin/revogar_key/{{ k.id }}" class="btn btn-sm btn-outline-danger"
-                       onclick="return confirm('Revogar esta key?')">Revogar</a>
-                  </td>
-                </tr>
-                {% else %}
-                <tr><td colspan="5" class="text-center text-secondary">Nenhuma key gerada.</td></tr>
-                {% endfor %}
-              </tbody>
-            </table>
+          {% for k in keys %}
+          <div class="p-3 mb-2 rounded" style="background:#0d1117;border:1px solid #30363d">
+            <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+              <div>
+                <div class="key-text">{{ k.key }}</div>
+                <div class="mt-1">
+                  <span class="badge badge-{{ k.tipo }}">{{ k.tipo.capitalize() }}</span>
+                  {% if k.usado %}<span class="badge bg-secondary ms-1">Usada</span>
+                  {% elif not k.valida() %}<span class="badge bg-danger ms-1">Expirada</span>
+                  {% else %}<span class="badge bg-success ms-1">Disponível</span>{% endif %}
+                </div>
+                <div class="text-secondary small mt-1">{{ k.expira_em.strftime('%d/%m/%Y') if k.expira_em else '∞ Permanente' }}</div>
+              </div>
+              <div class="d-flex gap-2">
+                <button class="btn-copy" onclick="copiarKey('{{ k.key }}', this)"><i class="bi bi-clipboard"></i> Copiar</button>
+                <a href="/admin/revogar_key/{{ k.id }}" class="btn btn-sm btn-outline-danger" onclick="return confirm('Revogar esta key?')">Revogar</a>
+              </div>
+            </div>
           </div>
+          {% else %}
+          <div class="text-secondary text-center py-3">Nenhuma key gerada.</div>
+          {% endfor %}
         </div>
       </div>
 
       <!-- ── BOTS ── -->
       <div class="page" id="page-bots">
-        <div class="card p-4">
+        <div class="card p-3">
           {% if msg %}<div class="alert alert-{{ msg_tipo }} fw-bold">⚠️ {{ msg }}</div>{% endif %}
           <div class="d-flex justify-content-between align-items-center mb-3">
             <h6 class="text-white mb-0"><i class="bi bi-robot me-1"></i> Status dos Bots</h6>
-            <span class="text-secondary small">Atualiza a cada 5s</span>
+            <span class="text-secondary small">Atualiza a cada 30s</span>
           </div>
-          <div class="table-responsive">
-            <table class="table table-hover" id="tabela-bots">
-              <thead>
-                <tr><th>Usuário</th><th>Bot</th><th>Salas</th><th>Ações</th></tr>
-              </thead>
-              <tbody>
-                {% for u in users %}
-                {% set bs = salas_info.get(u.id, {}) %}
-                <tr>
-                  <td class="text-white fw-semibold">{{ u.username }}</td>
-                  <td>
-                    <span class="status-dot {{ 'dot-on' if status.get(u.id) else 'dot-off' }}"></span>
-                    <span class="ms-1 small {{ 'text-success' if status.get(u.id) else 'text-secondary' }}">
-                      {{ 'Online' if status.get(u.id) else 'Offline' }}
-                    </span>
-                  </td>
-                  <td>
-                    <span class="text-warning">{{ bs.get('usadas', 0) }}/{{ bs.get('limite', 10) }}</span>
-                    <button class="btn btn-sm btn-outline-secondary ms-2" onclick="abrirLimite({{ u.id }}, '{{ u.username }}', {{ bs.get('limite', 10) }})">✏️</button>
-                    <a href="/admin/resetar_salas/{{ u.id }}" class="btn btn-sm btn-outline-info ms-1"
-                       onclick="return confirm('Resetar contador de {{ u.username }}?')">↺</a>
-                  </td>
-                  <td>
-                    <div class="d-flex gap-1 flex-wrap">
-                      <a href="/admin/start_bot/{{ u.id }}" class="btn btn-sm btn-success">▶</a>
-                      <a href="/admin/stop_bot/{{ u.id }}" class="btn btn-sm btn-danger"
-                         onclick="return confirm('Forçar parada de {{ u.username }}?')">■ Stop</a>
-                      <a href="/admin/restart_bot/{{ u.id }}" class="btn btn-sm btn-warning text-dark">↺</a>
-                    </div>
-                  </td>
-                </tr>
-                {% else %}
-                <tr><td colspan="4" class="text-center text-secondary">Nenhum usuário.</td></tr>
-                {% endfor %}
-              </tbody>
-            </table>
+          {% for u in users %}
+          {% set bs = salas_info.get(u.id, {}) %}
+          <div class="p-3 mb-2 rounded" style="background:#0d1117;border:1px solid #30363d" data-uid="{{ u.id }}">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <span class="text-white fw-semibold">{{ u.username }}</span>
+              <span>
+                <span class="status-dot {{ 'dot-on' if status.get(u.id) else 'dot-off' }} bot-dot"></span>
+                <span class="small ms-1 bot-lbl {{ 'text-success' if status.get(u.id) else 'text-secondary' }}">{{ 'Online' if status.get(u.id) else 'Offline' }}</span>
+              </span>
+            </div>
+            <div class="text-warning small mb-2">Salas: {{ bs.get('usadas', 0) }}/{{ bs.get('limite', 10) }}</div>
+            <div class="d-flex gap-2 flex-wrap">
+              <a href="/admin/start_bot/{{ u.id }}" class="btn btn-sm btn-success flex-fill">▶ Ligar</a>
+              <a href="/admin/stop_bot/{{ u.id }}" class="btn btn-sm btn-danger flex-fill" onclick="return confirm('Parar {{ u.username }}?')">■ Stop</a>
+              <a href="/admin/restart_bot/{{ u.id }}" class="btn btn-sm btn-warning text-dark flex-fill">↺ Restart</a>
+              <button class="btn btn-sm btn-outline-secondary flex-fill" onclick="abrirLimite({{ u.id }}, '{{ u.username }}', {{ bs.get('limite', 10) }})">✏️ Limite</button>
+              <a href="/admin/resetar_salas/{{ u.id }}" class="btn btn-sm btn-outline-info flex-fill" onclick="return confirm('Resetar {{ u.username }}?')">↺ Reset</a>
+            </div>
           </div>
+          {% else %}
+          <div class="text-secondary text-center py-3">Nenhum usuário.</div>
+          {% endfor %}
         </div>
       </div>
 
@@ -484,27 +449,19 @@
       });
     }
 
-    // Auto refresh status bots + saldo
     setInterval(function() {
       fetch('/admin/status_json').then(function(r) { return r.json(); }).then(function(data) {
-        var rows = document.querySelectorAll('#tabela-bots tbody tr');
-        for (var i = 0; i < rows.length; i++) {
-          var row = rows[i];
-          var link = row.querySelector('a[href*="start_bot"]');
-          if (!link) continue;
-          var uid = link.href.split('/').pop();
-          var dot = row.querySelector('.status-dot');
-          var lbl = row.querySelector('.ms-1.small');
+        document.querySelectorAll('[data-uid]').forEach(function(card) {
+          var uid = card.getAttribute('data-uid');
           var online = data[uid] === true;
-          dot.className = 'status-dot ' + (online ? 'dot-on' : 'dot-off');
-          lbl.className = 'ms-1 small ' + (online ? 'text-success' : 'text-secondary');
-          lbl.textContent = online ? 'Online' : 'Offline';
-        }
+          var dot = card.querySelector('.bot-dot');
+          var lbl = card.querySelector('.bot-lbl');
+          if (dot) dot.className = 'status-dot ' + (online ? 'dot-on' : 'dot-off') + ' bot-dot';
+          if (lbl) { lbl.className = 'small ms-1 bot-lbl ' + (online ? 'text-success' : 'text-secondary'); lbl.textContent = online ? 'Online' : 'Offline'; }
+        });
       });
       var pageSalas = document.getElementById('page-salas');
-      if (pageSalas && pageSalas.classList.contains('active')) {
-        updateSaldoAPI();
-      }
+      if (pageSalas && pageSalas.classList.contains('active')) updateSaldoAPI();
     }, 30000);
 
     // Load initial when page shown
