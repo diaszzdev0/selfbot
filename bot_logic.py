@@ -254,7 +254,7 @@ def parar_selfbot(user_id: int):
 
 
 def run_selfbot(config: dict, user_id: int):
-        log_msg(user_id, f"🚀 Iniciando selfbot...")
+    log_msg(user_id, "🚀 Iniciando selfbot...")
 
     TOKEN = config.get("discord_token", "").strip()
     if not TOKEN:
@@ -270,7 +270,7 @@ def run_selfbot(config: dict, user_id: int):
     _clientes[user_id] = client
 
     threads_com_mensagem: set[int] = _carregar_threads(user_id)
-        log_msg(user_id, f"🧵 {len(threads_com_mensagem)} thread(s) carregada(s).")
+    log_msg(user_id, f"🧵 {len(threads_com_mensagem)} thread(s) carregada(s).")
     pagamentos_por_thread: dict[int, int] = {}
     salas_ativas: dict[int, str] = {}
     go_por_thread: dict[int, set] = {}
@@ -447,7 +447,7 @@ def run_selfbot(config: dict, user_id: int):
         if chave_pg in pg_em_processamento:
             return
         pg_em_processamento.add(chave_pg)
-                log_msg(user_id, f"💰 pg detectado: {nome_busca} | {message.author}")
+        log_msg(user_id, f"💰 pg detectado: {nome_busca} | {message.author}")
 
         msg_fila = await message.reply("⏳ **Verificando Pagamento…** aguarde!")
 
@@ -472,7 +472,7 @@ def run_selfbot(config: dict, user_id: int):
                 segundos = (agora - usados[chave_pag]).total_seconds()
                 if segundos < 120:
                     await message.reply("⚠️ Atenção esse pagamento já foi utilizado em outro tópico, faça um pagamento e tente novamente!")
-                log_msg(user_id, f"⚠️ Pagamento duplicado bloqueado: {nome_busca} ({int(segundos)}s atras)")
+                    log_msg(user_id, f"⚠️ Pagamento duplicado bloqueado: {nome_busca} ({int(segundos)}s atras)")
                     return
             # registra uso
             usados[chave_pag] = agora
@@ -483,7 +483,7 @@ def run_selfbot(config: dict, user_id: int):
                 f"ID: {random.randint(100, 999)}"
             )
             pagamentos_por_thread[channel.id] = pagamentos_por_thread.get(channel.id, 0) + 1
-                log_msg(user_id, f"💰 Pagamentos: {pagamentos_por_thread[channel.id]}/2")
+            log_msg(user_id, f"💰 Pagamentos: {pagamentos_por_thread[channel.id]}/2")
 
             if pagamentos_por_thread[channel.id] >= 2:
                 pagamentos_por_thread[channel.id] = 0
