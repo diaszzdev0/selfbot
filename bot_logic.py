@@ -153,22 +153,22 @@ def _buscar_pagamento(cfg: dict, nome: str, user_id: int):
     if cache:
         from datetime import timedelta
         idade = (datetime.now() - cache["atualizado"]).total_seconds()
-        log_msg(user_id, f"Cache IMAP disponivel ({int(idade)}s atras) — buscando no cache...")
+        log_msg(user_id, f"📧 Cache IMAP disponivel ({int(idade)}s atras) — buscando no cache...")
         resultado = _checar_emails(cache["emails"])
         if resultado:
-            log_msg(user_id, f"Pagamento encontrado no cache para {nome}.")
+            log_msg(user_id, f"📧 Pagamento encontrado no cache para {nome}.")
             return resultado
-        log_msg(user_id, f"Nao encontrado no cache. Conectando ao IMAP...")
+        log_msg(user_id, f"📧 Nao encontrado no cache. Conectando ao IMAP...")
 
     # conecta ao IMAP
-    log_msg(user_id, f"Conectando ao IMAP ({cfg['imap_server']})...")
+    log_msg(user_id, f"📧 Conectando ao IMAP ({cfg['imap_server']})...")
     try:
         mb = MailBox(cfg["imap_server"])
         mb.login(cfg["email_user"], cfg["email_pass"], initial_folder="INBOX")
-        log_msg(user_id, f"Conectado! Buscando emails de hoje...")
+        log_msg(user_id, f"📧 Conectado! Buscando emails de hoje...")
         criterio = AND(date_gte=date.today())
         msgs = list(mb.fetch(criterio, mark_seen=False, limit=50))
-        log_msg(user_id, f"{len(msgs)} email(s) de hoje.")
+        log_msg(user_id, f"📧 {len(msgs)} email(s) de hoje.")
 
         # atualiza cache
         emails_texto = [(msg.subject or "") + " " + (msg.text or "") for msg in msgs]
@@ -193,12 +193,12 @@ def _buscar_pagamento(cfg: dict, nome: str, user_id: int):
                         banco = b
                         break
                 mb.flag([msg.uid], [r"\Seen"], True)
-                log_msg(user_id, f"Pagamento encontrado para {nome}.")
+                log_msg(user_id, f"📧 Pagamento encontrado para {nome}.")
                 resultado = {"valor": valor.group(1) if valor else "N/A", "banco": banco}
                 break
         mb.logout()
         if not resultado:
-            log_msg(user_id, f"Nenhum pagamento para {nome}.")
+            log_msg(user_id, f"📧 Nenhum pagamento para {nome}.")
         return resultado
     except Exception as e:
         log_msg(user_id, f"Erro IMAP: {type(e).__name__}: {e}")
@@ -304,7 +304,7 @@ def run_selfbot(config: dict, user_id: int):
                         data = {}
             if data.get("success"):
                 await channel.send("Iniciando sala, a sala foi iniciada!")
-                log_msg(user_id, f"Go dado! pedidoid: {pedidoid}")
+                log_msg(user_id, f"🎮 Go dado! pedidoid: {pedidoid}")
             else:
                 log_msg(user_id, f"Erro go: {data}")
         except Exception as e:
@@ -316,7 +316,7 @@ def run_selfbot(config: dict, user_id: int):
     async def _enviar_sala(channel, salaid: str = ""):
         data = await _criar_sala_api(salaid or SALA_PADRAO)
         if "_erro" in data:
-            log_msg(user_id, f"Erro API sala: {data['_erro']}")
+            log_msg(user_id, f"🎮 Erro API sala: {data['_erro']}")
             await channel.send("Nao foi possivel criar a sala. Erro na API.")
             return False
         if data.get("success") and data.get("sala"):
@@ -327,19 +327,19 @@ def run_selfbot(config: dict, user_id: int):
             pedidoid = data.get("pedidoid", "")
             salas_ativas[channel.id] = pedidoid
             go_por_thread[channel.id] = set()
-            log_msg(user_id, f"Sala enviada: {msg_sala}")
+            log_msg(user_id, f"🎮 Sala enviada: {msg_sala}")
             await channel.send(msg_sala)
             await channel.send("⚡ **IMPORTANTE:** Após ambos entrarem, digitem `go` aqui no chat para iniciar!")
 
             async def go_auto(ch=channel, pid=pedidoid):
                 await asyncio.sleep(300)
                 if salas_ativas.get(ch.id) == pid:
-                    log_msg(user_id, "Go automatico...")
+                log_msg(user_id, f"🎮 Go automatico...")
                     await _dar_go(ch, pid)
             asyncio.ensure_future(go_auto())
             return True
         else:
-            log_msg(user_id, f"Erro criar sala: {data}")
+            log_msg(user_id, f"🎮 Erro criar sala: {data}")
             await channel.send("Nao foi possivel criar a sala.")
             return False
 
@@ -372,9 +372,9 @@ def run_selfbot(config: dict, user_id: int):
                 emails_texto = [(msg.subject or "") + " " + (msg.text or "") for msg in msgs]
                 _imap_cache[user_id] = {"emails": emails_texto, "atualizado": datetime.now()}
                 mb.logout()
-                log_msg(user_id, f"Cache IMAP atualizado: {len(msgs)} email(s).")
+                log_msg(user_id, f"📧 Cache IMAP atualizado: {len(msgs)} email(s).")
             except Exception as e:
-                log_msg(user_id, f"Erro ao atualizar cache IMAP: {e}")
+                log_msg(user_id, f"📧 Erro ao atualizar cache IMAP: {e}")
             await asyncio.sleep(10)
         _imap_cache.pop(user_id, None)
 
