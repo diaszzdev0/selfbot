@@ -166,7 +166,10 @@ def cliente_stop_bot(user_id: int):
     if session["cliente_id"] != user_id:
         return jsonify({"erro": "Sem permissao"}), 403
     parar_selfbot(user_id)
-    processos.pop(user_id, None)
+    p = processos.pop(user_id, None)
+    if p and p.is_alive():
+        p.terminate()
+        p.join(timeout=3)
     return redirect(url_for("painel_cliente"))
 
 
@@ -177,7 +180,10 @@ def cliente_restart_bot(user_id: int):
     if session["cliente_id"] != user_id:
         return jsonify({"erro": "Sem permissao"}), 403
     parar_selfbot(user_id)
-    processos.pop(user_id, None)
+    p = processos.pop(user_id, None)
+    if p and p.is_alive():
+        p.terminate()
+        p.join(timeout=3)
     log_path = os.path.join(os.path.dirname(__file__), "logs", f"user_{user_id}.log")
     open(log_path, "w").close()
     user = User.query.get(user_id)
