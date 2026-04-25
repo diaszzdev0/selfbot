@@ -37,7 +37,7 @@ def admin_required(f):
     def decorated(*args, **kwargs):
         if "user_id" not in session:
             return redirect(url_for("login"))
-        user = User.query.get(session["user_id"])
+        user = db.session.get(User, session["user_id"])
         if not user or not user.is_admin:
             return redirect(url_for("login"))
         return f(*args, **kwargs)
@@ -115,7 +115,7 @@ def _render_cliente(user, cfg, ativo, msg=None, msg_tipo=None):
 @app.route("/cliente")
 @login_required
 def painel_cliente():
-    user = User.query.get(session["cliente_id"])
+    user = db.session.get(User, session["cliente_id"])
     cfg = user.config
     ativo = user.id in processos and processos[user.id].is_alive()
     return _render_cliente(user, cfg, ativo)
@@ -125,7 +125,7 @@ def painel_cliente():
 @login_required
 def cliente_salvar_config():
     from models import BotConfig
-    user = User.query.get(session["cliente_id"])
+    user = db.session.get(User, session["cliente_id"])
     cfg = user.config or BotConfig(user_id=user.id)
     cfg.discord_token = request.form["discord_token"]
     cfg.server_id = request.form["server_id"]
@@ -150,7 +150,7 @@ def cliente_start_bot(user_id: int):
         return jsonify({"erro": "Sem permissao"}), 403
     if user_id in processos and processos[user_id].is_alive():
         return redirect(url_for("painel_cliente"))
-    user = User.query.get(user_id)
+    user = db.session.get(User, user_id)
     if not user or not user.config:
         return _render_cliente(user, None, False, "SELFBOT NAO CONFIGURADO", "danger")
     p = multiprocessing.Process(target=run_selfbot, args=(_config_dict(user.config), user_id), daemon=True)
@@ -186,7 +186,7 @@ def cliente_restart_bot(user_id: int):
         p.join(timeout=3)
     log_path = os.path.join(os.path.dirname(__file__), "logs", f"user_{user_id}.log")
     open(log_path, "w").close()
-    user = User.query.get(user_id)
+    user = db.session.get(User, user_id)
     if not user or not user.config:
         return _render_cliente(user, None, False, "SELFBOT NAO CONFIGURADO", "danger")
     p = multiprocessing.Process(target=run_selfbot, args=(_config_dict(user.config), user_id), daemon=True)
@@ -494,7 +494,7 @@ def stop_bot(user_id: int):
 def start_bot(user_id: int):
     if user_id in processos and processos[user_id].is_alive():
         return redirect(url_for("admin"))
-    user = User.query.get(user_id)
+    user = db.session.get(User, user_id)
     if not user or not user.config:
         return render_template("admin.html",
             users=User.query.filter_by(is_admin=False).all(),
@@ -517,7 +517,7 @@ def restart_bot(user_id: int):
     processos.pop(user_id, None)
     log_path = os.path.join(os.path.dirname(__file__), "logs", f"user_{user_id}.log")
     open(log_path, "w").close()
-    user = User.query.get(user_id)
+    user = db.session.get(User, user_id)
     if not user or not user.config:
         return render_template("admin.html",
             users=User.query.filter_by(is_admin=False).all(),
