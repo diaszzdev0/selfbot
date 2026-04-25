@@ -6,7 +6,7 @@ from models import db, User, LicenseKey, BotConfig
 from bot_logic import run_selfbot
 
 app = Flask(__name__)
-app.secret_key = "manager_secret_key"
+app.secret_key = os.getenv("SECRET_KEY", "manager_secret_key")
 _db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "selfbot.db")
 _database_url = os.getenv("DATABASE_URL", f"sqlite:///{_db_path}")
 # Heroku/Railway/SquareCloud retornam postgres://, SQLAlchemy exige postgresql://
@@ -235,7 +235,7 @@ def cliente_stream_logs(user_id: int):
 def login():
     erro = None
     saved_user = request.cookies.get("admin_user", "")
-    saved_pass = request.cookies.get("admin_pass", "")
+    saved_pass = ""
     if request.method == "POST":
         username = request.form["username"]
         password = request.form["password"]
@@ -245,11 +245,9 @@ def login():
             session["user_id"] = user.id
             resp = make_response(redirect(url_for("admin")))
             if lembrar:
-                resp.set_cookie("admin_user", username, max_age=30*24*3600)
-                resp.set_cookie("admin_pass", password, max_age=30*24*3600)
+                resp.set_cookie("admin_user", username, max_age=30*24*3600, httponly=True)
             else:
                 resp.delete_cookie("admin_user")
-                resp.delete_cookie("admin_pass")
             return resp
         else:
             erro = "Usuário ou senha incorretos."

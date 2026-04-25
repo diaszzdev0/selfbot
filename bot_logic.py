@@ -56,7 +56,12 @@ def _extrair_nome(conteudo: str):
     return None
 
 
+_db_engine = None
+
 def _get_db_engine():
+    global _db_engine
+    if _db_engine is not None:
+        return _db_engine
     from sqlalchemy import create_engine
     url = os.getenv("DATABASE_URL", "")
     if not url:
@@ -64,7 +69,8 @@ def _get_db_engine():
         url = f"sqlite:///{_db_path}"
     if url.startswith("postgres://"):
         url = url.replace("postgres://", "postgresql://", 1)
-    return create_engine(url)
+    _db_engine = create_engine(url, pool_pre_ping=True)
+    return _db_engine
 
 
 def _get_salas_info(user_id: int):

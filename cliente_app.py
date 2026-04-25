@@ -7,9 +7,12 @@ from models import db, User, LicenseKey, BotConfig, BotStatus
 from bot_logic import run_selfbot, parar_selfbot
 
 app = Flask(__name__)
-app.secret_key = "cliente_secret_key"
+app.secret_key = os.getenv("SECRET_KEY", "cliente_secret_key")
 _db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "selfbot.db")
-app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{_db_path}"
+_database_url = os.getenv("DATABASE_URL", f"sqlite:///{_db_path}")
+if _database_url.startswith("postgres://"):
+    _database_url = _database_url.replace("postgres://", "postgresql://", 1)
+app.config["SQLALCHEMY_DATABASE_URI"] = _database_url
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 db.init_app(app)
 
