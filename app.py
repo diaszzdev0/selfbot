@@ -174,7 +174,6 @@ def painel_cliente():
 @app.route("/cliente/salvar_config", methods=["POST"])
 @login_required
 def cliente_salvar_config():
-    from models import BotConfig
     user = db.session.get(User, session["cliente_id"])
     cfg = user.config or BotConfig(user_id=user.id)
     cfg.discord_token = request.form["discord_token"]
@@ -275,7 +274,8 @@ def cliente_restart_bot(user_id: int):
         p.terminate()
         p.join(timeout=3)
     log_path = os.path.join(os.path.dirname(__file__), "logs", f"user_{user_id}.log")
-    open(log_path, "w").close()
+    with open(log_path, "w", encoding="utf-8"):
+        pass
     user = db.session.get(User, user_id)
     if not user or not user.config:
         return _render_cliente(user, None, False, "SELFBOT NÃO CONFIGURADO", "danger")
@@ -333,7 +333,6 @@ def cliente_stream_logs(user_id: int):
 def login():
     erro = None
     saved_user = request.cookies.get("admin_user", "")
-    saved_pass = ""
     if request.method == "POST":
         username = request.form["username"]
         password = request.form["password"]
@@ -349,7 +348,7 @@ def login():
             return resp
         else:
             erro = "Usuário ou senha incorretos."
-    return render_template("login_manager.html", erro=erro, saved_user=saved_user, saved_pass=saved_pass)
+    return render_template("login_manager.html", erro=erro, saved_user=saved_user)
 
 
 @app.route("/logout")
@@ -458,7 +457,10 @@ def deletar_usuario(user_id: int):
         p.terminate()
         p.join(timeout=3)
     processos.pop(user_id, None)
-    user = User.query.get_or_404(user_id)
+    user = db.session.get(User, user_id)
+    if not user:
+        from flask import abort
+        abort(404)
     if user.config:
         db.session.delete(user.config)
     db.session.delete(user)
@@ -469,7 +471,10 @@ def deletar_usuario(user_id: int):
 @app.route("/admin/revogar_key/<int:key_id>")
 @admin_required
 def revogar_key(key_id: int):
-    k = LicenseKey.query.get_or_404(key_id)
+    k = db.session.get(LicenseKey, key_id)
+    if not k:
+        from flask import abort
+        abort(404)
     # desvincula usuarios antes de deletar
     User.query.filter_by(key_id=k.id).update({"key_id": None})
     db.session.delete(k)
@@ -481,7 +486,10 @@ def revogar_key(key_id: int):
 @admin_required
 def renovar_key(user_id: int):
     from datetime import datetime, timedelta
-    user = User.query.get_or_404(user_id)
+    user = db.session.get(User, user_id)
+    if not user:
+        from flask import abort
+        abort(404)
     tipo = request.form.get("tipo", "mensal")
     if not user.license:
         return redirect(url_for("admin"))
@@ -626,8 +634,8 @@ def saldo_salas():
         else:
             session["saldo_salas"] = f"{saldo} salas disponíveis (via {endpoint_usado.split('/')[-1]})"
                 
-    except Exception as e:
-        session["saldo_salas"] = f"Erro de conexão: {str(e)[:100]}"
+    except Exception as exc:
+        session["saldo_salas"] = f"Erro de conexão: {str(exc)[:100]}"
     
     return redirect(url_for("admin"))
 
@@ -635,7 +643,7 @@ def saldo_salas():
 @app.route("/admin/gerar_seriais", methods=["POST"])
 @admin_required
 def gerar_seriais():
-    import secrets, string
+    import string
     quantidade = int(request.form.get("quantidade", 10))
     seriais = []
     for _ in range(quantidade):
@@ -774,7 +782,7 @@ def criar_key_salas():
                             }
                             return redirect(url_for("admin"))
                             
-            except Exception as e:
+            except Exception:
                 continue
         
         session["keys_criadas"] = {
@@ -785,13 +793,13 @@ def criar_key_salas():
             "mensagem": "Erro: Não foi possível criar as keys. API pode estar offline ou chave inválida."
         }
                 
-    except Exception as e:
+    except Exception as exc:
         session["keys_criadas"] = {
             "keys": [],
             "quantidade": 0,
             "tipo": tipo,
             "duracao": duracao,
-            "mensagem": f"Erro: {str(e)[:100]}"
+            "mensagem": f"Erro: {str(exc)[:100]}"
         }
     
     return redirect(url_for("admin"))
@@ -879,11 +887,11 @@ def verificar_key_sala():
             "info": "Não foi possível verificar a key em nenhum endpoint"
         }
                 
-    except Exception as e:
+    except Exception as exc:
         session["verificacao_key"] = {
             "key": key_verificar,
             "status": "Erro",
-            "info": f"Erro de conexão: {str(e)[:100]}"
+            "info": f"Erro de conexão: {str(exc)[:100]}"
         }
     
     return redirect(url_for("admin"))
@@ -956,11 +964,11 @@ def adicionar_salas():
             "saldo_atual": "N/A"
         }
                 
-    except Exception as e:
+    except Exception as exc:
         session["adicao_salas"] = {
             "quantidade": quantidade_adicionar,
             "status": "error",
-            "mensagem": f"Erro: {e}",
+            "mensagem": f"Erro: {exc}",
             "saldo_atual": "N/A"
         }
     
@@ -994,7 +1002,7 @@ def limite_salas(user_id: int):
     s.limite_salas = limite
     db.session.add(s)
     db.session.commit()
-    user = User.query.get(user_id)
+    user = db.session.get(User, user_id)
     username = user.username if user else f"ID {user_id}"
     session["msg"] = f"Limite de {username} atualizado para {limite} salas!"
     session["msg_tipo"] = "success"
@@ -1009,7 +1017,7 @@ def resetar_salas(user_id: int):
     if s:
         s.salas_usadas = 0
         db.session.commit()
-        user = User.query.get(user_id)
+        user = db.session.get(User, user_id)
         username = user.username if user else f"ID {user_id}"
         session["msg"] = f"Salas de {username} resetadas com sucesso!"
         session["msg_tipo"] = "success"
@@ -1022,13 +1030,13 @@ def deletar_key():
     key_id = request.form.get("key_id")
     if key_id:
         key_id = int(key_id)
-        key = LicenseKey.query.get(key_id)
+        key = db.session.get(LicenseKey, key_id)
         if key:
             # Desvincula usuários antes de deletar
             User.query.filter_by(key_id=key.id).update({"key_id": None})
             db.session.delete(key)
             db.session.commit()
-            session["msg"] = f"Key deletada com sucesso!"
+            session["msg"] = "Key deletada com sucesso!"
             session["msg_tipo"] = "success"
     return redirect(url_for("admin") + "#keys")
 
@@ -1063,7 +1071,7 @@ def deletar_usuario_post():
             p.terminate()
             p.join(timeout=3)
         processos.pop(user_id, None)
-        user = User.query.get(user_id)
+        user = db.session.get(User, user_id)
         if user:
             username = user.username
             if user.config:
@@ -1113,7 +1121,8 @@ def restart_bot(user_id: int):
         p.join(timeout=3)
     processos.pop(user_id, None)
     log_path = os.path.join(os.path.dirname(__file__), "logs", f"user_{user_id}.log")
-    open(log_path, "w").close()
+    with open(log_path, "w", encoding="utf-8"):
+        pass
     user = db.session.get(User, user_id)
     if not user or not user.config:
         return render_template("admin.html",

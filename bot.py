@@ -7,12 +7,12 @@ import os
 
 load_dotenv()
 
-TOKEN = os.getenv("DISCORD_TOKEN")
-SERVER_ID = int(os.getenv("SERVER_ID"))
-CATEGORIA_ID = int(os.getenv("CATEGORIA_ID"))
-EMAIL_USER = os.getenv("EMAIL_USER")
-EMAIL_PASS = os.getenv("EMAIL_PASS")
-IMAP_SERVER = os.getenv("IMAP_SERVER")
+TOKEN = os.getenv("DISCORD_TOKEN", "")
+SERVER_ID = int(os.getenv("SERVER_ID", "0"))
+CATEGORIA_ID = int(os.getenv("CATEGORIA_ID", "0"))
+EMAIL_USER = os.getenv("EMAIL_USER", "")
+EMAIL_PASS = os.getenv("EMAIL_PASS", "")
+IMAP_SERVER = os.getenv("IMAP_SERVER", "imap.gmail.com")
 MENSAGEM_ENTRADA = os.getenv("MENSAGEM_ENTRADA", "👋 Olá! Estou aqui para ajudar. Use `pg Nome Sobrenome` para verificar seu pagamento.")
 
 client = discord.Client()
@@ -92,7 +92,7 @@ async def on_message(message: discord.Message):
 
     await asyncio.sleep(15)
 
-    resultado = await asyncio.get_event_loop().run_in_executor(None, buscar_pagamento, nome_busca)
+    resultado = await asyncio.get_running_loop().run_in_executor(None, buscar_pagamento, nome_busca)
 
     await msg_fila.delete()
 

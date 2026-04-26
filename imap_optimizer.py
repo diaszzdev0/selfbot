@@ -2,7 +2,7 @@ import asyncio
 import threading
 import time
 from datetime import datetime, timedelta, date
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Optional
 from dataclasses import dataclass
 from collections import defaultdict, deque
 import hashlib
@@ -40,10 +40,10 @@ class OptimizedIMAPCache:
     def __init__(self, user_id: int, config: dict):
         self.user_id = user_id
         self.config = config
-        self.emails: Dict[str, EmailData] = {}
-        self.nome_index: Dict[str, Set[str]] = defaultdict(set)  # índice por nome normalizado
-        self.valor_index: Dict[str, Set[str]] = defaultdict(set)  # índice por valor
-        self.banco_index: Dict[str, Set[str]] = defaultdict(set)  # índice por banco
+        self.emails: dict[str, EmailData] = {}
+        self.nome_index: dict[str, set[str]] = defaultdict(set)
+        self.valor_index: dict[str, set[str]] = defaultdict(set)
+        self.banco_index: dict[str, set[str]] = defaultdict(set)
         self.stats = CacheStats()
         self.lock = threading.RLock()
         self.last_full_update = datetime.now() - timedelta(hours=1)
@@ -53,7 +53,7 @@ class OptimizedIMAPCache:
         self.update_in_progress = False
         
         # Cache de nomes processados para evitar reprocessamento
-        self.processed_names: Dict[str, datetime] = {}
+        self.processed_names: dict[str, datetime] = {}
         self.name_cache_duration = timedelta(minutes=5)
         
         # Padrões pré-compilados para performance
@@ -74,8 +74,8 @@ class OptimizedIMAPCache:
                 mb = MailBox(self.config["imap_server"])
                 mb.login(self.config["email_user"], self.config["email_pass"], initial_folder="INBOX")
                 return mb
-        except Exception as e:
-            logger.error(f"Erro ao criar conexão IMAP para user {self.user_id}: {e}")
+        except Exception:
+            logger.error(f"Erro ao criar conexão IMAP para user {self.user_id}")
         return None
     
     def _return_connection(self, mb: MailBox):
@@ -183,8 +183,8 @@ class OptimizedIMAPCache:
             
             return True
             
-        except Exception as e:
-            logger.error(f"Erro na atualização incremental para user {self.user_id}: {e}")
+        except Exception as exc:
+            logger.error(f"Erro na atualização incremental para user {self.user_id}: {exc}")
             return False
         finally:
             self.update_in_progress = False
@@ -229,13 +229,13 @@ class OptimizedIMAPCache:
             logger.info(f"User {self.user_id}: Cache completo - {len(self.emails)} emails em {duration:.2f}s")
             return True
             
-        except Exception as e:
-            logger.error(f"Erro na atualização completa para user {self.user_id}: {e}")
+        except Exception as exc:
+            logger.error(f"Erro na atualização completa para user {self.user_id}: {exc}")
             return False
         finally:
             self.update_in_progress = False
     
-    def search_payment_optimized(self, nome: str) -> Optional[Dict]:
+    def search_payment_optimized(self, nome: str) -> Optional[dict]:
         """Busca otimizada de pagamento com múltiplas estratégias"""
         nome_norm = self._normalize_name(nome)
         
@@ -333,7 +333,7 @@ class OptimizedIMAPCache:
         palavras_encontradas = sum(1 for palavra in palavras_nome if palavra in content_norm)
         return (palavras_encontradas / len(palavras_nome)) >= 0.7
     
-    def get_stats(self) -> Dict:
+    def get_stats(self) -> dict:
         """Retorna estatísticas do cache"""
         with self.lock:
             hit_rate = 0
@@ -387,8 +387,8 @@ class IMAPCacheManager:
     """Gerenciador global de caches IMAP otimizados"""
     
     def __init__(self):
-        self.caches: Dict[int, OptimizedIMAPCache] = {}
-        self.update_tasks: Dict[int, asyncio.Task] = {}
+        self.caches: dict[int, OptimizedIMAPCache] = {}
+        self.update_tasks: dict[int, asyncio.Task] = {}
         self.cleanup_task: Optional[asyncio.Task] = None
         
     def get_cache(self, user_id: int, config: dict) -> OptimizedIMAPCache:
@@ -425,8 +425,8 @@ class IMAPCacheManager:
                     if datetime.now().minute % 5 == 0:
                         cache.cleanup_old_data()
                         
-                except Exception as e:
-                    logger.error(f"Erro na atualização automática para user {user_id}: {e}")
+                except Exception as exc:
+                    logger.error(f"Erro na atualização automática para user {user_id}: {exc}")
                     await asyncio.sleep(30)  # Espera mais tempo em caso de erro
         
         if user_id not in self.update_tasks:
@@ -444,11 +444,11 @@ class IMAPCacheManager:
             for mb in cache.connection_pool:
                 try:
                     mb.logout()
-                except:
+                except Exception:
                     pass
             del self.caches[user_id]
     
-    def get_global_stats(self) -> Dict:
+    def get_global_stats(self) -> dict:
         """Estatísticas globais de todos os caches"""
         total_emails = sum(cache.stats.total_emails for cache in self.caches.values())
         total_hits = sum(cache.stats.cache_hits for cache in self.caches.values())

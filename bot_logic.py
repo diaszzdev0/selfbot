@@ -6,9 +6,8 @@ import aiohttp
 import json
 import random
 import unicodedata
-from datetime import datetime, date, timedelta
+from datetime import datetime, timedelta
 import discord
-from imap_tools import MailBox, AND
 from imap_optimizer import imap_manager
 
 # Limites para prevenir vazamento de memória
@@ -42,8 +41,6 @@ def log_msg(user_id: int, text: str):
     
     # Remove informações sensíveis dos logs
     safe_text = text
-    # Remove tokens (qualquer string com mais de 50 chars alfanuméricos)
-    import re
     safe_text = re.sub(r'\b[A-Za-z0-9._-]{50,}\b', '[TOKEN_REDACTED]', safe_text)
     # Remove emails
     safe_text = re.sub(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', '[EMAIL_REDACTED]', safe_text)
@@ -284,7 +281,7 @@ async def _criar_sala_api(salaid: str = "") -> dict:
                 if not pedido_id:
                     return {"_erro": "ID do pedido não encontrado"}
                 
-                ts = int(asyncio.get_event_loop().time() * 1000)
+                ts = int(asyncio.get_running_loop().time() * 1000)
                 url_info = API_INFO_URL.format(pedidoid=pedido_id, ts=ts)
                 
                 try:
@@ -1023,7 +1020,7 @@ def run_selfbot(config: dict, user_id: int):
 
         try:
             resultado = await asyncio.wait_for(
-                asyncio.get_event_loop().run_in_executor(None, _buscar_pagamento_otimizado, config, nome_busca, user_id),
+                asyncio.get_running_loop().run_in_executor(None, _buscar_pagamento_otimizado, config, nome_busca, user_id),
                 timeout=5  # Timeout reduzido para 5s devido à otimização
             )
         except asyncio.TimeoutError:

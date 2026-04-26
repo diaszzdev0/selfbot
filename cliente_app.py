@@ -3,11 +3,13 @@ import time
 import threading
 from flask import Flask, render_template, request, redirect, url_for, session, Response, jsonify, make_response
 from werkzeug.security import generate_password_hash, check_password_hash
+from flask_wtf.csrf import CSRFProtect
 from models import db, User, LicenseKey, BotConfig, BotStatus
 from bot_logic import run_selfbot, parar_selfbot
 
 app = Flask(__name__)
-app.secret_key = os.getenv("SECRET_KEY", "cliente_secret_key")
+csrf = CSRFProtect(app)
+app.secret_key = os.getenv("SECRET_KEY", os.urandom(24).hex())
 _db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "selfbot.db")
 _database_url = os.getenv("DATABASE_URL", f"sqlite:///{_db_path}")
 if _database_url.startswith("postgres://"):
@@ -42,8 +44,12 @@ def _set_status(user_id: int, ativo: bool):
 
 
 def _iniciar_processo(user_id: int, cfg):
+    # Validar user_id para prevenir path traversal
+    if not isinstance(user_id, int) or user_id <= 0:
+        raise ValueError("Invalid user_id")
     log_path = os.path.join(LOG_DIR, f"user_{user_id}.log")
-    open(log_path, "w").close()
+    with open(log_path, "w", encoding="utf-8"):
+        pass
     t = threading.Thread(target=run_selfbot, args=(_config_dict(cfg), user_id), daemon=True)
     t.start()
     processos[user_id] = t
@@ -59,10 +65,10 @@ def _get_bot_status(user_id: int) -> BotStatus:
 
 
 def _render_cliente(user, cfg, ativo, msg=None, msg_tipo=None):
-    from datetime import datetime
+    from datetime import datetime, timezone
     dias_restantes = None
     if user and user.license and user.license.expira_em:
-        delta = user.license.expira_em - datetime.utcnow()
+        delta = user.license.expira_em - datetime.now(timezone.utc)
         dias_restantes = max(delta.days, 0)
     bot_status = _get_bot_status(user.id) if user else None
     return render_template("cliente.html", user=user, cfg=cfg, ativo=ativo,
@@ -97,8 +103,8 @@ def login():
                 session["user_id"] = user.id
                 resp = make_response(redirect(url_for("cliente")))
                 if lembrar:
-                    resp.set_cookie("cliente_user", username, max_age=30*24*3600)
-                    resp.set_cookie("cliente_key", key_str, max_age=30*24*3600)
+                    resp.set_cookie("cliente_user", username, max_age=30*24*3600, secure=True, httponly=True)
+                    resp.set_cookie("cliente_key", key_str, max_age=30*24*3600, secure=True, httponly=True)
                 else:
                     resp.delete_cookie("cliente_user")
                     resp.delete_cookie("cliente_key")
@@ -117,7 +123,7 @@ def logout():
 @app.route("/cliente")
 @login_required
 def cliente():
-    user = User.query.get(session["user_id"])
+    user = db.session.get(User, session["user_id"])
     cfg = user.config
     ativo = user.id in processos and processos[user.id].is_alive()
     return _render_cliente(user, cfg, ativo)
@@ -126,7 +132,7 @@ def cliente():
 @app.route("/salvar_config", methods=["POST"])
 @login_required
 def salvar_config():
-    user = User.query.get(session["user_id"])
+    user = db.session.get(User, session["user_id"])
     cfg = user.config or BotConfig(user_id=user.id)
     cfg.discord_token = request.form["discord_token"]
     cfg.server_id = request.form["server_id"]
@@ -151,7 +157,7 @@ def start_bot(user_id: int):
         return jsonify({"erro": "Sem permissao"}), 403
     if user_id in processos and processos[user_id].is_alive():
         return redirect(url_for("cliente"))
-    user = User.query.get(user_id)
+    user = db.session.get(User, user_id)
     if not user or not user.config:
         return _render_cliente(user, None, False, "SELFBOT NAO CONFIGURADO", "danger")
     _iniciar_processo(user_id, user.config)
@@ -167,10 +173,10 @@ def stop_bot(user_id: int):
     parar_selfbot(user_id)
     processos.pop(user_id, None)
     _set_status(user_id, False)
-    from datetime import datetime
+    from datetime import datetime, timezone
     log_path = os.path.join(LOG_DIR, f"user_{user_id}.log")
     with open(log_path, "a", encoding="utf-8") as f:
-        f.write(f"[{datetime.now().strftime('%H:%M:%S')}] Selfbot desligado pelo painel.\n")
+        f.write(f"[{datetime.now(timezone.utc).strftime('%H:%M:%S')}] Selfbot desligado pelo painel.\n")
         f.flush()
     return redirect(url_for("cliente"))
 
@@ -182,7 +188,7 @@ def restart_bot(user_id: int):
         return jsonify({"erro": "Sem permissao"}), 403
     parar_selfbot(user_id)
     processos.pop(user_id, None)
-    user = User.query.get(user_id)
+    user = db.session.get(User, user_id)
     if not user or not user.config:
         return _render_cliente(user, None, False, "SELFBOT NAO CONFIGURADO", "danger")
     _iniciar_processo(user_id, user.config)
@@ -197,7 +203,7 @@ def api_saldo():
     disponiveis = max(bs.limite_salas - bs.salas_usadas, 0)
     try:
         import requests as req
-        r = req.get(f"https://salasff.com/modos?key=266vq0badxid7jpcf96t", timeout=5)
+        r = req.get("https://salasff.com/modos?key=266vq0badxid7jpcf96t", timeout=5)
         total_api = r.json().get("salas", 0)
     except Exception:
         total_api = "?"
@@ -210,6 +216,9 @@ def stream_logs(user_id: int):
     if session["user_id"] != user_id:
         return jsonify({"erro": "Sem permissao"}), 403
 
+    # Validar user_id para prevenir path traversal
+    if not isinstance(user_id, int) or user_id <= 0:
+        raise ValueError("Invalid user_id")
     log_path = os.path.join(LOG_DIR, f"user_{user_id}.log")
 
     def generate():
@@ -234,21 +243,22 @@ if __name__ == "__main__":
     with app.app_context():
         db.create_all()
         import sqlite3 as _sqlite3
-        con = _sqlite3.connect(_db_path)
-        cols = [r[1] for r in con.execute("PRAGMA table_info(bot_status)").fetchall()]
-        if "salas_usadas" not in cols:
-            con.execute("ALTER TABLE bot_status ADD COLUMN salas_usadas INTEGER DEFAULT 0")
-        if "limite_salas" not in cols:
-            con.execute("ALTER TABLE bot_status ADD COLUMN limite_salas INTEGER DEFAULT 10")
-        cols_cfg = [r[1] for r in con.execute("PRAGMA table_info(bot_config)").fetchall()]
-        if "prefixo_sala" not in cols_cfg:
-            con.execute("ALTER TABLE bot_config ADD COLUMN prefixo_sala VARCHAR(20)")
-        if "imagem_entrada" not in cols_cfg:
-            con.execute("ALTER TABLE bot_config ADD COLUMN imagem_entrada VARCHAR(500)")
-        con.commit()
-        con.close()
+        with _sqlite3.connect(_db_path) as con:
+            cols = [r[1] for r in con.execute("PRAGMA table_info(bot_status)").fetchall()]
+            if "salas_usadas" not in cols:
+                con.execute("ALTER TABLE bot_status ADD COLUMN salas_usadas INTEGER DEFAULT 0")
+            if "limite_salas" not in cols:
+                con.execute("ALTER TABLE bot_status ADD COLUMN limite_salas INTEGER DEFAULT 10")
+            cols_cfg = [r[1] for r in con.execute("PRAGMA table_info(bot_config)").fetchall()]
+            if "prefixo_sala" not in cols_cfg:
+                con.execute("ALTER TABLE bot_config ADD COLUMN prefixo_sala VARCHAR(20)")
+            if "imagem_entrada" not in cols_cfg:
+                con.execute("ALTER TABLE bot_config ADD COLUMN imagem_entrada VARCHAR(500)")
+            con.commit()
         for status in BotStatus.query.filter_by(ativo=True).all():
-            user = User.query.get(status.user_id)
+            user = db.session.get(User, status.user_id)
             if user and user.config and user.license and user.license.valida():
                 _iniciar_processo(user.id, user.config)
-    app.run(host="0.0.0.0", port=5001, debug=False, use_reloader=False)
+    debug_mode = os.getenv("DEBUG", "False").lower() == "true"
+    host = os.getenv("HOST", "127.0.0.1")
+    app.run(host=host, port=5001, debug=debug_mode, use_reloader=False)
