@@ -479,6 +479,50 @@ def resetar_salas(user_id: int):
     return redirect(url_for("admin"))
 
 
+@app.route("/admin/gerar_key", methods=["POST"])
+@admin_required
+def gerar_key():
+    tipo = request.form.get("tipo", "mensal")
+    key = LicenseKey.gerar(tipo)
+    db.session.add(key)
+    db.session.commit()
+    return redirect(url_for("admin"))
+
+
+@app.route("/admin/deletar_key", methods=["POST"])
+@admin_required
+def deletar_key():
+    key_id = request.form.get("key_id")
+    if key_id:
+        key = LicenseKey.query.get(key_id)
+        if key:
+            # Desvincula usuários antes de deletar
+            User.query.filter_by(key_id=key.id).update({"key_id": None})
+            db.session.delete(key)
+            db.session.commit()
+    return redirect(url_for("admin"))
+
+
+@app.route("/admin/deletar_usuario", methods=["POST"])
+@admin_required
+def deletar_usuario_post():
+    user_id = request.form.get("user_id")
+    if user_id:
+        user_id = int(user_id)
+        p = processos.get(user_id)
+        if p and p.is_alive():
+            p.terminate()
+            p.join(timeout=3)
+        processos.pop(user_id, None)
+        user = User.query.get(user_id)
+        if user:
+            if user.config:
+                db.session.delete(user.config)
+            db.session.delete(user)
+            db.session.commit()
+    return redirect(url_for("admin"))
+
+
 @app.route("/admin/stop_bot/<int:user_id>")
 @admin_required
 def stop_bot(user_id: int):
