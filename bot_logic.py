@@ -148,56 +148,34 @@ def _buscar_pagamento(cfg: dict, nome: str, user_id: int):
                 return {"valor": valor.group(1) if valor else "N/A", "banco": banco}
         return None
 
-    # tenta usar cache primeiro
+    # sempre usa cache — atualizado a cada 5s pelo background task
     cache = _imap_cache.get(user_id)
     if cache:
-        from datetime import timedelta
         idade = (datetime.now() - cache["atualizado"]).total_seconds()
-        log_msg(user_id, f"📧 Cache IMAP disponivel ({int(idade)}s atras) — buscando no cache...")
+        log_msg(user_id, f"📧 Cache ({int(idade)}s) — {len(cache['emails'])} email(s)")
         resultado = _checar_emails(cache["emails"])
         if resultado:
             log_msg(user_id, f"📧 Pagamento encontrado no cache para {nome}.")
-            return resultado
-        log_msg(user_id, f"📧 Nao encontrado no cache. Conectando ao IMAP...")
+        else:
+            log_msg(user_id, f"📧 Nenhum pagamento para {nome}.")
+        return resultado
 
-    # conecta ao IMAP
-    log_msg(user_id, f"📧 Conectando ao IMAP ({cfg['imap_server']})...")
+    # fallback: cache ainda nao populado, conecta direto
+    log_msg(user_id, f"📧 Cache vazio, conectando ao IMAP...")
     try:
+        from datetime import timedelta
         mb = MailBox(cfg["imap_server"])
         mb.login(cfg["email_user"], cfg["email_pass"], initial_folder="INBOX")
-        log_msg(user_id, f"📧 Conectado! Buscando emails de hoje...")
-        criterio = AND(date_gte=date.today())
-        msgs = list(mb.fetch(criterio, mark_seen=False, limit=50))
-        log_msg(user_id, f"📧 {len(msgs)} email(s) de hoje.")
-
-        # atualiza cache
-        emails_texto = [(msg.subject or "") + " " + (msg.text or "") for msg in msgs]
-        _imap_cache[user_id] = {"emails": emails_texto, "atualizado": datetime.now(), "uids": {i: msg.uid for i, msg in enumerate(msgs)}}
-
-        resultado = None
-        for i, msg in enumerate(msgs):
-            conteudo = emails_texto[i]
-            cn = _normalizar(conteudo)
-            cl = conteudo.lower()
-            achou = (
-                nome_norm in cn or
-                (primeiro in cn and ultimo and ultimo in cn) or
-                nome_lower in cl or
-                (prim_orig in cl and ult_orig and ult_orig in cl)
-            )
-            if achou:
-                valor = re.search(r"R\$\s?([\d.,]+)", conteudo)
-                banco = "Desconhecido"
-                for b in ["Nubank", "PicPay", "Itau", "Bradesco", "Caixa", "Santander", "Inter", "C6 Bank", "Mercado Pago", "Next", "BTG"]:
-                    if b.lower() in cl:
-                        banco = b
-                        break
-                mb.flag([msg.uid], [r"\Seen"], True)
-                log_msg(user_id, f"📧 Pagamento encontrado para {nome}.")
-                resultado = {"valor": valor.group(1) if valor else "N/A", "banco": banco}
-                break
+        ontem = date.today() - timedelta(days=1)
+        msgs = list(mb.fetch(AND(date_gte=ontem), mark_seen=False, limit=200))
+        emails_texto = [(msg.subject or "") + " " + (msg.text or "") + " " + (msg.html or "") for msg in msgs]
+        _imap_cache[user_id] = {"emails": emails_texto, "atualizado": datetime.now()}
         mb.logout()
-        if not resultado:
+        log_msg(user_id, f"📧 {len(msgs)} email(s) carregados.")
+        resultado = _checar_emails(emails_texto)
+        if resultado:
+            log_msg(user_id, f"📧 Pagamento encontrado para {nome}.")
+        else:
             log_msg(user_id, f"📧 Nenhum pagamento para {nome}.")
         return resultado
     except Exception as e:
@@ -367,15 +345,17 @@ def run_selfbot(config: dict, user_id: int):
             try:
                 mb = MailBox(config["imap_server"])
                 mb.login(config["email_user"], config["email_pass"], initial_folder="INBOX")
-                criterio = AND(date_gte=date.today())
-                msgs = list(mb.fetch(criterio, mark_seen=False, limit=50))
-                emails_texto = [(msg.subject or "") + " " + (msg.text or "") for msg in msgs]
+                from datetime import timedelta
+                ontem = date.today() - timedelta(days=1)
+                criterio = AND(date_gte=ontem)
+                msgs = list(mb.fetch(criterio, mark_seen=False, limit=200))
+                emails_texto = [(msg.subject or "") + " " + (msg.text or "") + " " + (msg.html or "") for msg in msgs]
                 _imap_cache[user_id] = {"emails": emails_texto, "atualizado": datetime.now()}
                 mb.logout()
                 log_msg(user_id, f"📧 Cache IMAP atualizado: {len(msgs)} email(s).")
             except Exception as e:
                 log_msg(user_id, f"📧 Erro ao atualizar cache IMAP: {e}")
-            await asyncio.sleep(10)
+            await asyncio.sleep(5)
         _imap_cache.pop(user_id, None)
 
     async def monitorar_threads():
@@ -398,7 +378,7 @@ def run_selfbot(config: dict, user_id: int):
                                     _salvar_thread(user_id, thread.id)
                                     log_msg(user_id, f"🧵 Nova thread: '{thread.name}'")
                                     async def _enviar(t=thread):
-                                        await asyncio.sleep(8)
+                                        await asyncio.sleep(2)
                                         await _enviar_mensagem_entrada(t)
                                         em_envio.discard(t.id)
                                     asyncio.ensure_future(_enviar())
@@ -454,7 +434,7 @@ def run_selfbot(config: dict, user_id: int):
         try:
             resultado = await asyncio.wait_for(
                 asyncio.get_event_loop().run_in_executor(None, _buscar_pagamento, config, nome_busca, user_id),
-                timeout=30
+                timeout=15
             )
         except asyncio.TimeoutError:
             log_msg(user_id, "IMAP timeout.")
@@ -492,7 +472,6 @@ def run_selfbot(config: dict, user_id: int):
                     await channel.send(f"Limite de salas atingido ({usadas}/{limite}).")
                     log_msg(user_id, f"⛔ Limite: {usadas}/{limite}")
                     return
-                await asyncio.sleep(5)
                 msg_req = await channel.send("Solicitando Sala...")
                 await _enviar_sala(channel, SALA_PADRAO)
                 await msg_req.delete()
