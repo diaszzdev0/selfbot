@@ -1107,6 +1107,9 @@
         'salas': 'Salas FF'
       };
       document.getElementById('page-title').textContent = titles[pageId];
+      
+      // Atualiza a URL sem recarregar a página
+      history.replaceState(null, null, '#' + pageId);
     }
     
     // Função para atualizar status dos bots em tempo real
@@ -1221,6 +1224,15 @@
     
     // Inicia o polling quando a página carrega
     document.addEventListener('DOMContentLoaded', function() {
+      // Verifica se há âncora na URL para mostrar a aba correta
+      const hash = window.location.hash.substring(1);
+      if (hash && ['usuarios', 'keys', 'bots', 'salas'].includes(hash)) {
+        const targetLink = document.querySelector(`[onclick*="${hash}"]`);
+        if (targetLink) {
+          showPage(hash, targetLink);
+        }
+      }
+      
       // Atualiza imediatamente
       updateBotStatus();
       

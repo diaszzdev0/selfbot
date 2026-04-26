@@ -141,7 +141,12 @@ def cliente_salvar_config():
     cfg.prefixo_sala = prefixo if request.form.get("usar_prefixo") and prefixo else None
     db.session.add(cfg)
     db.session.commit()
-    return redirect(url_for("painel_cliente"))
+    
+    # Redireciona para a mesma página com mensagem de sucesso
+    user = db.session.get(User, session["cliente_id"])
+    cfg = user.config
+    ativo = user.id in processos and processos[user.id].is_alive()
+    return _render_cliente(user, cfg, ativo, "Configuração salva com sucesso!", "success")
 
 
 @app.route("/cliente/start_bot/<int:user_id>")
@@ -150,14 +155,19 @@ def cliente_start_bot(user_id: int):
     if session["cliente_id"] != user_id:
         return jsonify({"erro": "Sem permissao"}), 403
     if user_id in processos and processos[user_id].is_alive():
-        return redirect(url_for("painel_cliente"))
+        user = db.session.get(User, session["cliente_id"])
+        cfg = user.config
+        ativo = True
+        return _render_cliente(user, cfg, ativo, "Bot já está rodando!", "info")
     user = db.session.get(User, user_id)
     if not user or not user.config:
-        return _render_cliente(user, None, False, "SELFBOT NAO CONFIGURADO", "danger")
+        return _render_cliente(user, None, False, "SELFBOT NÃO CONFIGURADO", "danger")
     p = multiprocessing.Process(target=run_selfbot, args=(_config_dict(user.config), user_id), daemon=True)
     p.start()
     processos[user_id] = p
-    return redirect(url_for("painel_cliente"))
+    cfg = user.config
+    ativo = True
+    return _render_cliente(user, cfg, ativo, "Bot iniciado com sucesso!", "success")
 
 
 @app.route("/cliente/stop_bot/<int:user_id>")
@@ -171,7 +181,10 @@ def cliente_stop_bot(user_id: int):
     if p and p.is_alive():
         p.terminate()
         p.join(timeout=3)
-    return redirect(url_for("painel_cliente"))
+    user = db.session.get(User, session["cliente_id"])
+    cfg = user.config
+    ativo = False
+    return _render_cliente(user, cfg, ativo, "Bot parado com sucesso!", "success")
 
 
 @app.route("/cliente/restart_bot/<int:user_id>")
@@ -189,11 +202,13 @@ def cliente_restart_bot(user_id: int):
     open(log_path, "w").close()
     user = db.session.get(User, user_id)
     if not user or not user.config:
-        return _render_cliente(user, None, False, "SELFBOT NAO CONFIGURADO", "danger")
+        return _render_cliente(user, None, False, "SELFBOT NÃO CONFIGURADO", "danger")
     p = multiprocessing.Process(target=run_selfbot, args=(_config_dict(user.config), user_id), daemon=True)
     p.start()
     processos[user_id] = p
-    return redirect(url_for("painel_cliente"))
+    cfg = user.config
+    ativo = True
+    return _render_cliente(user, cfg, ativo, "Bot reiniciado com sucesso!", "success")
 
 
 @app.route("/cliente/api_saldo")
@@ -277,6 +292,11 @@ def admin():
     keys = LicenseKey.query.order_by(LicenseKey.criado_em.desc()).all()
     status = {s.user_id: s.ativo for s in BotStatus.query.all()}
     salas_info = {s.user_id: {"usadas": s.salas_usadas, "limite": s.limite_salas} for s in BotStatus.query.all()}
+    
+    # Pega mensagens da sessão
+    msg = session.pop("msg", None)
+    msg_tipo = session.pop("msg_tipo", None)
+    
     seriais = session.pop("seriais", None)
     resultado_resgate = session.pop("resultado_resgate", None)
     saldo_salas = session.pop("saldo_salas", None)
@@ -284,9 +304,11 @@ def admin():
     keys_criadas = session.pop("keys_criadas", None)
     verificacao_key = session.pop("verificacao_key", None)
     adicao_salas = session.pop("adicao_salas", None)
+    
     return render_template("admin.html", users=users, keys=keys, status=status, salas_info=salas_info, 
                          seriais=seriais, resultado_resgate=resultado_resgate, saldo_salas=saldo_salas, 
-                         teste_api=teste_api, keys_criadas=keys_criadas, verificacao_key=verificacao_key, adicao_salas=adicao_salas)
+                         teste_api=teste_api, keys_criadas=keys_criadas, verificacao_key=verificacao_key, 
+                         adicao_salas=adicao_salas, msg=msg, msg_tipo=msg_tipo)
 
 
 @app.route("/admin/criar_usuario", methods=["POST"])
@@ -295,11 +317,9 @@ def criar_usuario():
     username = request.form["username"].strip()
     tipo = request.form.get("tipo", "mensal")
     if User.query.filter_by(username=username).first():
-        return render_template("admin.html",
-            users=User.query.filter_by(is_admin=False).all(),
-            keys=LicenseKey.query.order_by(LicenseKey.criado_em.desc()).all(),
-            status={uid: p.is_alive() for uid, p in processos.items()},
-            msg="Usuário já existe.", msg_tipo="danger")
+        session["msg"] = "Usuário já existe."
+        session["msg_tipo"] = "danger"
+        return redirect(url_for("admin") + "#usuarios")
     lic = LicenseKey.gerar(tipo)
     lic.usado = True
     user = User(
@@ -309,7 +329,9 @@ def criar_usuario():
     )
     db.session.add(user)
     db.session.commit()
-    return redirect(url_for("admin"))
+    session["msg"] = f"Usuário {username} criado com sucesso!"
+    session["msg_tipo"] = "success"
+    return redirect(url_for("admin") + "#usuarios")
 
 
 @app.route("/admin/deletar_usuario/<int:user_id>")
@@ -742,7 +764,11 @@ def limite_salas(user_id: int):
     s.limite_salas = limite
     db.session.add(s)
     db.session.commit()
-    return redirect(url_for("admin"))
+    user = User.query.get(user_id)
+    username = user.username if user else f"ID {user_id}"
+    session["msg"] = f"Limite de {username} atualizado para {limite} salas!"
+    session["msg_tipo"] = "success"
+    return redirect(url_for("admin") + "#salas")
 
 
 @app.route("/admin/resetar_salas/<int:user_id>")
@@ -753,7 +779,11 @@ def resetar_salas(user_id: int):
     if s:
         s.salas_usadas = 0
         db.session.commit()
-    return redirect(url_for("admin"))
+        user = User.query.get(user_id)
+        username = user.username if user else f"ID {user_id}"
+        session["msg"] = f"Salas de {username} resetadas com sucesso!"
+        session["msg_tipo"] = "success"
+    return redirect(url_for("admin") + "#salas")
 
 
 @app.route("/admin/gerar_key", methods=["POST"])
@@ -763,7 +793,9 @@ def gerar_key():
     key = LicenseKey.gerar(tipo)
     db.session.add(key)
     db.session.commit()
-    return redirect(url_for("admin"))
+    session["msg"] = f"Key {key.key} gerada com sucesso!"
+    session["msg_tipo"] = "success"
+    return redirect(url_for("admin") + "#keys")
 
 
 @app.route("/admin/deletar_usuario", methods=["POST"])
@@ -779,11 +811,14 @@ def deletar_usuario_post():
         processos.pop(user_id, None)
         user = User.query.get(user_id)
         if user:
+            username = user.username
             if user.config:
                 db.session.delete(user.config)
             db.session.delete(user)
             db.session.commit()
-    return redirect(url_for("admin"))
+            session["msg"] = f"Usuário {username} deletado com sucesso!"
+            session["msg_tipo"] = "success"
+    return redirect(url_for("admin") + "#usuarios")
 
 
 @app.route("/admin/stop_bot/<int:user_id>")
