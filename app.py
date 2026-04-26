@@ -281,8 +281,12 @@ def admin():
     resultado_resgate = session.pop("resultado_resgate", None)
     saldo_salas = session.pop("saldo_salas", None)
     teste_api = session.pop("teste_api", None)
+    keys_criadas = session.pop("keys_criadas", None)
+    verificacao_key = session.pop("verificacao_key", None)
+    adicao_salas = session.pop("adicao_salas", None)
     return render_template("admin.html", users=users, keys=keys, status=status, salas_info=salas_info, 
-                         seriais=seriais, resultado_resgate=resultado_resgate, saldo_salas=saldo_salas, teste_api=teste_api)
+                         seriais=seriais, resultado_resgate=resultado_resgate, saldo_salas=saldo_salas, 
+                         teste_api=teste_api, keys_criadas=keys_criadas, verificacao_key=verificacao_key, adicao_salas=adicao_salas)
 
 
 @app.route("/admin/criar_usuario", methods=["POST"])
@@ -513,56 +517,172 @@ def resgatar_seriais():
     return redirect(url_for("admin"))
 
 
-@app.route("/admin/testar_api")
+@app.route("/admin/criar_key_salas", methods=["POST"])
 @admin_required
-def testar_api():
+def criar_key_salas():
     from dotenv import load_dotenv
     load_dotenv()
     API_KEY = os.getenv("SALASFF_KEY", "266vq0badxid7jpcf96t")
     import requests as req
     
-    resultados = []
+    quantidade = int(request.form.get("quantidade", 1))
+    tipo = request.form.get("tipo", "premium")  # premium, vip, etc
+    duracao = int(request.form.get("duracao", 30))  # dias
     
-    # Lista de endpoints para testar
-    endpoints = [
-        f"https://salasff.com/modos?key={API_KEY}",
-        f"https://salasff.com/api/saldo?key={API_KEY}", 
-        f"https://salasff.com/saldo?key={API_KEY}",
-        f"https://salasff.com/api?key={API_KEY}&action=saldo",
-        "https://salasff.com/"
-    ]
+    try:
+        # Tenta diferentes endpoints para criar keys
+        endpoints = [
+            f"https://salasff.com/api/criar_key?key={API_KEY}&quantidade={quantidade}&tipo={tipo}&duracao={duracao}",
+            f"https://salasff.com/criar_key?key={API_KEY}&qty={quantidade}&type={tipo}&days={duracao}",
+            f"https://salasff.com/generate?key={API_KEY}&amount={quantidade}&plan={tipo}&duration={duracao}"
+        ]
+        
+        for url in endpoints:
+            try:
+                resp = req.get(url, timeout=15, headers={'User-Agent': 'SelfBot-Manager/1.0'})
+                if resp.status_code == 200:
+                    content_type = resp.headers.get('content-type', '')
+                    if 'application/json' in content_type:
+                        data = resp.json()
+                        if 'keys' in data or 'codigos' in data or 'success' in data:
+                            session["keys_criadas"] = {
+                                "keys": data.get('keys', data.get('codigos', [])),
+                                "quantidade": quantidade,
+                                "tipo": tipo,
+                                "duracao": duracao,
+                                "mensagem": data.get('message', data.get('mensagem', 'Keys criadas com sucesso'))
+                            }
+                            return redirect(url_for("admin"))
+            except Exception:
+                continue
+        
+        session["keys_criadas"] = {
+            "keys": [],
+            "quantidade": 0,
+            "tipo": tipo,
+            "duracao": duracao,
+            "mensagem": "Erro: Não foi possível criar as keys. Verifique a API."
+        }
+                
+    except Exception as e:
+        session["keys_criadas"] = {
+            "keys": [],
+            "quantidade": 0,
+            "tipo": tipo,
+            "duracao": duracao,
+            "mensagem": f"Erro: {e}"
+        }
     
-    for url in endpoints:
-        try:
-            resp = req.get(url, timeout=10, headers={'User-Agent': 'SelfBot-Manager/1.0'})
-            content_type = resp.headers.get('content-type', 'N/A')
-            
-            resultado = {
-                'url': url,
-                'status': resp.status_code,
-                'content_type': content_type,
-                'response_preview': resp.text[:200] + '...' if len(resp.text) > 200 else resp.text
-            }
-            
-            if 'application/json' in content_type:
-                try:
-                    data = resp.json()
-                    resultado['json_keys'] = list(data.keys()) if isinstance(data, dict) else 'Not a dict'
-                except:
-                    resultado['json_keys'] = 'Invalid JSON'
-            
-            resultados.append(resultado)
-            
-        except Exception as e:
-            resultados.append({
-                'url': url,
-                'status': 'ERROR',
-                'content_type': 'N/A',
-                'response_preview': str(e),
-                'json_keys': 'N/A'
-            })
+    return redirect(url_for("admin"))
+
+
+@app.route("/admin/verificar_key_sala", methods=["POST"])
+@admin_required
+def verificar_key_sala():
+    from dotenv import load_dotenv
+    load_dotenv()
+    API_KEY = os.getenv("SALASFF_KEY", "266vq0badxid7jpcf96t")
+    import requests as req
     
-    session["teste_api"] = resultados
+    key_verificar = request.form.get("key_verificar", "").strip()
+    
+    if not key_verificar:
+        session["verificacao_key"] = {"key": "", "status": "Erro", "info": "Key não fornecida"}
+        return redirect(url_for("admin"))
+    
+    try:
+        # Tenta diferentes endpoints para verificar key
+        endpoints = [
+            f"https://salasff.com/api/verificar?key={API_KEY}&code={key_verificar}",
+            f"https://salasff.com/verificar?key={API_KEY}&serial={key_verificar}",
+            f"https://salasff.com/check?key={API_KEY}&code={key_verificar}"
+        ]
+        
+        for url in endpoints:
+            try:
+                resp = req.get(url, timeout=10, headers={'User-Agent': 'SelfBot-Manager/1.0'})
+                if resp.status_code == 200:
+                    content_type = resp.headers.get('content-type', '')
+                    if 'application/json' in content_type:
+                        data = resp.json()
+                        session["verificacao_key"] = {
+                            "key": key_verificar,
+                            "status": data.get('status', 'Desconhecido'),
+                            "info": data.get('info', data.get('message', data.get('mensagem', 'Sem informações'))),
+                            "salas_restantes": data.get('salas_restantes', data.get('remaining', 'N/A')),
+                            "expira_em": data.get('expira_em', data.get('expires', 'N/A')),
+                            "tipo": data.get('tipo', data.get('plan', 'N/A'))
+                        }
+                        return redirect(url_for("admin"))
+            except Exception:
+                continue
+        
+        session["verificacao_key"] = {
+            "key": key_verificar,
+            "status": "Erro",
+            "info": "Não foi possível verificar a key"
+        }
+                
+    except Exception as e:
+        session["verificacao_key"] = {
+            "key": key_verificar,
+            "status": "Erro",
+            "info": str(e)
+        }
+    
+    return redirect(url_for("admin"))
+
+
+@app.route("/admin/adicionar_salas", methods=["POST"])
+@admin_required
+def adicionar_salas():
+    from dotenv import load_dotenv
+    load_dotenv()
+    API_KEY = os.getenv("SALASFF_KEY", "266vq0badxid7jpcf96t")
+    import requests as req
+    
+    quantidade_adicionar = int(request.form.get("quantidade_adicionar", 0))
+    
+    try:
+        # Tenta diferentes endpoints para adicionar salas
+        endpoints = [
+            f"https://salasff.com/api/adicionar?key={API_KEY}&quantidade={quantidade_adicionar}",
+            f"https://salasff.com/adicionar?key={API_KEY}&qty={quantidade_adicionar}",
+            f"https://salasff.com/add?key={API_KEY}&amount={quantidade_adicionar}"
+        ]
+        
+        for url in endpoints:
+            try:
+                resp = req.get(url, timeout=15, headers={'User-Agent': 'SelfBot-Manager/1.0'})
+                if resp.status_code == 200:
+                    content_type = resp.headers.get('content-type', '')
+                    if 'application/json' in content_type:
+                        data = resp.json()
+                        session["adicao_salas"] = {
+                            "quantidade": quantidade_adicionar,
+                            "status": data.get('status', 'success'),
+                            "mensagem": data.get('message', data.get('mensagem', f'{quantidade_adicionar} salas adicionadas')),
+                            "saldo_atual": data.get('saldo_atual', data.get('balance', 'N/A'))
+                        }
+                        return redirect(url_for("admin"))
+            except Exception:
+                continue
+        
+        session["adicao_salas"] = {
+            "quantidade": quantidade_adicionar,
+            "status": "error",
+            "mensagem": "Erro: Não foi possível adicionar salas",
+            "saldo_atual": "N/A"
+        }
+                
+    except Exception as e:
+        session["adicao_salas"] = {
+            "quantidade": quantidade_adicionar,
+            "status": "error",
+            "mensagem": f"Erro: {e}",
+            "saldo_atual": "N/A"
+        }
+    
     return redirect(url_for("admin"))
 
 

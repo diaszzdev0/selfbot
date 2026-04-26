@@ -784,11 +784,150 @@
             <div class="card">
               <div class="card-header">
                 <h2 class="card-title">
-                  <i class="fas fa-cog"></i> Configurações de Salas
+                  <i class="fas fa-key"></i> Criar Keys de Salas
                 </h2>
               </div>
               <div class="card-body">
-                <div class="stats-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+                <form method="POST" action="/admin/criar_key_salas">
+                  <div class="form-group">
+                    <label class="form-label">Quantidade de Keys</label>
+                    <input type="number" name="quantidade" class="form-input" value="1" min="1" max="50">
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Tipo de Plano</label>
+                    <select name="tipo" class="form-select">
+                      <option value="premium">Premium</option>
+                      <option value="vip">VIP</option>
+                      <option value="basic">Básico</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Duração (dias)</label>
+                    <select name="duracao" class="form-select">
+                      <option value="7">7 dias</option>
+                      <option value="15">15 dias</option>
+                      <option value="30" selected>30 dias</option>
+                      <option value="60">60 dias</option>
+                      <option value="90">90 dias</option>
+                    </select>
+                  </div>
+                  <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-plus"></i> Criar Keys
+                  </button>
+                </form>
+                
+                {% if keys_criadas %}
+                <div style="margin-top: 1.5rem;">
+                  {% if keys_criadas.keys %}
+                  <div class="alert alert-success">
+                    <i class="fas fa-check-circle"></i>
+                    {{ keys_criadas.mensagem }}
+                  </div>
+                  <div style="padding: 1rem; background: var(--bg-secondary); border-radius: var(--radius-md); border: 1px solid var(--border);">
+                    <h5 style="margin-bottom: 0.5rem;">Keys Criadas ({{ keys_criadas.quantidade }}):</h5>
+                    <textarea readonly style="width: 100%; height: 120px; font-family: monospace; font-size: 0.75rem; padding: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius-sm);">{% for key in keys_criadas.keys %}{{ key }}{% if not loop.last %}
+{% endif %}{% endfor %}</textarea>
+                    <div style="margin-top: 0.5rem; font-size: 0.75rem; color: var(--text-secondary);">
+                      <strong>Tipo:</strong> {{ keys_criadas.tipo }} | <strong>Duração:</strong> {{ keys_criadas.duracao }} dias
+                    </div>
+                  </div>
+                  {% else %}
+                  <div class="alert alert-danger">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    {{ keys_criadas.mensagem }}
+                  </div>
+                  {% endif %}
+                </div>
+                {% endif %}
+              </div>
+            </div>
+            
+            <div class="card">
+              <div class="card-header">
+                <h2 class="card-title">
+                  <i class="fas fa-search"></i> Verificar Key
+                </h2>
+              </div>
+              <div class="card-body">
+                <form method="POST" action="/admin/verificar_key_sala">
+                  <div class="form-group">
+                    <label class="form-label">Key para Verificar</label>
+                    <input type="text" name="key_verificar" class="form-input" placeholder="Digite a key...">
+                  </div>
+                  <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-search"></i> Verificar
+                  </button>
+                </form>
+                
+                {% if verificacao_key %}
+                <div style="margin-top: 1.5rem; padding: 1rem; background: var(--bg-secondary); border-radius: var(--radius-md); border: 1px solid var(--border);">
+                  <h5 style="margin-bottom: 1rem;">Resultado da Verificação:</h5>
+                  <div style="font-size: 0.875rem;">
+                    <div style="margin-bottom: 0.5rem;"><strong>Key:</strong> {{ verificacao_key.key }}</div>
+                    <div style="margin-bottom: 0.5rem;"><strong>Status:</strong> 
+                      <span class="status-badge {% if verificacao_key.status == 'ativo' or verificacao_key.status == 'active' %}status-active{% else %}status-inactive{% endif %}">
+                        {{ verificacao_key.status }}
+                      </span>
+                    </div>
+                    <div style="margin-bottom: 0.5rem;"><strong>Info:</strong> {{ verificacao_key.info }}</div>
+                    {% if verificacao_key.salas_restantes %}
+                    <div style="margin-bottom: 0.5rem;"><strong>Salas Restantes:</strong> {{ verificacao_key.salas_restantes }}</div>
+                    {% endif %}
+                    {% if verificacao_key.expira_em %}
+                    <div style="margin-bottom: 0.5rem;"><strong>Expira em:</strong> {{ verificacao_key.expira_em }}</div>
+                    {% endif %}
+                    {% if verificacao_key.tipo %}
+                    <div><strong>Tipo:</strong> {{ verificacao_key.tipo }}</div>
+                    {% endif %}
+                  </div>
+                </div>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+          
+          <div class="content-grid" style="margin-top: 2rem;">
+            <div class="card">
+              <div class="card-header">
+                <h2 class="card-title">
+                  <i class="fas fa-plus-circle"></i> Adicionar Salas
+                </h2>
+              </div>
+              <div class="card-body">
+                <form method="POST" action="/admin/adicionar_salas">
+                  <div class="form-group">
+                    <label class="form-label">Quantidade de Salas</label>
+                    <input type="number" name="quantidade_adicionar" class="form-input" value="100" min="1" max="10000">
+                  </div>
+                  <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-plus"></i> Adicionar ao Saldo
+                  </button>
+                </form>
+                
+                {% if adicao_salas %}
+                <div style="margin-top: 1.5rem;">
+                  <div class="alert {% if adicao_salas.status == 'success' %}alert-success{% else %}alert-danger{% endif %}">
+                    <i class="fas {% if adicao_salas.status == 'success' %}fa-check-circle{% else %}fa-exclamation-triangle{% endif %}"></i>
+                    {{ adicao_salas.mensagem }}
+                  </div>
+                  {% if adicao_salas.saldo_atual != 'N/A' %}
+                  <div style="padding: 0.75rem; background: var(--bg-secondary); border-radius: var(--radius-md); border: 1px solid var(--border); font-size: 0.875rem;">
+                    <strong>Saldo Atual:</strong> {{ adicao_salas.saldo_atual }} salas
+                  </div>
+                  {% endif %}
+                </div>
+                {% endif %}
+              </div>
+            </div>
+            
+            <div class="card">
+              <div class="card-header">
+                <h2 class="card-title">
+                  <i class="fas fa-chart-bar"></i> Estatísticas
+                </h2>
+              </div>
+              <div class="card-body">
+                <div class="stats-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
                   <div class="stat-item" style="background: linear-gradient(135deg, var(--primary), var(--primary-dark)); padding: 1rem; border-radius: var(--radius-md); color: white; text-align: center;">
                     <div style="font-size: 1.5rem; font-weight: 700;">{{ users|length }}</div>
                     <div style="font-size: 0.75rem; opacity: 0.9;">Total Usuários</div>
@@ -801,63 +940,10 @@
                     <div style="font-size: 1.5rem; font-weight: 700;">{{ salas_info.values()|map(attribute='usadas')|sum }}</div>
                     <div style="font-size: 0.75rem; opacity: 0.9;">Salas Usadas</div>
                   </div>
-                </div>
-                
-                <div class="form-section">
-                  <h3 style="margin-bottom: 1rem; color: var(--text-primary);">Gerar Seriais</h3>
-                  <form method="POST" action="/admin/gerar_seriais">
-                    <div class="form-group">
-                      <label class="form-label">Quantidade de Seriais</label>
-                      <input type="number" name="quantidade" class="form-input" value="10" min="1" max="100">
-                    </div>
-                    <button type="submit" class="btn btn-primary">
-                      <i class="fas fa-plus"></i> Gerar Seriais
-                    </button>
-                  </form>
-                  
-                  {% if seriais %}
-                  <div style="margin-top: 1rem; padding: 1rem; background: var(--bg-secondary); border-radius: var(--radius-md); border: 1px solid var(--border);">
-                    <h4 style="margin-bottom: 0.5rem;">Seriais Gerados:</h4>
-                    <textarea readonly style="width: 100%; height: 120px; font-family: monospace; font-size: 0.75rem; padding: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius-sm);">{% for serial in seriais %}{{ serial }}{% if not loop.last %}
-{% endif %}{% endfor %}</textarea>
-                    <div style="margin-top: 0.5rem;">
-                      <a href="/admin/limpar_seriais" class="btn btn-danger btn-sm">
-                        <i class="fas fa-trash"></i> Limpar
-                      </a>
-                    </div>
+                  <div class="stat-item" style="background: linear-gradient(135deg, var(--danger), #dc2626); padding: 1rem; border-radius: var(--radius-md); color: white; text-align: center;">
+                    <div style="font-size: 1.5rem; font-weight: 700;">{{ (salas_info.values()|map(attribute='limite')|sum) - (salas_info.values()|map(attribute='usadas')|sum) }}</div>
+                    <div style="font-size: 0.75rem; opacity: 0.9;">Disponíveis</div>
                   </div>
-                  {% endif %}
-                </div>
-              </div>
-            </div>
-            
-            <div class="card">
-              <div class="card-header">
-                <h2 class="card-title">
-                  <i class="fas fa-users-cog"></i> Gerenciar Usuários
-                </h2>
-              </div>
-              <div class="card-body">
-                <div class="item-list">
-                  {% for user in users %}
-                  <div class="list-item">
-                    <div class="item-info">
-                      <h4>{{ user.username }}</h4>
-                      <p>Salas: {{ salas_info.get(user.id, {}).get('usadas', 0) }}/{{ salas_info.get(user.id, {}).get('limite', 0) }}</p>
-                    </div>
-                    <div class="item-actions">
-                      <form method="POST" action="/admin/limite_salas/{{ user.id }}" style="display: inline-flex; align-items: center; gap: 0.5rem;">
-                        <input type="number" name="limite" value="{{ salas_info.get(user.id, {}).get('limite', 10) }}" min="0" max="1000" style="width: 80px; padding: 0.25rem 0.5rem; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 0.75rem;">
-                        <button type="submit" class="btn btn-primary btn-sm">
-                          <i class="fas fa-save"></i>
-                        </button>
-                      </form>
-                      <a href="/admin/resetar_salas/{{ user.id }}" class="btn btn-warning btn-sm" style="background: var(--warning); color: white;" onclick="return confirm('Resetar salas usadas?')">
-                        <i class="fas fa-redo"></i>
-                      </a>
-                    </div>
-                  </div>
-                  {% endfor %}
                 </div>
               </div>
             </div>
@@ -866,83 +952,95 @@
           <div class="card" style="margin-top: 2rem;">
             <div class="card-header">
               <h2 class="card-title">
-                <i class="fas fa-exchange-alt"></i> Resgatar Seriais
+                <i class="fas fa-cog"></i> Gerenciar Usuários
               </h2>
             </div>
             <div class="card-body">
-              <form method="POST" action="/admin/resgatar_seriais">
-                <div class="form-group">
-                  <label class="form-label">Seriais (um por linha ou separados por vírgula)</label>
-                  <textarea name="seriais" class="form-input" rows="4" placeholder="SALA123456789ABC
-SALA987654321DEF"></textarea>
+              <div class="item-list">
+                {% for user in users %}
+                <div class="list-item">
+                  <div class="item-info">
+                    <h4>{{ user.username }}</h4>
+                    <p>Salas: {{ salas_info.get(user.id, {}).get('usadas', 0) }}/{{ salas_info.get(user.id, {}).get('limite', 0) }}</p>
+                  </div>
+                  <div class="item-actions">
+                    <form method="POST" action="/admin/limite_salas/{{ user.id }}" style="display: inline-flex; align-items: center; gap: 0.5rem;">
+                      <input type="number" name="limite" value="{{ salas_info.get(user.id, {}).get('limite', 10) }}" min="0" max="1000" style="width: 80px; padding: 0.25rem 0.5rem; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 0.75rem;">
+                      <button type="submit" class="btn btn-primary btn-sm">
+                        <i class="fas fa-save"></i>
+                      </button>
+                    </form>
+                    <a href="/admin/resetar_salas/{{ user.id }}" class="btn btn-warning btn-sm" style="background: var(--warning); color: white;" onclick="return confirm('Resetar salas usadas?')">
+                      <i class="fas fa-redo"></i>
+                    </a>
+                  </div>
                 </div>
-                <button type="submit" class="btn btn-primary">
-                  <i class="fas fa-gift"></i> Resgatar Seriais
-                </button>
-              </form>
-              
-              {% if resultado_resgate %}
-              <div style="margin-top: 1.5rem;">
-                {% if resultado_resgate.resgatados %}
-                <div class="alert alert-success">
-                  <i class="fas fa-check-circle"></i>
-                  <strong>Resgatados ({{ resultado_resgate.resgatados|length }}):</strong>
-                  {{ resultado_resgate.resgatados|join(', ') }}
-                </div>
-                {% endif %}
-                
-                {% if resultado_resgate.nao_resgatados %}
-                <div class="alert alert-danger">
-                  <i class="fas fa-exclamation-triangle"></i>
-                  <strong>Não resgatados ({{ resultado_resgate.nao_resgatados|length }}):</strong>
-                  {{ resultado_resgate.nao_resgatados|join(', ') }}
-                </div>
-                {% endif %}
-                
-                {% if resultado_resgate.mensagem %}
-                <div style="padding: 0.75rem; background: var(--bg-secondary); border-radius: var(--radius-md); border: 1px solid var(--border); font-size: 0.875rem;">
-                  <strong>Mensagem da API:</strong> {{ resultado_resgate.mensagem }}
-                </div>
-                {% endif %}
+                {% endfor %}
               </div>
-              {% endif %}
-              
-              <div style="margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border);">
-                <h4 style="margin-bottom: 1rem;">Saldo da API</h4>
-                <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
-                  <a href="/admin/saldo_salas" class="btn btn-primary">
-                    <i class="fas fa-sync"></i> Verificar Saldo
-                  </a>
-                  <a href="/admin/testar_api" class="btn btn-warning" style="background: var(--warning); color: white;">
-                    <i class="fas fa-bug"></i> Testar API
-                  </a>
-                  {% if saldo_salas %}
-                  <div style="padding: 0.5rem 1rem; background: var(--bg-secondary); border-radius: var(--radius-md); border: 1px solid var(--border); font-weight: 500;">
-                    Saldo: {{ saldo_salas }}
+            </div>
+          </div>
+          
+          <div class="card" style="margin-top: 2rem;">
+            <div class="card-header">
+              <h2 class="card-title">
+                <i class="fas fa-tools"></i> Ferramentas Avançadas
+              </h2>
+            </div>
+            <div class="card-body">
+              <div class="content-grid">
+                <div>
+                  <h4 style="margin-bottom: 1rem;">Gerar Seriais</h4>
+                  <form method="POST" action="/admin/gerar_seriais">
+                    <div class="form-group">
+                      <label class="form-label">Quantidade</label>
+                      <input type="number" name="quantidade" class="form-input" value="10" min="1" max="100">
+                    </div>
+                    <button type="submit" class="btn btn-primary">
+                      <i class="fas fa-plus"></i> Gerar
+                    </button>
+                  </form>
+                  
+                  {% if seriais %}
+                  <div style="margin-top: 1rem; padding: 1rem; background: var(--bg-secondary); border-radius: var(--radius-md); border: 1px solid var(--border);">
+                    <h5 style="margin-bottom: 0.5rem;">Seriais:</h5>
+                    <textarea readonly style="width: 100%; height: 100px; font-family: monospace; font-size: 0.75rem; padding: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius-sm);">{% for serial in seriais %}{{ serial }}{% if not loop.last %}
+{% endif %}{% endfor %}</textarea>
+                    <a href="/admin/limpar_seriais" class="btn btn-danger btn-sm" style="margin-top: 0.5rem;">
+                      <i class="fas fa-trash"></i> Limpar
+                    </a>
                   </div>
                   {% endif %}
                 </div>
                 
-                {% if teste_api %}
-                <div style="margin-top: 1rem; padding: 1rem; background: var(--bg-secondary); border-radius: var(--radius-md); border: 1px solid var(--border);">
-                  <h5 style="margin-bottom: 1rem;">Teste da API:</h5>
-                  <div style="max-height: 300px; overflow-y: auto;">
-                    {% for teste in teste_api %}
-                    <div style="margin-bottom: 1rem; padding: 0.75rem; background: var(--bg-primary); border-radius: var(--radius-sm); border: 1px solid var(--border);">
-                      <div style="font-weight: 600; margin-bottom: 0.5rem;">{{ teste.url }}</div>
-                      <div style="font-size: 0.75rem; color: var(--text-secondary);">
-                        <strong>Status:</strong> {{ teste.status }} | 
-                        <strong>Content-Type:</strong> {{ teste.content_type }}
-                        {% if teste.json_keys != 'N/A' %} | <strong>JSON Keys:</strong> {{ teste.json_keys }}{% endif %}
-                      </div>
-                      <div style="font-size: 0.75rem; margin-top: 0.5rem; font-family: monospace; background: #f8f9fa; padding: 0.5rem; border-radius: 4px; word-break: break-all;">
-                        {{ teste.response_preview }}
-                      </div>
+                <div>
+                  <h4 style="margin-bottom: 1rem;">Resgatar Seriais</h4>
+                  <form method="POST" action="/admin/resgatar_seriais">
+                    <div class="form-group">
+                      <label class="form-label">Seriais</label>
+                      <textarea name="seriais" class="form-input" rows="3" placeholder="SALA123..."></textarea>
                     </div>
-                    {% endfor %}
+                    <button type="submit" class="btn btn-primary">
+                      <i class="fas fa-gift"></i> Resgatar
+                    </button>
+                  </form>
+                  
+                  {% if resultado_resgate %}
+                  <div style="margin-top: 1rem;">
+                    {% if resultado_resgate.resgatados %}
+                    <div class="alert alert-success">
+                      <i class="fas fa-check-circle"></i>
+                      Resgatados: {{ resultado_resgate.resgatados|join(', ') }}
+                    </div>
+                    {% endif %}
+                    {% if resultado_resgate.nao_resgatados %}
+                    <div class="alert alert-danger">
+                      <i class="fas fa-exclamation-triangle"></i>
+                      Falhou: {{ resultado_resgate.nao_resgatados|join(', ') }}
+                    </div>
+                    {% endif %}
                   </div>
+                  {% endif %}
                 </div>
-                {% endif %}
               </div>
             </div>
           </div>
