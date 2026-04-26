@@ -569,35 +569,6 @@ def _test_salasff_api(api_key: str) -> dict:
             continue
     
     return {"status": "error", "message": "API não responde ou chave inválida"}
-    from dotenv import load_dotenv
-    load_dotenv()
-    API_KEY = os.getenv("SALASFF_KEY", "266vq0badxid7jpcf96t")
-    import requests as req
-    try:
-        # Tenta diferentes endpoints
-        endpoints = [
-            f"https://salasff.com/modos?key={API_KEY}",
-            f"https://salasff.com/api/saldo?key={API_KEY}",
-            f"https://salasff.com/saldo?key={API_KEY}"
-        ]
-        
-        for url in endpoints:
-            try:
-                resp = req.get(url, timeout=10, headers={'User-Agent': 'SelfBot-Manager/1.0'})
-                if resp.status_code == 200:
-                    content_type = resp.headers.get('content-type', '')
-                    if 'application/json' in content_type:
-                        data = resp.json()
-                        if 'salas' in data:
-                            return jsonify({"status": "ok", "salas": data['salas']})
-                        elif 'saldo' in data:
-                            return jsonify({"status": "ok", "salas": data['saldo']})
-            except Exception:
-                continue
-                
-        return jsonify({"status": "error", "message": "API não retornou dados válidos"})
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)})
 
 
 @app.route("/admin/saldo_salas")

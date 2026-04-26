@@ -1418,13 +1418,12 @@
       });
       
       // Verifica se há mensagens de feedback para mostrar a aba correta
-      {% if msg_gerar %}
-      showPage('gerar', document.querySelector('[onclick*="gerar"]'));
-      {% elif msg and '#usuarios' in request.url %}
-      showPage('usuarios', document.querySelector('[onclick*="usuarios"]'));
-      {% elif msg and '#keys' in request.url %}
-      showPage('keys', document.querySelector('[onclick*="keys"]'));
-      {% endif %}
+      if (window.location.hash.includes('gerar') || document.querySelector('.alert')) {
+        const gerarLink = document.querySelector('[onclick*="gerar"]');
+        if (gerarLink) {
+          showPage('gerar', gerarLink);
+        }
+      }
     });
   </script>
 </body>
