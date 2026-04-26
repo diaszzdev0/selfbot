@@ -280,7 +280,9 @@ def admin():
     seriais = session.pop("seriais", None)
     resultado_resgate = session.pop("resultado_resgate", None)
     saldo_salas = session.pop("saldo_salas", None)
-    return render_template("admin.html", users=users, keys=keys, status=status, salas_info=salas_info, seriais=seriais, resultado_resgate=resultado_resgate, saldo_salas=saldo_salas)
+    teste_api = session.pop("teste_api", None)
+    return render_template("admin.html", users=users, keys=keys, status=status, salas_info=salas_info, 
+                         seriais=seriais, resultado_resgate=resultado_resgate, saldo_salas=saldo_salas, teste_api=teste_api)
 
 
 @app.route("/admin/criar_usuario", methods=["POST"])
@@ -378,10 +380,28 @@ def admin_api_saldo_total():
     API_KEY = os.getenv("SALASFF_KEY", "266vq0badxid7jpcf96t")
     import requests as req
     try:
-        resp = req.get(f"https://salasff.com/modos?key={API_KEY}", timeout=10)
-        data = resp.json()
-        total = data.get("salas", 0)
-        return jsonify({"status": "ok", "salas": total})
+        # Tenta diferentes endpoints
+        endpoints = [
+            f"https://salasff.com/modos?key={API_KEY}",
+            f"https://salasff.com/api/saldo?key={API_KEY}",
+            f"https://salasff.com/saldo?key={API_KEY}"
+        ]
+        
+        for url in endpoints:
+            try:
+                resp = req.get(url, timeout=10, headers={'User-Agent': 'SelfBot-Manager/1.0'})
+                if resp.status_code == 200:
+                    content_type = resp.headers.get('content-type', '')
+                    if 'application/json' in content_type:
+                        data = resp.json()
+                        if 'salas' in data:
+                            return jsonify({"status": "ok", "salas": data['salas']})
+                        elif 'saldo' in data:
+                            return jsonify({"status": "ok", "salas": data['saldo']})
+            except Exception:
+                continue
+                
+        return jsonify({"status": "error", "message": "API não retornou dados válidos"})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)})
 
@@ -394,18 +414,42 @@ def saldo_salas():
     API_KEY = os.getenv("SALASFF_KEY", "266vq0badxid7jpcf96t")
     import requests as req
     try:
-        resp = req.get(f"https://salasff.com/api?key={API_KEY}&action=saldo", timeout=10)
-        texto = resp.text.strip()
-        if not texto:
-            saldo = f"API retornou resposta vazia (HTTP {resp.status_code})"
-        else:
+        # Tenta diferentes endpoints da API
+        endpoints = [
+            f"https://salasff.com/api/saldo?key={API_KEY}",
+            f"https://salasff.com/saldo?key={API_KEY}",
+            f"https://salasff.com/modos?key={API_KEY}"
+        ]
+        
+        saldo = None
+        for url in endpoints:
             try:
-                data = resp.json()
-                saldo = data.get("salas", f"Campo 'salas' não encontrado. Resposta: {texto[:200]}")
+                resp = req.get(url, timeout=10, headers={'User-Agent': 'SelfBot-Manager/1.0'})
+                if resp.status_code == 200:
+                    content_type = resp.headers.get('content-type', '')
+                    if 'application/json' in content_type:
+                        data = resp.json()
+                        if 'saldo' in data:
+                            saldo = data['saldo']
+                            break
+                        elif 'salas' in data:
+                            saldo = data['salas']
+                            break
+                    else:
+                        # Se não é JSON, verifica se é um número simples
+                        texto = resp.text.strip()
+                        if texto.isdigit():
+                            saldo = int(texto)
+                            break
             except Exception:
-                saldo = f"Resposta inválida: {texto[:200]}"
+                continue
+        
+        if saldo is None:
+            saldo = "Erro: API não retornou dados válidos. Verifique a chave da API."
+                
     except Exception as e:
         saldo = f"Erro de conexão: {e}"
+    
     session["saldo_salas"] = saldo
     return redirect(url_for("admin"))
 
@@ -428,31 +472,97 @@ def gerar_seriais():
 def resgatar_seriais():
     from dotenv import load_dotenv
     load_dotenv()
-    API_KEY = os.getenv("SALASFF_KEY", "ny2dizaul89qi2d2jgzm")
+    API_KEY = os.getenv("SALASFF_KEY", "266vq0badxid7jpcf96t")
     import requests as req
     raw = request.form.get("seriais", "")
     seriais = [s.strip() for s in raw.replace(",", "\n").splitlines() if s.strip()]
     if not seriais:
+        session["resultado_resgate"] = {"resgatados": [], "nao_resgatados": [], "mensagem": "Nenhum serial fornecido"}
         return redirect(url_for("admin"))
+    
     seriais_str = ",".join(seriais)
-    url = f"https://salasff.com/resgatar?key={API_KEY}&serials={seriais_str}"
-    try:
-        resp = req.get(url, timeout=15)
-        data = resp.json()
-        session["resultado_resgate"] = {
-            "resgatados": data.get("codigos_resgatados", []),
-            "nao_resgatados": data.get("codigos_nao_resgatados", []),
-            "mensagem": data.get("mensagem", ""),
-        }
-    except Exception as e:
-        session["resultado_resgate"] = {"resgatados": [], "nao_resgatados": [], "mensagem": str(e)}
+    
+    # Tenta diferentes endpoints para resgate
+    endpoints = [
+        f"https://salasff.com/resgatar?key={API_KEY}&serials={seriais_str}",
+        f"https://salasff.com/api/resgatar?key={API_KEY}&serials={seriais_str}",
+        f"https://salasff.com/redeem?key={API_KEY}&codes={seriais_str}"
+    ]
+    
+    for url in endpoints:
+        try:
+            resp = req.get(url, timeout=15, headers={'User-Agent': 'SelfBot-Manager/1.0'})
+            if resp.status_code == 200:
+                content_type = resp.headers.get('content-type', '')
+                if 'application/json' in content_type:
+                    data = resp.json()
+                    session["resultado_resgate"] = {
+                        "resgatados": data.get("codigos_resgatados", data.get("success", [])),
+                        "nao_resgatados": data.get("codigos_nao_resgatados", data.get("failed", [])),
+                        "mensagem": data.get("mensagem", data.get("message", "Resgate processado")),
+                    }
+                    return redirect(url_for("admin"))
+        except Exception:
+            continue
+    
+    session["resultado_resgate"] = {
+        "resgatados": [], 
+        "nao_resgatados": seriais, 
+        "mensagem": "Erro: API não disponível ou chave inválida"
+    }
     return redirect(url_for("admin"))
 
 
-@app.route("/admin/limpar_seriais")
+@app.route("/admin/testar_api")
 @admin_required
-def limpar_seriais():
-    session.pop("seriais", None)
+def testar_api():
+    from dotenv import load_dotenv
+    load_dotenv()
+    API_KEY = os.getenv("SALASFF_KEY", "266vq0badxid7jpcf96t")
+    import requests as req
+    
+    resultados = []
+    
+    # Lista de endpoints para testar
+    endpoints = [
+        f"https://salasff.com/modos?key={API_KEY}",
+        f"https://salasff.com/api/saldo?key={API_KEY}", 
+        f"https://salasff.com/saldo?key={API_KEY}",
+        f"https://salasff.com/api?key={API_KEY}&action=saldo",
+        "https://salasff.com/"
+    ]
+    
+    for url in endpoints:
+        try:
+            resp = req.get(url, timeout=10, headers={'User-Agent': 'SelfBot-Manager/1.0'})
+            content_type = resp.headers.get('content-type', 'N/A')
+            
+            resultado = {
+                'url': url,
+                'status': resp.status_code,
+                'content_type': content_type,
+                'response_preview': resp.text[:200] + '...' if len(resp.text) > 200 else resp.text
+            }
+            
+            if 'application/json' in content_type:
+                try:
+                    data = resp.json()
+                    resultado['json_keys'] = list(data.keys()) if isinstance(data, dict) else 'Not a dict'
+                except:
+                    resultado['json_keys'] = 'Invalid JSON'
+            
+            resultados.append(resultado)
+            
+        except Exception as e:
+            resultados.append({
+                'url': url,
+                'status': 'ERROR',
+                'content_type': 'N/A',
+                'response_preview': str(e),
+                'json_keys': 'N/A'
+            })
+    
+    session["teste_api"] = resultados
     return redirect(url_for("admin"))
 
 

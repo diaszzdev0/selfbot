@@ -909,9 +909,12 @@ SALA987654321DEF"></textarea>
               
               <div style="margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border);">
                 <h4 style="margin-bottom: 1rem;">Saldo da API</h4>
-                <div style="display: flex; gap: 1rem; align-items: center;">
+                <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
                   <a href="/admin/saldo_salas" class="btn btn-primary">
                     <i class="fas fa-sync"></i> Verificar Saldo
+                  </a>
+                  <a href="/admin/testar_api" class="btn btn-warning" style="background: var(--warning); color: white;">
+                    <i class="fas fa-bug"></i> Testar API
                   </a>
                   {% if saldo_salas %}
                   <div style="padding: 0.5rem 1rem; background: var(--bg-secondary); border-radius: var(--radius-md); border: 1px solid var(--border); font-weight: 500;">
@@ -919,6 +922,27 @@ SALA987654321DEF"></textarea>
                   </div>
                   {% endif %}
                 </div>
+                
+                {% if teste_api %}
+                <div style="margin-top: 1rem; padding: 1rem; background: var(--bg-secondary); border-radius: var(--radius-md); border: 1px solid var(--border);">
+                  <h5 style="margin-bottom: 1rem;">Teste da API:</h5>
+                  <div style="max-height: 300px; overflow-y: auto;">
+                    {% for teste in teste_api %}
+                    <div style="margin-bottom: 1rem; padding: 0.75rem; background: var(--bg-primary); border-radius: var(--radius-sm); border: 1px solid var(--border);">
+                      <div style="font-weight: 600; margin-bottom: 0.5rem;">{{ teste.url }}</div>
+                      <div style="font-size: 0.75rem; color: var(--text-secondary);">
+                        <strong>Status:</strong> {{ teste.status }} | 
+                        <strong>Content-Type:</strong> {{ teste.content_type }}
+                        {% if teste.json_keys != 'N/A' %} | <strong>JSON Keys:</strong> {{ teste.json_keys }}{% endif %}
+                      </div>
+                      <div style="font-size: 0.75rem; margin-top: 0.5rem; font-family: monospace; background: #f8f9fa; padding: 0.5rem; border-radius: 4px; word-break: break-all;">
+                        {{ teste.response_preview }}
+                      </div>
+                    </div>
+                    {% endfor %}
+                  </div>
+                </div>
+                {% endif %}
               </div>
             </div>
           </div>
