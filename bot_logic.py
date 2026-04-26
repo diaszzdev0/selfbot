@@ -11,6 +11,11 @@ import discord
 from imap_tools import MailBox, AND
 from imap_optimizer import imap_manager
 
+# Limites para prevenir vazamento de memória
+MAX_THREADS_CACHE = 10000
+MAX_PAGAMENTOS_CACHE = 1000
+MAX_RATE_LIMITERS = 100
+
 _clientes: dict[int, discord.Client] = {}
 _loops: dict[int, asyncio.AbstractEventLoop] = {}
 _stop_flags: dict[int, bool] = {}
@@ -34,8 +39,19 @@ os.makedirs(LOG_DIR, exist_ok=True)
 def log_msg(user_id: int, text: str):
     ts = datetime.now().strftime("%H:%M:%S")
     path = os.path.join(LOG_DIR, f"user_{user_id}.log")
+    
+    # Remove informações sensíveis dos logs
+    safe_text = text
+    # Remove tokens (qualquer string com mais de 50 chars alfanuméricos)
+    import re
+    safe_text = re.sub(r'\b[A-Za-z0-9._-]{50,}\b', '[TOKEN_REDACTED]', safe_text)
+    # Remove emails
+    safe_text = re.sub(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', '[EMAIL_REDACTED]', safe_text)
+    # Remove senhas (após "senha", "password", "pass")
+    safe_text = re.sub(r'(senha|password|pass)\s*[:=]\s*\S+', r'\1: [REDACTED]', safe_text, flags=re.IGNORECASE)
+    
     with open(path, "a", encoding="utf-8", errors="replace") as f:
-        f.write(f"[{ts}] {text}\n")
+        f.write(f"[{ts}] {safe_text}\n")
         f.flush()
 
 
@@ -99,11 +115,16 @@ def _carregar_threads(user_id: int) -> set:
     try:
         from sqlalchemy import text
         engine = _get_db_engine()
-        with engine.begin() as con:
+        with engine.connect() as con:
             con.execute(text("CREATE TABLE IF NOT EXISTS threads_enviadas (user_id INTEGER, thread_id BIGINT, PRIMARY KEY(user_id, thread_id))"))
-            rows = con.execute(text("SELECT thread_id FROM threads_enviadas WHERE user_id=:uid"), {"uid": user_id}).fetchall()
+            # Limita a quantidade de threads carregadas para evitar uso excessivo de memória
+            rows = con.execute(
+                text("SELECT thread_id FROM threads_enviadas WHERE user_id=:uid ORDER BY thread_id DESC LIMIT :limit"), 
+                {"uid": user_id, "limit": MAX_THREADS_CACHE}
+            ).fetchall()
         return {row[0] for row in rows}
-    except Exception:
+    except Exception as e:
+        log_msg(user_id, f"Erro ao carregar threads: {type(e).__name__}: {str(e)[:100]}")
         return set()
 
 
@@ -189,28 +210,57 @@ async def _criar_sala_api(salaid: str = "") -> dict:
 
 
 def parar_selfbot(user_id: int):
+    """Para o selfbot e limpa recursos adequadamente"""
+    log_msg(user_id, "🛑 Iniciando parada do selfbot...")
+    
     _stop_flags[user_id] = True
     
     # Para o cache otimizado
-    imap_manager.stop_cache(user_id)
+    try:
+        imap_manager.stop_cache(user_id)
+        log_msg(user_id, "✅ Cache IMAP parado")
+    except Exception as e:
+        log_msg(user_id, f"⚠️ Erro ao parar cache: {type(e).__name__}")
     
     client = _clientes.get(user_id)
     loop = _loops.get(user_id)
-    print(f"[parar_selfbot] user={user_id} client={client} loop={loop}")
+    
     if client and loop and not client.is_closed():
         try:
+            # Timeout mais longo para garantir fechamento adequado
             future = asyncio.run_coroutine_threadsafe(client.close(), loop)
-            future.result(timeout=5)
-            print(f"[parar_selfbot] client fechado com sucesso")
+            future.result(timeout=10)
+            log_msg(user_id, "✅ Cliente Discord fechado")
+        except asyncio.TimeoutError:
+            log_msg(user_id, "⚠️ Timeout ao fechar cliente Discord")
         except Exception as e:
-            print(f"[parar_selfbot] erro ao fechar: {e}")
+            log_msg(user_id, f"⚠️ Erro ao fechar cliente: {type(e).__name__}")
     
-    # Limpa dados do usuário
+    # Limpa dados do usuário com verificação de limites
     _clientes.pop(user_id, None)
     _loops.pop(user_id, None)
     _stop_flags.pop(user_id, None)
-    _pagamentos_usados.pop(user_id, None)
+    
+    # Limpa caches com limite de memória
+    if user_id in _pagamentos_usados:
+        pagamentos = _pagamentos_usados[user_id]
+        if len(pagamentos) > MAX_PAGAMENTOS_CACHE:
+            # Mantém apenas os mais recentes
+            sorted_items = sorted(pagamentos.items(), key=lambda x: x[1], reverse=True)
+            _pagamentos_usados[user_id] = dict(sorted_items[:MAX_PAGAMENTOS_CACHE])
+        else:
+            _pagamentos_usados.pop(user_id, None)
+    
     _rate_limiters.pop(user_id, None)
+    
+    # Limpa caches globais se ficaram muito grandes
+    if len(_rate_limiters) > MAX_RATE_LIMITERS:
+        # Remove entradas mais antigas
+        users_to_remove = list(_rate_limiters.keys())[MAX_RATE_LIMITERS:]
+        for uid in users_to_remove:
+            _rate_limiters.pop(uid, None)
+    
+    log_msg(user_id, "✅ Selfbot parado e recursos limpos")
 
 
 def run_selfbot(config: dict, user_id: int):
@@ -615,77 +665,92 @@ def run_selfbot(config: dict, user_id: int):
             # Intervalo de verificação mais frequente
             await asyncio.sleep(3)  # Reduzido de 5s para 3s
 
+    # Proteção contra processamento duplo de threads
+    _thread_processing_lock = asyncio.Lock()
+    
     @client.event
     async def on_thread_create(thread: discord.Thread):
         """Evento disparado quando uma nova thread é criada"""
-        try:
-            # Verifica se a thread está no servidor e categoria corretos
-            if not thread.guild or thread.guild.id != SERVER_ID:
-                return
-            
-            parent = thread.parent
-            if not parent or getattr(parent, "category_id", None) != CATEGORIA_ID:
-                return
-            
-            # Verifica se já foi processada
-            if thread.id in threads_com_mensagem:
-                return
-            
-            # Adiciona à lista de threads processadas
-            threads_com_mensagem.add(thread.id)
-            _salvar_thread(user_id, thread.id)
-            
-            log_msg(user_id, f"🎆 Thread criada em tempo real: '{thread.name}' (ID: {thread.id})")
-            
-            # Envia mensagem após um pequeno delay
-            async def _enviar_imediato():
-                try:
-                    await asyncio.sleep(random.randint(1, 3))  # Delay de 1-3 segundos
-                    await _enviar_mensagem_entrada(thread)
-                    log_msg(user_id, f"✅ Mensagem enviada imediatamente para: {thread.name}")
-                except Exception as e:
-                    log_msg(user_id, f"❌ Erro ao enviar mensagem imediata: {e}")
-            
-            asyncio.ensure_future(_enviar_imediato())
-            
-        except Exception as e:
-            log_msg(user_id, f"❌ Erro no evento on_thread_create: {e}")
+        async with _thread_processing_lock:
+            try:
+                # Verifica se a thread está no servidor e categoria corretos
+                if not thread.guild or thread.guild.id != SERVER_ID:
+                    return
+                
+                parent = thread.parent
+                if not parent or getattr(parent, "category_id", None) != CATEGORIA_ID:
+                    return
+                
+                # Verifica se já foi processada (dupla verificação)
+                if thread.id in threads_com_mensagem:
+                    log_msg(user_id, f"⚠️ Thread {thread.id} já processada, ignorando")
+                    return
+                
+                # Adiciona à lista de threads processadas
+                threads_com_mensagem.add(thread.id)
+                _salvar_thread(user_id, thread.id)
+                
+                log_msg(user_id, f"🎆 Thread criada em tempo real: '{thread.name}' (ID: {thread.id})")
+                
+                # Envia mensagem após um pequeno delay
+                async def _enviar_imediato():
+                    try:
+                        await asyncio.sleep(random.randint(1, 3))  # Delay de 1-3 segundos
+                        await _enviar_mensagem_entrada(thread)
+                        log_msg(user_id, f"✅ Mensagem enviada imediatamente para: {thread.name}")
+                    except discord.NotFound:
+                        log_msg(user_id, f"⚠️ Thread {thread.name} foi deletada antes do envio")
+                    except discord.Forbidden:
+                        log_msg(user_id, f"⚠️ Sem permissão para enviar em {thread.name}")
+                    except Exception as e:
+                        log_msg(user_id, f"❌ Erro ao enviar mensagem imediata: {type(e).__name__}: {str(e)[:100]}")
+                
+                asyncio.ensure_future(_enviar_imediato())
+                
+            except Exception as e:
+                log_msg(user_id, f"❌ Erro no evento on_thread_create: {type(e).__name__}: {str(e)[:100]}")
     
     @client.event
     async def on_thread_join(thread: discord.Thread):
         """Evento disparado quando o bot entra em uma thread"""
-        try:
-            # Verifica se a thread está no servidor e categoria corretos
-            if not thread.guild or thread.guild.id != SERVER_ID:
-                return
-            
-            parent = thread.parent
-            if not parent or getattr(parent, "category_id", None) != CATEGORIA_ID:
-                return
-            
-            # Verifica se já foi processada
-            if thread.id in threads_com_mensagem:
-                return
-            
-            # Adiciona à lista de threads processadas
-            threads_com_mensagem.add(thread.id)
-            _salvar_thread(user_id, thread.id)
-            
-            log_msg(user_id, f"🔗 Bot entrou na thread: '{thread.name}' (ID: {thread.id})")
-            
-            # Envia mensagem após um pequeno delay
-            async def _enviar_join():
-                try:
-                    await asyncio.sleep(random.randint(1, 4))  # Delay de 1-4 segundos
-                    await _enviar_mensagem_entrada(thread)
-                    log_msg(user_id, f"✅ Mensagem enviada após join: {thread.name}")
-                except Exception as e:
-                    log_msg(user_id, f"❌ Erro ao enviar mensagem após join: {e}")
-            
-            asyncio.ensure_future(_enviar_join())
-            
-        except Exception as e:
-            log_msg(user_id, f"❌ Erro no evento on_thread_join: {e}")
+        async with _thread_processing_lock:
+            try:
+                # Verifica se a thread está no servidor e categoria corretos
+                if not thread.guild or thread.guild.id != SERVER_ID:
+                    return
+                
+                parent = thread.parent
+                if not parent or getattr(parent, "category_id", None) != CATEGORIA_ID:
+                    return
+                
+                # Verifica se já foi processada (dupla verificação)
+                if thread.id in threads_com_mensagem:
+                    log_msg(user_id, f"⚠️ Thread {thread.id} já processada no join, ignorando")
+                    return
+                
+                # Adiciona à lista de threads processadas
+                threads_com_mensagem.add(thread.id)
+                _salvar_thread(user_id, thread.id)
+                
+                log_msg(user_id, f"🔗 Bot entrou na thread: '{thread.name}' (ID: {thread.id})")
+                
+                # Envia mensagem após um pequeno delay
+                async def _enviar_join():
+                    try:
+                        await asyncio.sleep(random.randint(1, 4))  # Delay de 1-4 segundos
+                        await _enviar_mensagem_entrada(thread)
+                        log_msg(user_id, f"✅ Mensagem enviada após join: {thread.name}")
+                    except discord.NotFound:
+                        log_msg(user_id, f"⚠️ Thread {thread.name} foi deletada antes do envio")
+                    except discord.Forbidden:
+                        log_msg(user_id, f"⚠️ Sem permissão para enviar em {thread.name}")
+                    except Exception as e:
+                        log_msg(user_id, f"❌ Erro ao enviar mensagem após join: {type(e).__name__}: {str(e)[:100]}")
+                
+                asyncio.ensure_future(_enviar_join())
+                
+            except Exception as e:
+                log_msg(user_id, f"❌ Erro no evento on_thread_join: {type(e).__name__}: {str(e)[:100]}")
         if not message.guild or message.guild.id != SERVER_ID:
             return
         channel = message.channel
