@@ -232,20 +232,34 @@ def run_selfbot(config: dict, user_id: int):
 
     # Configurações para reduzir desconexões
     log_msg(user_id, "⚙️ Configurando cliente Discord...")
-    intents = discord.Intents.default()
-    intents.message_content = True
-    intents.guilds = True
-    intents.guild_messages = True
     
-    client = discord.Client(
-        chunk_guilds_at_startup=False,
-        intents=intents,
-        heartbeat_timeout=60.0,  # Timeout do heartbeat
-        guild_ready_timeout=10.0,  # Timeout para guild ready
-        max_messages=1000  # Limita cache de mensagens
-    )
+    try:
+        intents = discord.Intents.default()
+        intents.message_content = True
+        intents.guilds = True
+        intents.guild_messages = True
+        log_msg(user_id, "✅ Intents configurados")
+        
+        client = discord.Client(
+            chunk_guilds_at_startup=False,
+            intents=intents,
+            heartbeat_timeout=60.0,
+            max_messages=1000
+        )
+        log_msg(user_id, "✅ Cliente Discord criado")
+        
+    except Exception as e:
+        log_msg(user_id, f"❌ Erro ao criar cliente: {e}")
+        # Fallback com configurações mínimas
+        try:
+            log_msg(user_id, "🔄 Tentando configuração simplificada...")
+            client = discord.Client()
+            log_msg(user_id, "✅ Cliente Discord criado (modo simples)")
+        except Exception as e2:
+            log_msg(user_id, f"❌ Erro crítico ao criar cliente: {e2}")
+            return
+
     _clientes[user_id] = client
-    log_msg(user_id, "✅ Cliente Discord criado")
 
     threads_com_mensagem: set[int] = _carregar_threads(user_id)
     log_msg(user_id, f"🧵 {len(threads_com_mensagem)} thread(s) carregada(s).")
