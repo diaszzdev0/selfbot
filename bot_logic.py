@@ -215,45 +215,6 @@ def parar_selfbot(user_id: int):
 
 def run_selfbot(config: dict, user_id: int):
     log_msg(user_id, "🚀 Iniciando selfbot...")
-    
-    # Sistema de reconexão automática
-    max_tentativas = 5
-    tentativa_atual = 0
-    delay_reconexao = 30  # segundos
-    
-    while tentativa_atual < max_tentativas and not _stop_flags.get(user_id, False):
-        try:
-            tentativa_atual += 1
-            if tentativa_atual > 1:
-                log_msg(user_id, f"🔄 Tentativa de reconexão {tentativa_atual}/{max_tentativas}")
-                import time
-                time.sleep(delay_reconexao)
-            
-            _executar_bot(config, user_id)
-            
-        except discord.LoginFailure:
-            log_msg(user_id, "❌ Token inválido ou expirado - parando bot")
-            break
-        except discord.PrivilegedIntentsRequired:
-            log_msg(user_id, "❌ Intents privilegiadas não habilitadas - parando bot")
-            break
-        except Exception as e:
-            if _stop_flags.get(user_id, False):
-                log_msg(user_id, "🔴 Bot parado pelo usuário")
-                break
-            
-            log_msg(user_id, f"⚠️ Erro na conexão: {e}")
-            if tentativa_atual < max_tentativas:
-                log_msg(user_id, f"🔄 Reconectando em {delay_reconexao}s...")
-                delay_reconexao = min(int(delay_reconexao * 1.5), 300)  # Backoff exponencial, máx 5min
-            else:
-                log_msg(user_id, "❌ Máximo de tentativas atingido - parando bot")
-    
-    log_msg(user_id, "🔴 Selfbot encerrado definitivamente")
-
-
-def _executar_bot(config: dict, user_id: int):
-    log_msg(user_id, "🚀 Iniciando selfbot...")
 
     TOKEN = config.get("discord_token", "").strip()
     if not TOKEN:
@@ -555,7 +516,39 @@ def _executar_bot(config: dict, user_id: int):
         asyncio.set_event_loop(loop)
         _loops[user_id] = loop
         _stop_flags[user_id] = False
-        loop.run_until_complete(client.start(TOKEN))
+        
+        # Função async para reconexão
+        async def conectar_com_retry():
+            tentativas = 0
+            max_tentativas = 3
+            
+            while tentativas < max_tentativas and not _stop_flags.get(user_id, False):
+                try:
+                    tentativas += 1
+                    if tentativas > 1:
+                        log_msg(user_id, f"🔄 Reconectando... (tentativa {tentativas}/{max_tentativas})")
+                        await asyncio.sleep(10)  # Aguarda 10s antes de reconectar
+                    
+                    await client.start(TOKEN)
+                    break  # Se chegou aqui, conectou com sucesso
+                    
+                except discord.LoginFailure:
+                    log_msg(user_id, "❌ Token inválido ou expirado")
+                    break
+                except discord.PrivilegedIntentsRequired:
+                    log_msg(user_id, "❌ Intents privilegiadas não habilitadas")
+                    break
+                except Exception as e:
+                    if _stop_flags.get(user_id, False):
+                        log_msg(user_id, "🔴 Bot parado pelo usuário")
+                        break
+                    
+                    log_msg(user_id, f"⚠️ Erro de conexão: {e}")
+                    if tentativas >= max_tentativas:
+                        log_msg(user_id, "❌ Máximo de tentativas atingido")
+        
+        loop.run_until_complete(conectar_com_retry())
+                    
     except discord.LoginFailure:
         log_msg(user_id, "Token invalido ou expirado.")
     except discord.PrivilegedIntentsRequired:
