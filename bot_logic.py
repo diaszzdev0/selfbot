@@ -60,16 +60,64 @@ def _normalizar(texto: str) -> str:
 
 
 def _extrair_nome(conteudo: str):
+    """Extrai nome de comandos de pagamento com múltiplas variações"""
     c = conteudo.strip()
     cl = c.lower()
-    prefixos = ["pg ", "pago ", "paguei "]
-    sufixos = [" pg", " pago", " paguei"]
+    
+    # Padrões mais flexíveis para detectar comandos de pagamento
+    prefixos = [
+        "pg ", "pago ", "paguei ", "pagou ", "pag ", "p ",
+        "pg: ", "pago: ", "paguei: ", "pagou: ",
+        "pg- ", "pago- ", "paguei- ", "pagou- ",
+        "pg.", "pago.", "paguei.", "pagou.",
+        "verificar ", "check ", "buscar ", "consultar "
+    ]
+    
+    sufixos = [
+        " pg", " pago", " paguei", " pagou", " pag",
+        " :pg", " :pago", " :paguei", " :pagou",
+        " -pg", " -pago", " -paguei", " -pagou"
+    ]
+    
+    # Verifica prefixos
     for p in prefixos:
         if cl.startswith(p):
-            return c[len(p):].strip()
+            nome = c[len(p):].strip()
+            # Remove caracteres especiais do início
+            nome = re.sub(r'^[:\-.,;!?\s]+', '', nome)
+            if nome and len(nome) >= 2:
+                return nome
+    
+    # Verifica sufixos
     for s in sufixos:
         if cl.endswith(s):
-            return c[:-len(s)].strip()
+            nome = c[:-len(s)].strip()
+            # Remove caracteres especiais do final
+            nome = re.sub(r'[:\-.,;!?\s]+$', '', nome)
+            if nome and len(nome) >= 2:
+                return nome
+    
+    # Verifica padrões no meio da mensagem (ex: "verificar pagamento de João Silva")
+    patterns = [
+        r'(?:verificar|check|buscar|consultar)\s+(?:pagamento\s+(?:de|do|da)\s+)?([a-záàâãéêíóôõúç\s]{2,})',
+        r'(?:pg|pago|paguei|pagou)\s*[:\-.,;]?\s*([a-záàâãéêíóôõúç\s]{2,})',
+        r'([a-záàâãéêíóôõúç\s]{2,})\s+(?:pg|pago|paguei|pagou)\s*$'
+    ]
+    
+    for pattern in patterns:
+        match = re.search(pattern, cl, re.IGNORECASE)
+        if match:
+            nome = match.group(1).strip()
+            # Remove palavras comuns que não são nomes
+            palavras_ignorar = ['pagamento', 'de', 'do', 'da', 'para', 'por', 'em', 'no', 'na', 'o', 'a']
+            palavras = nome.split()
+            palavras_filtradas = [p for p in palavras if p.lower() not in palavras_ignorar and len(p) > 1]
+            
+            if len(palavras_filtradas) >= 1:
+                nome_final = ' '.join(palavras_filtradas)
+                if len(nome_final) >= 2:
+                    return nome_final
+    
     return None
 
 
@@ -847,6 +895,9 @@ def run_selfbot(config: dict, user_id: int):
 
         nome_busca = _extrair_nome(conteudo)
         if not nome_busca:
+            # Log para debug quando não consegue extrair nome
+            if any(palavra in conteudo.lower() for palavra in ['pg', 'pago', 'paguei', 'pagou', 'verificar', 'check']):
+                log_msg(user_id, f"⚠️ Comando detectado mas nome não extraído: '{conteudo[:50]}...'")
             return
 
         chave_pg = f"{channel.id}_{nome_busca.lower()}"
