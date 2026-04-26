@@ -532,6 +532,8 @@ def run_selfbot(config: dict, user_id: int):
         log_msg(user_id, "❌ Todas as tentativas de ping falharam")
         return False
 
+    _monitor_iniciado = False
+
     @client.event
     async def on_disconnect():
         # Só loga se não foi parada intencional
