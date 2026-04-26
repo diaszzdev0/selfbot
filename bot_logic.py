@@ -498,7 +498,39 @@ def run_selfbot(config: dict, user_id: int):
             await channel.send("Nao foi possivel criar a sala.")
             return False
 
-    _monitor_iniciado = False
+    async def _tentar_restaurar_heartbeat(client, user_id):
+        """Tenta restaurar o heartbeat sem reconectar completamente"""
+        log_msg(user_id, "🔧 Tentando restaurar heartbeat...")
+        
+        tentativas_ping = [
+            # Tentativa 1: Mudança de presença simples
+            lambda: client.change_presence(),
+            # Tentativa 2: Mudança de status
+            lambda: client.change_presence(status=discord.Status.online),
+            # Tentativa 3: Atividade temporária
+            lambda: client.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name="conexao")),
+            # Tentativa 4: Reset para padrão
+            lambda: client.change_presence(status=discord.Status.online, activity=None)
+        ]
+        
+        for i, ping_func in enumerate(tentativas_ping, 1):
+            try:
+                log_msg(user_id, f"🏓 Ping #{i}/4...")
+                await asyncio.wait_for(ping_func(), timeout=10)
+                await asyncio.sleep(3)
+                
+                # Verifica se melhorou
+                if hasattr(client, 'latency') and client.latency != float('inf'):
+                    log_msg(user_id, f"✅ Heartbeat restaurado com ping #{i} - latência: {client.latency:.3f}s")
+                    return True
+                    
+            except asyncio.TimeoutError:
+                log_msg(user_id, f"⏰ Timeout no ping #{i}")
+            except Exception as e:
+                log_msg(user_id, f"❌ Erro no ping #{i}: {type(e).__name__}")
+        
+        log_msg(user_id, "❌ Todas as tentativas de ping falharam")
+        return False
 
     @client.event
     async def on_disconnect():
@@ -624,24 +656,57 @@ def run_selfbot(config: dict, user_id: int):
                 is_connected = not client.is_closed()
                 has_good_latency = hasattr(client, 'latency') and client.latency != float('inf') and client.latency < 30.0
                 
+                # Tratamento específico para latência infinita
+                if hasattr(client, 'latency') and client.latency == float('inf'):
+                    consecutive_failures += 1
+                    log_msg(user_id, f"⚠️ Latência infinita detectada (falha #{consecutive_failures})")
+                    
+                    # Se latência infinita por mais de 1 minuto, tenta restaurar heartbeat
+                    if (current_time - last_ping).total_seconds() > 60:
+                        log_msg(user_id, "🔄 Tentando restaurar heartbeat sem reconectar...")
+                        
+                        heartbeat_restored = await _tentar_restaurar_heartbeat(client, user_id)
+                        
+                        if heartbeat_restored:
+                            consecutive_failures = 0
+                            last_ping = current_time
+                            needs_reconnect = False
+                        else:
+                            # Se não conseguiu restaurar e já faz mais de 3 minutos
+                            if (current_time - last_ping).total_seconds() > 180:
+                                log_msg(user_id, "❌ Heartbeat não restaurado há 3+ minutos - forçando reconexão")
+                                needs_reconnect = True
+                            else:
+                                needs_reconnect = False
+                    else:
+                        # Latência infinita recente, aguarda mais um pouco
+                        needs_reconnect = False
+                else:
+                    # Latência normal ou cliente desconectado
+                    needs_reconnect = False
+                
                 # Testa conectividade real tentando acessar o servidor
                 connection_test_passed = False
-                if is_connected:
+                if is_connected and not needs_reconnect:
                     try:
                         guild = client.get_guild(SERVER_ID)
                         if guild and guild.name:  # Verifica se consegue acessar dados do servidor
                             connection_test_passed = True
-                            consecutive_failures = 0
-                    except Exception:
+                            if consecutive_failures > 0:
+                                consecutive_failures = 0
+                                log_msg(user_id, "✅ Conectividade com servidor confirmada")
+                    except Exception as e:
+                        log_msg(user_id, f"⚠️ Erro ao testar servidor: {type(e).__name__}")
                         connection_test_passed = False
                 
                 # Determina se precisa reconectar
-                needs_reconnect = (
-                    not is_connected or 
-                    not has_good_latency or 
-                    not connection_test_passed or
-                    (current_time - last_ping).total_seconds() > 300  # 5 minutos sem ping
-                )
+                if not needs_reconnect:
+                    needs_reconnect = (
+                        not is_connected or 
+                        not has_good_latency or 
+                        not connection_test_passed or
+                        (current_time - last_ping).total_seconds() > 600  # 10 minutos sem ping válido
+                    )
                 
                 if needs_reconnect:
                     consecutive_failures += 1
