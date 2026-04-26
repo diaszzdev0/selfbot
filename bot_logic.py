@@ -368,10 +368,73 @@ def run_selfbot(config: dict, user_id: int):
         if not _monitor_iniciado:
             _monitor_iniciado = True
             await asyncio.sleep(3)
+            asyncio.ensure_future(verificar_threads_iniciais())  # Nova função
             asyncio.ensure_future(monitorar_threads())
             asyncio.ensure_future(atualizar_cache_imap())
             asyncio.ensure_future(health_check())  # Inicia health check
 
+    async def verificar_threads_iniciais():
+        """Verifica threads existentes na inicialização para não perder nenhuma"""
+        log_msg(user_id, "🔍 Verificando threads existentes na inicialização...")
+        
+        try:
+            guild = client.get_guild(SERVER_ID)
+            if not guild:
+                log_msg(user_id, "⚠️ Servidor não encontrado na verificação inicial")
+                return
+                
+            cat = guild.get_channel(CATEGORIA_ID)
+            if not cat:
+                log_msg(user_id, "⚠️ Categoria não encontrada na verificação inicial")
+                return
+            
+            threads_processadas = 0
+            threads_novas = 0
+            
+            for canal in cat.channels:
+                try:
+                    # Threads ativas
+                    for thread in getattr(canal, "threads", []):
+                        threads_processadas += 1
+                        if thread.id not in threads_com_mensagem:
+                            threads_novas += 1
+                            threads_com_mensagem.add(thread.id)
+                            _salvar_thread(user_id, thread.id)
+                            
+                            log_msg(user_id, f"🔄 Thread existente processada: '{thread.name}'")
+                            
+                            # Envia mensagem com delay para não sobrecarregar
+                            async def _enviar_inicial(t=thread, delay=threads_novas):
+                                try:
+                                    await asyncio.sleep(delay * 2)  # Delay escalonado
+                                    await _enviar_mensagem_entrada(t)
+                                    log_msg(user_id, f"✅ Mensagem inicial enviada para: {t.name}")
+                                except Exception as e:
+                                    log_msg(user_id, f"❌ Erro ao enviar mensagem inicial: {e}")
+                            
+                            asyncio.ensure_future(_enviar_inicial())
+                    
+                    # Threads arquivadas recentes (apenas últimas 6 horas)
+                    try:
+                        async for thread in canal.archived_threads(limit=20):
+                            if thread.created_at and (datetime.now(thread.created_at.tzinfo) - thread.created_at).total_seconds() < 21600:  # 6 horas
+                                threads_processadas += 1
+                                if thread.id not in threads_com_mensagem:
+                                    threads_novas += 1
+                                    threads_com_mensagem.add(thread.id)
+                                    _salvar_thread(user_id, thread.id)
+                                    log_msg(user_id, f"📁 Thread arquivada processada: '{thread.name}'")
+                    except Exception as e:
+                        log_msg(user_id, f"⚠️ Erro ao verificar threads arquivadas em {canal.name}: {e}")
+                        
+                except Exception as e:
+                    log_msg(user_id, f"⚠️ Erro ao processar canal {canal.name}: {e}")
+            
+            log_msg(user_id, f"✅ Verificação inicial concluída: {threads_processadas} threads encontradas, {threads_novas} novas")
+            
+        except Exception as e:
+            log_msg(user_id, f"❌ Erro na verificação inicial de threads: {e}")
+    
     async def atualizar_cache_imap():
         """Task removida - agora usa sistema otimizado global"""
         log_msg(user_id, "🚀 Sistema de cache otimizado ativado!")
@@ -458,34 +521,171 @@ def run_selfbot(config: dict, user_id: int):
     
     async def monitorar_threads():
         em_envio: set[int] = set()
-        while True:
+        ultima_verificacao = datetime.now()
+        
+        while not _stop_flags.get(user_id, False):
             try:
                 guild = client.get_guild(SERVER_ID)
-                if guild:
-                    cat = guild.get_channel(CATEGORIA_ID)
-                    if cat:
-                        vistas = set()
-                        for canal in cat.channels:
-                            for thread in getattr(canal, "threads", []):
-                                if thread.id in vistas:
-                                    continue
-                                vistas.add(thread.id)
-                                if thread.id not in threads_com_mensagem and thread.id not in em_envio:
-                                    em_envio.add(thread.id)
-                                    threads_com_mensagem.add(thread.id)
-                                    _salvar_thread(user_id, thread.id)
-                                    log_msg(user_id, f"🧵 Nova thread: '{thread.name}'")
-                                    async def _enviar(t=thread):
-                                        await asyncio.sleep(2)
-                                        await _enviar_mensagem_entrada(t)
-                                        em_envio.discard(t.id)
-                                    asyncio.ensure_future(_enviar())
+                if not guild:
+                    log_msg(user_id, "⚠️ Servidor não encontrado no monitoramento")
+                    await asyncio.sleep(10)
+                    continue
+                    
+                cat = guild.get_channel(CATEGORIA_ID)
+                if not cat:
+                    log_msg(user_id, "⚠️ Categoria não encontrada no monitoramento")
+                    await asyncio.sleep(10)
+                    continue
+                
+                threads_encontradas = set()
+                novas_threads = []
+                
+                # Verifica threads ativas em todos os canais da categoria
+                for canal in cat.channels:
+                    try:
+                        # Threads ativas (visíveis)
+                        for thread in getattr(canal, "threads", []):
+                            threads_encontradas.add(thread.id)
+                            if thread.id not in threads_com_mensagem and thread.id not in em_envio:
+                                novas_threads.append(thread)
+                        
+                        # Busca threads arquivadas recentes (últimas 24h)
+                        try:
+                            async for thread in canal.archived_threads(limit=50):
+                                threads_encontradas.add(thread.id)
+                                # Só processa threads criadas nas últimas 2 horas
+                                if thread.created_at and (datetime.now(thread.created_at.tzinfo) - thread.created_at).total_seconds() < 7200:
+                                    if thread.id not in threads_com_mensagem and thread.id not in em_envio:
+                                        novas_threads.append(thread)
+                        except Exception as e:
+                            log_msg(user_id, f"⚠️ Erro ao buscar threads arquivadas em {canal.name}: {e}")
+                            
+                    except Exception as e:
+                        log_msg(user_id, f"⚠️ Erro ao processar canal {canal.name}: {e}")
+                
+                # Processa novas threads encontradas
+                for thread in novas_threads:
+                    if thread.id not in em_envio:  # Dupla verificação
+                        em_envio.add(thread.id)
+                        threads_com_mensagem.add(thread.id)
+                        _salvar_thread(user_id, thread.id)
+                        
+                        # Log detalhado da nova thread
+                        thread_age = "N/A"
+                        if thread.created_at:
+                            age_seconds = (datetime.now(thread.created_at.tzinfo) - thread.created_at).total_seconds()
+                            thread_age = f"{int(age_seconds/60)}min atrás"
+                        
+                        log_msg(user_id, f"🧵 Nova thread detectada: '{thread.name}' (ID: {thread.id}, Criada: {thread_age})")
+                        
+                        # Envia mensagem com delay aleatório para parecer mais natural
+                        async def _enviar_com_delay(t=thread):
+                            try:
+                                delay = random.randint(2, 8)  # Delay entre 2-8 segundos
+                                await asyncio.sleep(delay)
+                                
+                                # Verifica se a thread ainda existe antes de enviar
+                                try:
+                                    await t.fetch()  # Tenta buscar a thread para verificar se ainda existe
+                                    await _enviar_mensagem_entrada(t)
+                                    log_msg(user_id, f"✅ Mensagem enviada para thread: {t.name}")
+                                except discord.NotFound:
+                                    log_msg(user_id, f"⚠️ Thread {t.name} foi deletada antes do envio")
+                                except discord.Forbidden:
+                                    log_msg(user_id, f"⚠️ Sem permissão para enviar em {t.name}")
+                                except Exception as e:
+                                    log_msg(user_id, f"❌ Erro ao enviar mensagem para {t.name}: {e}")
+                            except Exception as e:
+                                log_msg(user_id, f"❌ Erro no envio com delay: {e}")
+                            finally:
+                                em_envio.discard(t.id)
+                        
+                        asyncio.ensure_future(_enviar_com_delay())
+                
+                # Log periódico de estatísticas (a cada 5 minutos)
+                agora = datetime.now()
+                if (agora - ultima_verificacao).total_seconds() > 300:  # 5 minutos
+                    log_msg(user_id, f"📊 Monitoramento: {len(threads_encontradas)} threads ativas, {len(threads_com_mensagem)} processadas")
+                    ultima_verificacao = agora
+                    
             except Exception as e:
-                log_msg(user_id, f"Erro monitorar: {e}")
-            await asyncio.sleep(5)
+                log_msg(user_id, f"❌ Erro crítico no monitoramento: {e}")
+                log_msg(user_id, traceback.format_exc())
+            
+            # Intervalo de verificação mais frequente
+            await asyncio.sleep(3)  # Reduzido de 5s para 3s
 
     @client.event
-    async def on_message(message: discord.Message):
+    async def on_thread_create(thread: discord.Thread):
+        """Evento disparado quando uma nova thread é criada"""
+        try:
+            # Verifica se a thread está no servidor e categoria corretos
+            if not thread.guild or thread.guild.id != SERVER_ID:
+                return
+            
+            parent = thread.parent
+            if not parent or getattr(parent, "category_id", None) != CATEGORIA_ID:
+                return
+            
+            # Verifica se já foi processada
+            if thread.id in threads_com_mensagem:
+                return
+            
+            # Adiciona à lista de threads processadas
+            threads_com_mensagem.add(thread.id)
+            _salvar_thread(user_id, thread.id)
+            
+            log_msg(user_id, f"🎆 Thread criada em tempo real: '{thread.name}' (ID: {thread.id})")
+            
+            # Envia mensagem após um pequeno delay
+            async def _enviar_imediato():
+                try:
+                    await asyncio.sleep(random.randint(1, 3))  # Delay de 1-3 segundos
+                    await _enviar_mensagem_entrada(thread)
+                    log_msg(user_id, f"✅ Mensagem enviada imediatamente para: {thread.name}")
+                except Exception as e:
+                    log_msg(user_id, f"❌ Erro ao enviar mensagem imediata: {e}")
+            
+            asyncio.ensure_future(_enviar_imediato())
+            
+        except Exception as e:
+            log_msg(user_id, f"❌ Erro no evento on_thread_create: {e}")
+    
+    @client.event
+    async def on_thread_join(thread: discord.Thread):
+        """Evento disparado quando o bot entra em uma thread"""
+        try:
+            # Verifica se a thread está no servidor e categoria corretos
+            if not thread.guild or thread.guild.id != SERVER_ID:
+                return
+            
+            parent = thread.parent
+            if not parent or getattr(parent, "category_id", None) != CATEGORIA_ID:
+                return
+            
+            # Verifica se já foi processada
+            if thread.id in threads_com_mensagem:
+                return
+            
+            # Adiciona à lista de threads processadas
+            threads_com_mensagem.add(thread.id)
+            _salvar_thread(user_id, thread.id)
+            
+            log_msg(user_id, f"🔗 Bot entrou na thread: '{thread.name}' (ID: {thread.id})")
+            
+            # Envia mensagem após um pequeno delay
+            async def _enviar_join():
+                try:
+                    await asyncio.sleep(random.randint(1, 4))  # Delay de 1-4 segundos
+                    await _enviar_mensagem_entrada(thread)
+                    log_msg(user_id, f"✅ Mensagem enviada após join: {thread.name}")
+                except Exception as e:
+                    log_msg(user_id, f"❌ Erro ao enviar mensagem após join: {e}")
+            
+            asyncio.ensure_future(_enviar_join())
+            
+        except Exception as e:
+            log_msg(user_id, f"❌ Erro no evento on_thread_join: {e}")
         if not message.guild or message.guild.id != SERVER_ID:
             return
         channel = message.channel
