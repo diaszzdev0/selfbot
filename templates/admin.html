@@ -782,28 +782,37 @@
               <div style="margin-top: 2rem; padding: 1.5rem; background: var(--bg-secondary); border-radius: var(--radius-md); border: 1px solid var(--border);">
                 <h4 style="margin-bottom: 1rem; color: var(--accent);"><i class="fas fa-check-circle"></i> Usuário e Key Criados!</h4>
                 
-                <div style="display: grid; gap: 1rem;">
-                  <div style="padding: 1rem; background: white; border-radius: var(--radius-md); border: 1px solid var(--border);">
-                    <h5 style="margin-bottom: 0.5rem; color: var(--text-primary);">👤 Usuário Criado:</h5>
-                    <div style="font-family: monospace; font-size: 1rem; color: var(--primary); font-weight: 600;">{{ usuario_key_gerado.username }}</div>
-                    <div style="font-size: 0.875rem; color: var(--text-secondary); margin-top: 0.25rem;">
-                      Tipo: {{ usuario_key_gerado.tipo }} | 
-                      Expira: {{ usuario_key_gerado.expira_em.strftime('%d/%m/%Y') if usuario_key_gerado.expira_em else 'Permanente' }}
-                    </div>
+                <div style="padding: 1.5rem; background: white; border-radius: var(--radius-md); border: 1px solid var(--border); margin-bottom: 1rem;">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                    <h5 style="color: var(--text-primary); margin: 0;">📋 Dados de Acesso</h5>
+                    <button onclick="copyCredentials()" class="btn btn-primary btn-sm" id="copy-btn">
+                      <i class="fas fa-copy"></i> Copiar Dados
+                    </button>
                   </div>
                   
-                  <div style="padding: 1rem; background: white; border-radius: var(--radius-md); border: 1px solid var(--border);">
-                    <h5 style="margin-bottom: 0.5rem; color: var(--text-primary);">🔑 Key Gerada:</h5>
-                    <div style="font-family: monospace; font-size: 1rem; color: var(--accent); font-weight: 600; word-break: break-all;">{{ usuario_key_gerado.key }}</div>
-                    <div style="font-size: 0.875rem; color: var(--text-secondary); margin-top: 0.25rem;">
-                      Status: Disponível | Tipo: {{ usuario_key_gerado.tipo }}
-                    </div>
+                  <div id="credentials-data" style="background: var(--bg-secondary); padding: 1rem; border-radius: var(--radius-sm); font-family: monospace; font-size: 0.875rem; line-height: 1.6; border: 1px solid var(--border);">
+                    <div style="margin-bottom: 0.5rem;"><strong>👤 Usuário:</strong> {{ usuario_key_gerado.username }}</div>
+                    <div style="margin-bottom: 0.5rem;"><strong>🔑 Key:</strong> {{ usuario_key_gerado.key }}</div>
+                    <div style="margin-bottom: 0.5rem;"><strong>📅 Tipo:</strong> {{ usuario_key_gerado.tipo }}</div>
+                    <div><strong>⏰ Expira:</strong> {{ usuario_key_gerado.expira_em.strftime('%d/%m/%Y') if usuario_key_gerado.expira_em else 'Permanente' }}</div>
                   </div>
                 </div>
                 
-                <div style="margin-top: 1rem; padding: 1rem; background: linear-gradient(135deg, #f0fdf4, #dcfce7); border-radius: var(--radius-md); border: 1px solid #bbf7d0;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                  <div style="padding: 1rem; background: white; border-radius: var(--radius-md); border: 1px solid var(--border);">
+                    <h6 style="margin-bottom: 0.5rem; color: var(--text-primary); font-size: 0.875rem;">👤 Usuário</h6>
+                    <div style="font-family: monospace; font-size: 1rem; color: var(--primary); font-weight: 600;">{{ usuario_key_gerado.username }}</div>
+                  </div>
+                  
+                  <div style="padding: 1rem; background: white; border-radius: var(--radius-md); border: 1px solid var(--border);">
+                    <h6 style="margin-bottom: 0.5rem; color: var(--text-primary); font-size: 0.875rem;">🔑 Key</h6>
+                    <div style="font-family: monospace; font-size: 0.875rem; color: var(--accent); font-weight: 600; word-break: break-all;">{{ usuario_key_gerado.key }}</div>
+                  </div>
+                </div>
+                
+                <div style="padding: 1rem; background: linear-gradient(135deg, #f0fdf4, #dcfce7); border-radius: var(--radius-md); border: 1px solid #bbf7d0;">
                   <div style="font-size: 0.875rem; color: #166534;">
-                    <strong>✅ Pronto para usar!</strong> O usuário pode usar esta key para ativar sua licença.
+                    <strong>✅ Pronto para usar!</strong> O usuário pode usar estes dados para fazer login no sistema.
                   </div>
                 </div>
               </div>
@@ -1160,6 +1169,73 @@
   </div>
 
   <script>
+    // Função para copiar credenciais
+    function copyCredentials() {
+      const credentialsData = document.getElementById('credentials-data');
+      const copyBtn = document.getElementById('copy-btn');
+      
+      if (credentialsData) {
+        const text = credentialsData.innerText;
+        
+        // Tenta usar a API moderna do clipboard
+        if (navigator.clipboard && window.isSecureContext) {
+          navigator.clipboard.writeText(text).then(() => {
+            showCopySuccess(copyBtn);
+          }).catch(() => {
+            fallbackCopy(text, copyBtn);
+          });
+        } else {
+          fallbackCopy(text, copyBtn);
+        }
+      }
+    }
+    
+    // Função de fallback para copiar
+    function fallbackCopy(text, btn) {
+      const textArea = document.createElement('textarea');
+      textArea.value = text;
+      textArea.style.position = 'fixed';
+      textArea.style.left = '-999999px';
+      textArea.style.top = '-999999px';
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      
+      try {
+        document.execCommand('copy');
+        showCopySuccess(btn);
+      } catch (err) {
+        console.error('Erro ao copiar:', err);
+        showCopyError(btn);
+      }
+      
+      document.body.removeChild(textArea);
+    }
+    
+    // Mostra feedback de sucesso
+    function showCopySuccess(btn) {
+      const originalContent = btn.innerHTML;
+      btn.innerHTML = '<i class="fas fa-check"></i> Copiado!';
+      btn.style.background = 'var(--accent)';
+      
+      setTimeout(() => {
+        btn.innerHTML = originalContent;
+        btn.style.background = 'var(--primary)';
+      }, 2000);
+    }
+    
+    // Mostra feedback de erro
+    function showCopyError(btn) {
+      const originalContent = btn.innerHTML;
+      btn.innerHTML = '<i class="fas fa-times"></i> Erro';
+      btn.style.background = 'var(--danger)';
+      
+      setTimeout(() => {
+        btn.innerHTML = originalContent;
+        btn.style.background = 'var(--primary)';
+      }, 2000);
+    }
+    
     function showPage(pageId, element) {
       document.querySelectorAll('.page').forEach(page => {
         page.classList.remove('active');
