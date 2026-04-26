@@ -544,9 +544,6 @@ def run_selfbot(config: dict, user_id: int):
                 log_msg(user_id, "❌ Token muito curto - provavelmente inválido")
                 return
             
-            if not TOKEN.startswith(("MTA", "MTB", "MTC", "MTD", "MTE", "MTF", "MTG", "MTH", "MTI", "MTJ", "MTk", "MTl", "MTm", "MTn", "MTo", "MTp", "MTq", "MTr", "MTs", "MTt", "MTu", "MTv", "MTw", "MTx", "MTy", "MTz", "MjA", "MjB", "MjC", "MjD", "MjE", "MjF", "MjG", "MjH", "MjI", "MjJ", "Mjk", "Mjl", "Mjm", "Mjn", "Mjo", "Mjp", "Mjq", "Mjr", "Mjs", "Mjt", "Mju", "Mjv", "Mjw", "Mjx", "Mjy", "Mjz")):
-                log_msg(user_id, "⚠️ Token não parece ser válido (formato incorreto)")
-            
             try:
                 log_msg(user_id, "🔗 Tentativa 1: Conectando ao Discord...")
                 # Timeout de 30 segundos para conexão
