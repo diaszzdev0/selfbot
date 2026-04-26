@@ -215,31 +215,38 @@ def parar_selfbot(user_id: int):
 
 def run_selfbot(config: dict, user_id: int):
     log_msg(user_id, "🚀 Iniciando selfbot...")
-
-    TOKEN = config.get("discord_token", "").strip()
-    if not TOKEN:
-        log_msg(user_id, "Token vazio.")
-        return
-
-    SERVER_ID = int(config["server_id"])
-    CATEGORIA_ID = int(config["categoria_id"])
-    MENSAGEM_ENTRADA = config.get("mensagem_entrada", "Ola! Use pg Nome Sobrenome para verificar seu pagamento.")
-    IMAGEM_ENTRADA = config.get("imagem_entrada", "").strip()
-
-    # Configurações para reduzir desconexões
-    intents = discord.Intents.default()
-    intents.message_content = True
-    intents.guilds = True
-    intents.guild_messages = True
     
-    client = discord.Client(
-        chunk_guilds_at_startup=False,
-        intents=intents,
-        heartbeat_timeout=60.0,  # Timeout do heartbeat
-        guild_ready_timeout=10.0,  # Timeout para guild ready
-        max_messages=1000  # Limita cache de mensagens
-    )
-    _clientes[user_id] = client
+    try:
+        TOKEN = config.get("discord_token", "").strip()
+        if not TOKEN:
+            log_msg(user_id, "Token vazio.")
+            return
+        
+        log_msg(user_id, "🔑 Token configurado")
+
+        SERVER_ID = int(config["server_id"])
+        CATEGORIA_ID = int(config["categoria_id"])
+        log_msg(user_id, f"🏠 Servidor: {SERVER_ID}, Categoria: {CATEGORIA_ID}")
+        
+        MENSAGEM_ENTRADA = config.get("mensagem_entrada", "Ola! Use pg Nome Sobrenome para verificar seu pagamento.")
+        IMAGEM_ENTRADA = config.get("imagem_entrada", "").strip()
+
+        # Configurações para reduzir desconexões
+        log_msg(user_id, "⚙️ Configurando cliente Discord...")
+        intents = discord.Intents.default()
+        intents.message_content = True
+        intents.guilds = True
+        intents.guild_messages = True
+        
+        client = discord.Client(
+            chunk_guilds_at_startup=False,
+            intents=intents,
+            heartbeat_timeout=60.0,  # Timeout do heartbeat
+            guild_ready_timeout=10.0,  # Timeout para guild ready
+            max_messages=1000  # Limita cache de mensagens
+        )
+        _clientes[user_id] = client
+        log_msg(user_id, "✅ Cliente Discord criado")
 
     threads_com_mensagem: set[int] = _carregar_threads(user_id)
     log_msg(user_id, f"🧵 {len(threads_com_mensagem)} thread(s) carregada(s).")
@@ -247,6 +254,8 @@ def run_selfbot(config: dict, user_id: int):
     salas_ativas: dict[int, str] = {}
     go_por_thread: dict[int, set] = {}
     pg_em_processamento: set[str] = set()
+    
+    log_msg(user_id, "📝 Definindo eventos do Discord...")
 
     async def _enviar_mensagem_entrada(canal):
         if IMAGEM_ENTRADA:
@@ -511,14 +520,17 @@ def run_selfbot(config: dict, user_id: int):
         log_msg(user_id, traceback.format_exc())
 
     try:
+        log_msg(user_id, "🔄 Criando loop asyncio...")
         loop = asyncio.new_event_loop()
         loop.set_exception_handler(lambda l, c: None)
         asyncio.set_event_loop(loop)
         _loops[user_id] = loop
         _stop_flags[user_id] = False
+        log_msg(user_id, "✅ Loop asyncio criado")
         
         # Função async para reconexão
         async def conectar_com_retry():
+            log_msg(user_id, "🔗 Iniciando conexão com Discord...")
             tentativas = 0
             max_tentativas = 3
             
@@ -529,14 +541,15 @@ def run_selfbot(config: dict, user_id: int):
                         log_msg(user_id, f"🔄 Reconectando... (tentativa {tentativas}/{max_tentativas})")
                         await asyncio.sleep(10)  # Aguarda 10s antes de reconectar
                     
+                    log_msg(user_id, f"🔗 Tentativa {tentativas}: Conectando ao Discord...")
                     await client.start(TOKEN)
                     break  # Se chegou aqui, conectou com sucesso
                     
-                except discord.LoginFailure:
-                    log_msg(user_id, "❌ Token inválido ou expirado")
+                except discord.LoginFailure as e:
+                    log_msg(user_id, f"❌ Token inválido ou expirado: {e}")
                     break
-                except discord.PrivilegedIntentsRequired:
-                    log_msg(user_id, "❌ Intents privilegiadas não habilitadas")
+                except discord.PrivilegedIntentsRequired as e:
+                    log_msg(user_id, f"❌ Intents privilegiadas não habilitadas: {e}")
                     break
                 except Exception as e:
                     if _stop_flags.get(user_id, False):
@@ -547,6 +560,7 @@ def run_selfbot(config: dict, user_id: int):
                     if tentativas >= max_tentativas:
                         log_msg(user_id, "❌ Máximo de tentativas atingido")
         
+        log_msg(user_id, "🚀 Executando loop principal...")
         loop.run_until_complete(conectar_com_retry())
                     
     except discord.LoginFailure:
@@ -556,9 +570,8 @@ def run_selfbot(config: dict, user_id: int):
     except OSError as e:
         log_msg(user_id, f"Erro de rede: {e}")
     except Exception as e:
-        if "Closed" not in str(e) and not _stop_flags.get(user_id):
-            log_msg(user_id, f"Erro fatal: {e}")
-            log_msg(user_id, traceback.format_exc())
+        log_msg(user_id, f"❌ Erro geral na inicialização: {e}")
+        log_msg(user_id, traceback.format_exc())
     finally:
         try:
             loop.close()
