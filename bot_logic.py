@@ -221,7 +221,16 @@ def run_selfbot(config: dict, user_id: int):
         log_msg(user_id, "Token vazio.")
         return
     
-    log_msg(user_id, "🔑 Token configurado")
+    # Valida o token antes de tentar conectar
+    from token_validator import validate_discord_token, check_token_expiry
+    
+    validation = validate_discord_token(TOKEN)
+    if not validation["valid"]:
+        log_msg(user_id, f"❌ Token inválido: {validation['error']}")
+        return
+    
+    expiry_check = check_token_expiry(TOKEN)
+    log_msg(user_id, f"🔑 Token válido (User ID: {validation['user_id']}, Tipo: {expiry_check['type']})")
 
     SERVER_ID = int(config["server_id"])
     CATEGORIA_ID = int(config["categoria_id"])
@@ -234,11 +243,12 @@ def run_selfbot(config: dict, user_id: int):
     log_msg(user_id, "⚙️ Configurando cliente Discord...")
     
     try:
-        # Configuração compatível com versões antigas do discord.py
+        # Configuração otimizada para estabilidade
         client = discord.Client(
             chunk_guilds_at_startup=False,
-            heartbeat_timeout=60.0,
-            max_messages=1000
+            heartbeat_timeout=120.0,  # Aumentado para 2 minutos
+            max_messages=500,  # Reduzido para economizar memória
+            guild_ready_timeout=30.0  # Timeout para guilds
         )
         log_msg(user_id, "✅ Cliente Discord criado")
         
@@ -374,8 +384,9 @@ def run_selfbot(config: dict, user_id: int):
         log_msg(user_id, f"📊 Cache stats: {stats['total_emails']} emails, hit rate: {stats['hit_rate']}")
 
     async def health_check():
-        """Monitora a saúde da conexão"""
-        last_heartbeat = datetime.now()
+        """Monitora a saúde da conexão com reconexão automática"""
+        reconnect_attempts = 0
+        max_attempts = 3
         
         while not _stop_flags.get(user_id, False):
             try:
@@ -383,14 +394,24 @@ def run_selfbot(config: dict, user_id: int):
                 
                 if client.is_closed():
                     log_msg(user_id, "⚠️ Cliente desconectado detectado")
-                    break
+                    if reconnect_attempts < max_attempts:
+                        reconnect_attempts += 1
+                        log_msg(user_id, f"🔄 Tentativa de reconexão {reconnect_attempts}/{max_attempts}")
+                        try:
+                            await client.connect(reconnect=True)
+                            reconnect_attempts = 0  # Reset contador em caso de sucesso
+                            log_msg(user_id, "✅ Reconexão bem-sucedida")
+                        except Exception as e:
+                            log_msg(user_id, f"❌ Falha na reconexão: {e}")
+                    else:
+                        log_msg(user_id, "🔴 Máximo de tentativas de reconexão atingido")
+                        break
                 
                 # Verifica se o heartbeat está funcionando
-                if client.latency > 5.0:  # Latencia muito alta
+                if client.latency == float('inf'):
+                    log_msg(user_id, f"⚠️ Latência infinita detectada - possível problema de conexão")
+                elif client.latency > 10.0:  # Latencia muito alta
                     log_msg(user_id, f"⚠️ Latência alta: {client.latency:.2f}s")
-                
-                # Atualiza timestamp do health check
-                last_heartbeat = datetime.now()
                 
             except Exception as e:
                 log_msg(user_id, f"⚠️ Erro no health check: {e}")
@@ -546,11 +567,11 @@ def run_selfbot(config: dict, user_id: int):
             
             try:
                 log_msg(user_id, "🔗 Tentativa 1: Conectando ao Discord...")
-                # Timeout de 30 segundos para conexão
-                await asyncio.wait_for(client.start(TOKEN), timeout=30.0)
+                # Timeout aumentado para 60 segundos
+                await asyncio.wait_for(client.start(TOKEN), timeout=60.0)
                     
             except asyncio.TimeoutError:
-                log_msg(user_id, "⏰ Timeout na conexão (30s) - Token pode estar inválido")
+                log_msg(user_id, "⏰ Timeout na conexão (60s) - Verificar conexão de internet e token")
             except discord.LoginFailure as e:
                 log_msg(user_id, f"❌ Token inválido ou expirado: {e}")
             except discord.PrivilegedIntentsRequired as e:
