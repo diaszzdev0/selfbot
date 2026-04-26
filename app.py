@@ -715,6 +715,24 @@ def adicionar_salas():
     return redirect(url_for("admin"))
 
 
+@app.route("/admin/imap_stats")
+@admin_required
+def imap_stats():
+    from imap_optimizer import imap_manager
+    stats = imap_manager.get_global_stats()
+    return jsonify(stats)
+
+
+@app.route("/admin/imap_stats_user/<int:user_id>")
+@admin_required
+def imap_stats_user(user_id: int):
+    from imap_optimizer import imap_manager
+    if user_id in imap_manager.caches:
+        stats = imap_manager.caches[user_id].get_stats()
+        return jsonify(stats)
+    return jsonify({"error": "Cache não encontrado para este usuário"})
+
+
 @app.route("/admin/limite_salas/<int:user_id>", methods=["POST"])
 @admin_required
 def limite_salas(user_id: int):
@@ -745,20 +763,6 @@ def gerar_key():
     key = LicenseKey.gerar(tipo)
     db.session.add(key)
     db.session.commit()
-    return redirect(url_for("admin"))
-
-
-@app.route("/admin/deletar_key", methods=["POST"])
-@admin_required
-def deletar_key():
-    key_id = request.form.get("key_id")
-    if key_id:
-        key = LicenseKey.query.get(key_id)
-        if key:
-            # Desvincula usuários antes de deletar
-            User.query.filter_by(key_id=key.id).update({"key_id": None})
-            db.session.delete(key)
-            db.session.commit()
     return redirect(url_for("admin"))
 
 

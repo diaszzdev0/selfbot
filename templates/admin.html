@@ -780,6 +780,41 @@
               </div>
             </div>
           </div>
+          
+          <div class="card" style="margin-top: 2rem;">
+            <div class="card-header">
+              <h2 class="card-title">
+                <i class="fas fa-tachometer-alt"></i> Performance IMAP
+                <button onclick="updateIMAPStats()" class="btn btn-primary btn-sm" style="margin-left: 1rem;">
+                  <i class="fas fa-sync"></i> Atualizar
+                </button>
+              </h2>
+            </div>
+            <div class="card-body">
+              <div id="imap-stats" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+                <div class="stat-item" style="background: linear-gradient(135deg, var(--primary), var(--primary-dark)); padding: 1rem; border-radius: var(--radius-md); color: white; text-align: center;">
+                  <div id="active-caches" style="font-size: 1.5rem; font-weight: 700;">-</div>
+                  <div style="font-size: 0.75rem; opacity: 0.9;">Caches Ativos</div>
+                </div>
+                <div class="stat-item" style="background: linear-gradient(135deg, var(--accent), #059669); padding: 1rem; border-radius: var(--radius-md); color: white; text-align: center;">
+                  <div id="total-emails" style="font-size: 1.5rem; font-weight: 700;">-</div>
+                  <div style="font-size: 0.75rem; opacity: 0.9;">Total Emails</div>
+                </div>
+                <div class="stat-item" style="background: linear-gradient(135deg, var(--warning), #d97706); padding: 1rem; border-radius: var(--radius-md); color: white; text-align: center;">
+                  <div id="hit-rate" style="font-size: 1.5rem; font-weight: 700;">-</div>
+                  <div style="font-size: 0.75rem; opacity: 0.9;">Taxa de Acerto</div>
+                </div>
+                <div class="stat-item" style="background: linear-gradient(135deg, #8b5cf6, #7c3aed); padding: 1rem; border-radius: var(--radius-md); color: white; text-align: center;">
+                  <div id="total-requests" style="font-size: 1.5rem; font-weight: 700;">-</div>
+                  <div style="font-size: 0.75rem; opacity: 0.9;">Total Requests</div>
+                </div>
+              </div>
+              
+              <div id="user-stats" style="margin-top: 1.5rem; max-height: 300px; overflow-y: auto;">
+                <!-- Estatísticas por usuário serão carregadas aqui -->
+              </div>
+            </div>
+          </div>
         </div>
         
         <div class="page" id="page-salas">
@@ -1139,6 +1174,51 @@
         });
     }
     
+    // Função para atualizar estatísticas IMAP
+    function updateIMAPStats() {
+      fetch('/admin/imap_stats')
+        .then(response => response.json())
+        .then(data => {
+          // Atualiza estatísticas globais
+          document.getElementById('active-caches').textContent = data.active_caches || 0;
+          document.getElementById('total-emails').textContent = data.total_emails || 0;
+          document.getElementById('hit-rate').textContent = data.global_hit_rate || '0%';
+          document.getElementById('total-requests').textContent = data.total_requests || 0;
+          
+          // Atualiza estatísticas por usuário
+          const userStatsDiv = document.getElementById('user-stats');
+          if (data.caches && Object.keys(data.caches).length > 0) {
+            let html = '<h4 style="margin-bottom: 1rem;">Estatísticas por Usuário:</h4>';
+            
+            for (const [userId, stats] of Object.entries(data.caches)) {
+              html += `
+                <div style="background: var(--bg-secondary); padding: 1rem; border-radius: var(--radius-md); margin-bottom: 0.5rem; border: 1px solid var(--border);">
+                  <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <strong>Usuário ${userId}</strong>
+                    <span style="font-size: 0.75rem; color: var(--text-secondary);">${stats.last_update ? new Date(stats.last_update).toLocaleTimeString('pt-BR') : 'N/A'}</span>
+                  </div>
+                  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 0.5rem; margin-top: 0.5rem; font-size: 0.875rem;">
+                    <div><strong>Emails:</strong> ${stats.total_emails}</div>
+                    <div><strong>Hit Rate:</strong> ${stats.hit_rate}</div>
+                    <div><strong>Hits:</strong> ${stats.cache_hits}</div>
+                    <div><strong>Misses:</strong> ${stats.cache_misses}</div>
+                    <div><strong>Nomes:</strong> ${stats.processed_names}</div>
+                    <div><strong>Duração:</strong> ${stats.update_duration}</div>
+                  </div>
+                </div>
+              `;
+            }
+            
+            userStatsDiv.innerHTML = html;
+          } else {
+            userStatsDiv.innerHTML = '<p style="color: var(--text-secondary); text-align: center; padding: 2rem;">Nenhum cache ativo no momento</p>';
+          }
+        })
+        .catch(error => {
+          console.error('Erro ao atualizar stats IMAP:', error);
+        });
+    }
+    
     // Inicia o polling quando a página carrega
     document.addEventListener('DOMContentLoaded', function() {
       // Atualiza imediatamente
@@ -1150,7 +1230,11 @@
       // Atualiza quando a aba de bots é selecionada
       document.querySelector('[onclick*="bots"]').addEventListener('click', function() {
         setTimeout(updateBotStatus, 100);
+        setTimeout(updateIMAPStats, 200);
       });
+      
+      // Atualiza estatísticas IMAP a cada 30 segundos
+      setInterval(updateIMAPStats, 30000);
     });
   </script>
 </body>

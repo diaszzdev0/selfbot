@@ -6,15 +6,16 @@ import aiohttp
 import json
 import random
 import unicodedata
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 import discord
 from imap_tools import MailBox, AND
+from imap_optimizer import imap_manager
 
 _clientes: dict[int, discord.Client] = {}
 _loops: dict[int, asyncio.AbstractEventLoop] = {}
 _stop_flags: dict[int, bool] = {}
-_imap_cache: dict[int, dict] = {}
 _pagamentos_usados: dict[int, dict] = {}  # user_id -> {nome_norm: timestamp}
+_rate_limiters: dict[int, dict] = {}  # user_id -> {"last_request": timestamp, "count": int}
 
 API_KEY = "266vq0badxid7jpcf96t"
 API_MODOS_URL = f"https://salasff.com/modos?key={API_KEY}"
@@ -117,70 +118,43 @@ def _salvar_thread(user_id: int, thread_id: int):
         pass
 
 
-def _buscar_pagamento(cfg: dict, nome: str, user_id: int):
-    log_msg(user_id, f"Buscando pagamento: {nome}")
-    nome_norm = _normalizar(nome)
-    partes = nome_norm.split()
-    primeiro = partes[0] if partes else ""
-    ultimo = partes[-1] if len(partes) > 1 else ""
-    nome_lower = nome.lower()
-    partes_orig = nome_lower.split()
-    prim_orig = partes_orig[0] if partes_orig else ""
-    ult_orig = partes_orig[-1] if len(partes_orig) > 1 else ""
-
-    def _checar_emails(msgs_data):
-        for conteudo in msgs_data:
-            cn = _normalizar(conteudo)
-            cl = conteudo.lower()
-            achou = (
-                nome_norm in cn or
-                (primeiro in cn and ultimo and ultimo in cn) or
-                nome_lower in cl or
-                (prim_orig in cl and ult_orig and ult_orig in cl)
-            )
-            if achou:
-                valor = re.search(r"R\$\s?([\d.,]+)", conteudo)
-                banco = "Desconhecido"
-                for b in ["Nubank", "PicPay", "Itau", "Bradesco", "Caixa", "Santander", "Inter", "C6 Bank", "Mercado Pago", "Next", "BTG"]:
-                    if b.lower() in cl:
-                        banco = b
-                        break
-                return {"valor": valor.group(1) if valor else "N/A", "banco": banco}
-        return None
-
-    # sempre usa cache — atualizado a cada 5s pelo background task
-    cache = _imap_cache.get(user_id)
-    if cache:
-        idade = (datetime.now() - cache["atualizado"]).total_seconds()
-        log_msg(user_id, f"📧 Cache ({int(idade)}s) — {len(cache['emails'])} email(s)")
-        resultado = _checar_emails(cache["emails"])
-        if resultado:
-            log_msg(user_id, f"📧 Pagamento encontrado no cache para {nome}.")
-        else:
-            log_msg(user_id, f"📧 Nenhum pagamento para {nome}.")
-        return resultado
-
-    # fallback: cache ainda nao populado, conecta direto
-    log_msg(user_id, f"📧 Cache vazio, conectando ao IMAP...")
+def _buscar_pagamento_otimizado(cfg: dict, nome: str, user_id: int):
+    """Busca otimizada de pagamento usando o sistema de cache avançado"""
+    log_msg(user_id, f"🔍 Busca otimizada: {nome}")
+    
+    # Rate limiting por usuário
+    now = datetime.now()
+    rate_limiter = _rate_limiters.setdefault(user_id, {"last_request": now, "count": 0})
+    
+    # Permite até 10 requests por segundo por usuário
+    if (now - rate_limiter["last_request"]).total_seconds() < 0.1:
+        rate_limiter["count"] += 1
+        if rate_limiter["count"] > 10:
+            log_msg(user_id, "⚠️ Rate limit atingido, aguardando...")
+            return None
+    else:
+        rate_limiter["count"] = 0
+        rate_limiter["last_request"] = now
+    
     try:
-        from datetime import timedelta
-        mb = MailBox(cfg["imap_server"])
-        mb.login(cfg["email_user"], cfg["email_pass"], initial_folder="INBOX")
-        ontem = date.today() - timedelta(days=1)
-        msgs = list(mb.fetch(AND(date_gte=ontem), mark_seen=False, limit=200))
-        emails_texto = [(msg.subject or "") + " " + (msg.text or "") + " " + (msg.html or "") for msg in msgs]
-        _imap_cache[user_id] = {"emails": emails_texto, "atualizado": datetime.now()}
-        mb.logout()
-        log_msg(user_id, f"📧 {len(msgs)} email(s) carregados.")
-        resultado = _checar_emails(emails_texto)
+        # Obtém cache otimizado
+        cache = imap_manager.get_cache(user_id, cfg)
+        
+        # Busca no cache otimizado
+        resultado = cache.search_payment_optimized(nome)
+        
         if resultado:
-            log_msg(user_id, f"📧 Pagamento encontrado para {nome}.")
+            log_msg(user_id, f"✅ Pagamento encontrado (cache): {nome} - {resultado['banco']} - R$ {resultado['valor']}")
+            return {
+                "valor": resultado["valor"],
+                "banco": resultado["banco"]
+            }
         else:
-            log_msg(user_id, f"📧 Nenhum pagamento para {nome}.")
-        return resultado
+            log_msg(user_id, f"❌ Pagamento não encontrado: {nome}")
+            return None
+            
     except Exception as e:
-        log_msg(user_id, f"Erro IMAP: {type(e).__name__}: {e}")
-        log_msg(user_id, traceback.format_exc())
+        log_msg(user_id, f"❌ Erro na busca otimizada: {e}")
         return None
 
 
@@ -216,6 +190,10 @@ async def _criar_sala_api(salaid: str = "") -> dict:
 
 def parar_selfbot(user_id: int):
     _stop_flags[user_id] = True
+    
+    # Para o cache otimizado
+    imap_manager.stop_cache(user_id)
+    
     client = _clientes.get(user_id)
     loop = _loops.get(user_id)
     print(f"[parar_selfbot] user={user_id} client={client} loop={loop}")
@@ -226,9 +204,13 @@ def parar_selfbot(user_id: int):
             print(f"[parar_selfbot] client fechado com sucesso")
         except Exception as e:
             print(f"[parar_selfbot] erro ao fechar: {e}")
+    
+    # Limpa dados do usuário
     _clientes.pop(user_id, None)
     _loops.pop(user_id, None)
     _stop_flags.pop(user_id, None)
+    _pagamentos_usados.pop(user_id, None)
+    _rate_limiters.pop(user_id, None)
 
 
 def run_selfbot(config: dict, user_id: int):
@@ -341,22 +323,18 @@ def run_selfbot(config: dict, user_id: int):
             asyncio.ensure_future(atualizar_cache_imap())
 
     async def atualizar_cache_imap():
-        while not _stop_flags.get(user_id):
-            try:
-                mb = MailBox(config["imap_server"])
-                mb.login(config["email_user"], config["email_pass"], initial_folder="INBOX")
-                from datetime import timedelta
-                ontem = date.today() - timedelta(days=1)
-                criterio = AND(date_gte=ontem)
-                msgs = list(mb.fetch(criterio, mark_seen=False, limit=200))
-                emails_texto = [(msg.subject or "") + " " + (msg.text or "") + " " + (msg.html or "") for msg in msgs]
-                _imap_cache[user_id] = {"emails": emails_texto, "atualizado": datetime.now()}
-                mb.logout()
-                log_msg(user_id, f"📧 Cache IMAP atualizado: {len(msgs)} email(s).")
-            except Exception as e:
-                log_msg(user_id, f"📧 Erro ao atualizar cache IMAP: {e}")
-            await asyncio.sleep(5)
-        _imap_cache.pop(user_id, None)
+        """Task removida - agora usa sistema otimizado global"""
+        log_msg(user_id, "🚀 Sistema de cache otimizado ativado!")
+        
+        # Inicializa o cache otimizado
+        cache = imap_manager.get_cache(user_id, config)
+        
+        # Aguarda inicialização do cache
+        await asyncio.sleep(2)
+        
+        # Log das estatísticas iniciais
+        stats = cache.get_stats()
+        log_msg(user_id, f"📊 Cache stats: {stats['total_emails']} emails, hit rate: {stats['hit_rate']}")
 
     async def monitorar_threads():
         em_envio: set[int] = set()
@@ -433,29 +411,34 @@ def run_selfbot(config: dict, user_id: int):
 
         try:
             resultado = await asyncio.wait_for(
-                asyncio.get_event_loop().run_in_executor(None, _buscar_pagamento, config, nome_busca, user_id),
-                timeout=15
+                asyncio.get_event_loop().run_in_executor(None, _buscar_pagamento_otimizado, config, nome_busca, user_id),
+                timeout=5  # Timeout reduzido para 5s devido à otimização
             )
         except asyncio.TimeoutError:
-            log_msg(user_id, "IMAP timeout.")
+            log_msg(user_id, "Timeout na busca otimizada.")
             resultado = None
 
         await msg_fila.delete()
         pg_em_processamento.discard(chave_pg)
 
         if resultado:
-            # verifica se pagamento ja foi usado nos ultimos 15 segundos
+            # verifica se pagamento ja foi usado nos ultimos 2 minutos (otimizado)
             usados = _pagamentos_usados.setdefault(user_id, {})
             chave_pag = _normalizar(nome_busca)
             agora = datetime.now()
             if chave_pag in usados:
                 segundos = (agora - usados[chave_pag]).total_seconds()
-                if segundos < 120:
+                if segundos < 120:  # 2 minutos
                     await message.reply("⚠️ Atenção esse pagamento já foi utilizado em outro tópico, faça um pagamento e tente novamente!")
                     log_msg(user_id, f"⚠️ Pagamento duplicado bloqueado: {nome_busca} ({int(segundos)}s atras)")
                     return
             # registra uso
             usados[chave_pag] = agora
+            
+            # Limpa pagamentos antigos (otimização de memória)
+            cutoff = agora - timedelta(minutes=10)
+            usados_limpos = {k: v for k, v in usados.items() if v > cutoff}
+            _pagamentos_usados[user_id] = usados_limpos
 
             await message.reply(
                 f"**Pagamento confirmado** ({resultado['banco']}) para {nome_busca}!\n"
