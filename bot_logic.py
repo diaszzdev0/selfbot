@@ -234,15 +234,9 @@ def run_selfbot(config: dict, user_id: int):
     log_msg(user_id, "⚙️ Configurando cliente Discord...")
     
     try:
-        intents = discord.Intents.default()
-        intents.message_content = True
-        intents.guilds = True
-        intents.guild_messages = True
-        log_msg(user_id, "✅ Intents configurados")
-        
+        # Configuração compatível com versões antigas do discord.py
         client = discord.Client(
             chunk_guilds_at_startup=False,
-            intents=intents,
             heartbeat_timeout=60.0,
             max_messages=1000
         )
@@ -252,9 +246,9 @@ def run_selfbot(config: dict, user_id: int):
         log_msg(user_id, f"❌ Erro ao criar cliente: {e}")
         # Fallback com configurações mínimas
         try:
-            log_msg(user_id, "🔄 Tentando configuração simplificada...")
+            log_msg(user_id, "🔄 Tentando configuração mínima...")
             client = discord.Client()
-            log_msg(user_id, "✅ Cliente Discord criado (modo simples)")
+            log_msg(user_id, "✅ Cliente Discord criado (modo básico)")
         except Exception as e2:
             log_msg(user_id, f"❌ Erro crítico ao criar cliente: {e2}")
             return
