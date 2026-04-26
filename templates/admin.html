@@ -17,8 +17,9 @@
       --text-primary: #0f172a;
       --text-secondary: #64748b;
       --border: #e2e8f0;
-      --bg-primary: #ffffff;
-      --bg-secondary: #f8fafc;
+      --bg-primary: #fafbfc;
+      --bg-secondary: #f3f4f6;
+      --bg-tertiary: #e5e7eb;
       --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
       --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
       --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
@@ -35,9 +36,10 @@
     
     body {
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-      background: var(--bg-secondary);
+      background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
       color: var(--text-primary);
       line-height: 1.6;
+      min-height: 100vh;
     }
     
     .dashboard {
@@ -227,17 +229,17 @@
     }
     
     .card {
-      background: var(--bg-primary);
+      background: linear-gradient(145deg, #ffffff 0%, #fafbfc 100%);
       border-radius: var(--radius-lg);
       border: 1px solid var(--border);
-      box-shadow: var(--shadow-sm);
+      box-shadow: var(--shadow-md);
       overflow: hidden;
     }
     
     .card-header {
       padding: 1.5rem;
       border-bottom: 1px solid var(--border);
-      background: var(--bg-secondary);
+      background: linear-gradient(145deg, #f8fafc 0%, #f1f5f9 100%);
     }
     
     .card-title {
@@ -361,9 +363,16 @@
       justify-content: space-between;
       align-items: center;
       padding: 1rem;
-      background: var(--bg-secondary);
+      background: linear-gradient(145deg, #f9fafb 0%, #f3f4f6 100%);
       border: 1px solid var(--border);
       border-radius: var(--radius-md);
+      transition: all 0.2s ease;
+    }
+    
+    .list-item:hover {
+      background: linear-gradient(145deg, #ffffff 0%, #f9fafb 100%);
+      transform: translateY(-1px);
+      box-shadow: var(--shadow-md);
     }
     
     .item-info h4 {
@@ -418,11 +427,17 @@
     }
     
     .bot-card {
-      background: var(--bg-primary);
+      background: linear-gradient(145deg, #ffffff 0%, #fafbfc 100%);
       border: 1px solid var(--border);
       border-radius: var(--radius-lg);
       padding: 1.5rem;
-      box-shadow: var(--shadow-sm);
+      box-shadow: var(--shadow-md);
+      transition: all 0.2s ease;
+    }
+    
+    .bot-card:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-lg);
     }
     
     .bot-header {
