@@ -440,6 +440,21 @@
       box-shadow: var(--shadow-lg);
     }
     
+    .bot-actions {
+      display: flex;
+      gap: 0.5rem;
+      margin-top: 1rem;
+    }
+    
+    .btn-warning {
+      background: var(--warning);
+      color: white;
+    }
+    
+    .btn-warning:hover {
+      background: #d97706;
+    }
+    
     .bot-header {
       display: flex;
       justify-content: space-between;
@@ -734,15 +749,29 @@
             </div>
             <div class="card-body">
               <div class="bot-grid">
-                {% for user_id, online in status.items() %}
+                {% for user in users %}
                 <div class="bot-card">
                   <div class="bot-header">
-                    <h4>Usuário {{ user_id }}</h4>
-                    <span class="status-indicator {% if online %}online{% else %}offline{% endif %}"></span>
+                    <h4>{{ user.username }}</h4>
+                    <span class="status-indicator {% if status.get(user.id) %}online{% else %}offline{% endif %}"></span>
                   </div>
                   <p class="bot-status">
-                    {% if online %}Bot Online{% else %}Bot Offline{% endif %}
+                    {% if status.get(user.id) %}Bot Online{% else %}Bot Offline{% endif %}
                   </p>
+                  <div class="bot-actions" style="margin-top: 1rem; display: flex; gap: 0.5rem;">
+                    {% if status.get(user.id) %}
+                      <a href="/admin/stop_bot/{{ user.id }}" class="btn btn-danger btn-sm">
+                        <i class="fas fa-stop"></i> Parar
+                      </a>
+                      <a href="/admin/restart_bot/{{ user.id }}" class="btn btn-warning btn-sm" style="background: var(--warning); color: white;">
+                        <i class="fas fa-redo"></i> Reiniciar
+                      </a>
+                    {% else %}
+                      <a href="/admin/start_bot/{{ user.id }}" class="btn btn-primary btn-sm">
+                        <i class="fas fa-play"></i> Iniciar
+                      </a>
+                    {% endif %}
+                  </div>
                 </div>
                 {% endfor %}
               </div>
@@ -751,14 +780,146 @@
         </div>
         
         <div class="page" id="page-salas">
-          <div class="card">
+          <div class="content-grid">
+            <div class="card">
+              <div class="card-header">
+                <h2 class="card-title">
+                  <i class="fas fa-cog"></i> Configurações de Salas
+                </h2>
+              </div>
+              <div class="card-body">
+                <div class="stats-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+                  <div class="stat-item" style="background: linear-gradient(135deg, var(--primary), var(--primary-dark)); padding: 1rem; border-radius: var(--radius-md); color: white; text-align: center;">
+                    <div style="font-size: 1.5rem; font-weight: 700;">{{ users|length }}</div>
+                    <div style="font-size: 0.75rem; opacity: 0.9;">Total Usuários</div>
+                  </div>
+                  <div class="stat-item" style="background: linear-gradient(135deg, var(--accent), #059669); padding: 1rem; border-radius: var(--radius-md); color: white; text-align: center;">
+                    <div style="font-size: 1.5rem; font-weight: 700;">{{ salas_info.values()|map(attribute='limite')|sum }}</div>
+                    <div style="font-size: 0.75rem; opacity: 0.9;">Total Limite</div>
+                  </div>
+                  <div class="stat-item" style="background: linear-gradient(135deg, var(--warning), #d97706); padding: 1rem; border-radius: var(--radius-md); color: white; text-align: center;">
+                    <div style="font-size: 1.5rem; font-weight: 700;">{{ salas_info.values()|map(attribute='usadas')|sum }}</div>
+                    <div style="font-size: 0.75rem; opacity: 0.9;">Salas Usadas</div>
+                  </div>
+                </div>
+                
+                <div class="form-section">
+                  <h3 style="margin-bottom: 1rem; color: var(--text-primary);">Gerar Seriais</h3>
+                  <form method="POST" action="/admin/gerar_seriais">
+                    <div class="form-group">
+                      <label class="form-label">Quantidade de Seriais</label>
+                      <input type="number" name="quantidade" class="form-input" value="10" min="1" max="100">
+                    </div>
+                    <button type="submit" class="btn btn-primary">
+                      <i class="fas fa-plus"></i> Gerar Seriais
+                    </button>
+                  </form>
+                  
+                  {% if seriais %}
+                  <div style="margin-top: 1rem; padding: 1rem; background: var(--bg-secondary); border-radius: var(--radius-md); border: 1px solid var(--border);">
+                    <h4 style="margin-bottom: 0.5rem;">Seriais Gerados:</h4>
+                    <textarea readonly style="width: 100%; height: 120px; font-family: monospace; font-size: 0.75rem; padding: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius-sm);">{% for serial in seriais %}{{ serial }}{% if not loop.last %}
+{% endif %}{% endfor %}</textarea>
+                    <div style="margin-top: 0.5rem;">
+                      <a href="/admin/limpar_seriais" class="btn btn-danger btn-sm">
+                        <i class="fas fa-trash"></i> Limpar
+                      </a>
+                    </div>
+                  </div>
+                  {% endif %}
+                </div>
+              </div>
+            </div>
+            
+            <div class="card">
+              <div class="card-header">
+                <h2 class="card-title">
+                  <i class="fas fa-users-cog"></i> Gerenciar Usuários
+                </h2>
+              </div>
+              <div class="card-body">
+                <div class="item-list">
+                  {% for user in users %}
+                  <div class="list-item">
+                    <div class="item-info">
+                      <h4>{{ user.username }}</h4>
+                      <p>Salas: {{ salas_info.get(user.id, {}).get('usadas', 0) }}/{{ salas_info.get(user.id, {}).get('limite', 0) }}</p>
+                    </div>
+                    <div class="item-actions">
+                      <form method="POST" action="/admin/limite_salas/{{ user.id }}" style="display: inline-flex; align-items: center; gap: 0.5rem;">
+                        <input type="number" name="limite" value="{{ salas_info.get(user.id, {}).get('limite', 10) }}" min="0" max="1000" style="width: 80px; padding: 0.25rem 0.5rem; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 0.75rem;">
+                        <button type="submit" class="btn btn-primary btn-sm">
+                          <i class="fas fa-save"></i>
+                        </button>
+                      </form>
+                      <a href="/admin/resetar_salas/{{ user.id }}" class="btn btn-warning btn-sm" style="background: var(--warning); color: white;" onclick="return confirm('Resetar salas usadas?')">
+                        <i class="fas fa-redo"></i>
+                      </a>
+                    </div>
+                  </div>
+                  {% endfor %}
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div class="card" style="margin-top: 2rem;">
             <div class="card-header">
               <h2 class="card-title">
-                <i class="fas fa-gamepad"></i> Salas Free Fire
+                <i class="fas fa-exchange-alt"></i> Resgatar Seriais
               </h2>
             </div>
             <div class="card-body">
-              <p style="color: var(--text-secondary);">Funcionalidade em desenvolvimento...</p>
+              <form method="POST" action="/admin/resgatar_seriais">
+                <div class="form-group">
+                  <label class="form-label">Seriais (um por linha ou separados por vírgula)</label>
+                  <textarea name="seriais" class="form-input" rows="4" placeholder="SALA123456789ABC
+SALA987654321DEF"></textarea>
+                </div>
+                <button type="submit" class="btn btn-primary">
+                  <i class="fas fa-gift"></i> Resgatar Seriais
+                </button>
+              </form>
+              
+              {% if resultado_resgate %}
+              <div style="margin-top: 1.5rem;">
+                {% if resultado_resgate.resgatados %}
+                <div class="alert alert-success">
+                  <i class="fas fa-check-circle"></i>
+                  <strong>Resgatados ({{ resultado_resgate.resgatados|length }}):</strong>
+                  {{ resultado_resgate.resgatados|join(', ') }}
+                </div>
+                {% endif %}
+                
+                {% if resultado_resgate.nao_resgatados %}
+                <div class="alert alert-danger">
+                  <i class="fas fa-exclamation-triangle"></i>
+                  <strong>Não resgatados ({{ resultado_resgate.nao_resgatados|length }}):</strong>
+                  {{ resultado_resgate.nao_resgatados|join(', ') }}
+                </div>
+                {% endif %}
+                
+                {% if resultado_resgate.mensagem %}
+                <div style="padding: 0.75rem; background: var(--bg-secondary); border-radius: var(--radius-md); border: 1px solid var(--border); font-size: 0.875rem;">
+                  <strong>Mensagem da API:</strong> {{ resultado_resgate.mensagem }}
+                </div>
+                {% endif %}
+              </div>
+              {% endif %}
+              
+              <div style="margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border);">
+                <h4 style="margin-bottom: 1rem;">Saldo da API</h4>
+                <div style="display: flex; gap: 1rem; align-items: center;">
+                  <a href="/admin/saldo_salas" class="btn btn-primary">
+                    <i class="fas fa-sync"></i> Verificar Saldo
+                  </a>
+                  {% if saldo_salas %}
+                  <div style="padding: 0.5rem 1rem; background: var(--bg-secondary); border-radius: var(--radius-md); border: 1px solid var(--border); font-weight: 500;">
+                    Saldo: {{ saldo_salas }}
+                  </div>
+                  {% endif %}
+                </div>
+              </div>
             </div>
           </div>
         </div>
