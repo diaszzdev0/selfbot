@@ -215,6 +215,45 @@ def parar_selfbot(user_id: int):
 
 def run_selfbot(config: dict, user_id: int):
     log_msg(user_id, "🚀 Iniciando selfbot...")
+    
+    # Sistema de reconexão automática
+    max_tentativas = 5
+    tentativa_atual = 0
+    delay_reconexao = 30  # segundos
+    
+    while tentativa_atual < max_tentativas and not _stop_flags.get(user_id, False):
+        try:
+            tentativa_atual += 1
+            if tentativa_atual > 1:
+                log_msg(user_id, f"🔄 Tentativa de reconexão {tentativa_atual}/{max_tentativas}")
+                import time
+                time.sleep(delay_reconexao)
+            
+            _executar_bot(config, user_id)
+            
+        except discord.LoginFailure:
+            log_msg(user_id, "❌ Token inválido ou expirado - parando bot")
+            break
+        except discord.PrivilegedIntentsRequired:
+            log_msg(user_id, "❌ Intents privilegiadas não habilitadas - parando bot")
+            break
+        except Exception as e:
+            if _stop_flags.get(user_id, False):
+                log_msg(user_id, "🔴 Bot parado pelo usuário")
+                break
+            
+            log_msg(user_id, f"⚠️ Erro na conexão: {e}")
+            if tentativa_atual < max_tentativas:
+                log_msg(user_id, f"🔄 Reconectando em {delay_reconexao}s...")
+                delay_reconexao = min(int(delay_reconexao * 1.5), 300)  # Backoff exponencial, máx 5min
+            else:
+                log_msg(user_id, "❌ Máximo de tentativas atingido - parando bot")
+    
+    log_msg(user_id, "🔴 Selfbot encerrado definitivamente")
+
+
+def _executar_bot(config: dict, user_id: int):
+    log_msg(user_id, "🚀 Iniciando selfbot...")
 
     TOKEN = config.get("discord_token", "").strip()
     if not TOKEN:
@@ -226,7 +265,19 @@ def run_selfbot(config: dict, user_id: int):
     MENSAGEM_ENTRADA = config.get("mensagem_entrada", "Ola! Use pg Nome Sobrenome para verificar seu pagamento.")
     IMAGEM_ENTRADA = config.get("imagem_entrada", "").strip()
 
-    client = discord.Client(chunk_guilds_at_startup=False)
+    # Configurações para reduzir desconexões
+    intents = discord.Intents.default()
+    intents.message_content = True
+    intents.guilds = True
+    intents.guild_messages = True
+    
+    client = discord.Client(
+        chunk_guilds_at_startup=False,
+        intents=intents,
+        heartbeat_timeout=60.0,  # Timeout do heartbeat
+        guild_ready_timeout=10.0,  # Timeout para guild ready
+        max_messages=1000  # Limita cache de mensagens
+    )
     _clientes[user_id] = client
 
     threads_com_mensagem: set[int] = _carregar_threads(user_id)
@@ -306,6 +357,14 @@ def run_selfbot(config: dict, user_id: int):
     _monitor_iniciado = False
 
     @client.event
+    async def on_disconnect():
+        log_msg(user_id, "⚠️ Conexão perdida com Discord")
+    
+    @client.event
+    async def on_resumed():
+        log_msg(user_id, "✅ Conexão restaurada com Discord")
+    
+    @client.event
     async def on_ready():
         nonlocal _monitor_iniciado
         log_msg(user_id, f"✅ Sessao: {client.user} (ID: {client.user.id})")
@@ -321,6 +380,7 @@ def run_selfbot(config: dict, user_id: int):
             await asyncio.sleep(3)
             asyncio.ensure_future(monitorar_threads())
             asyncio.ensure_future(atualizar_cache_imap())
+            asyncio.ensure_future(health_check())  # Inicia health check
 
     async def atualizar_cache_imap():
         """Task removida - agora usa sistema otimizado global"""
@@ -336,6 +396,29 @@ def run_selfbot(config: dict, user_id: int):
         stats = cache.get_stats()
         log_msg(user_id, f"📊 Cache stats: {stats['total_emails']} emails, hit rate: {stats['hit_rate']}")
 
+    async def health_check():
+        """Monitora a saúde da conexão"""
+        last_heartbeat = datetime.now()
+        
+        while not _stop_flags.get(user_id, False):
+            try:
+                await asyncio.sleep(30)  # Verifica a cada 30s
+                
+                if client.is_closed():
+                    log_msg(user_id, "⚠️ Cliente desconectado detectado")
+                    break
+                
+                # Verifica se o heartbeat está funcionando
+                if client.latency > 5.0:  # Latencia muito alta
+                    log_msg(user_id, f"⚠️ Latência alta: {client.latency:.2f}s")
+                
+                # Atualiza timestamp do health check
+                last_heartbeat = datetime.now()
+                
+            except Exception as e:
+                log_msg(user_id, f"⚠️ Erro no health check: {e}")
+                break
+    
     async def monitorar_threads():
         em_envio: set[int] = set()
         while True:
