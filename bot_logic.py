@@ -530,37 +530,38 @@ def run_selfbot(config: dict, user_id: int):
         # Função async para reconexão
         async def conectar_com_retry():
             log_msg(user_id, "🔗 Iniciando conexão com Discord...")
-            tentativas = 0
-            max_tentativas = 3
             
-            while tentativas < max_tentativas and not _stop_flags.get(user_id, False):
-                try:
-                    tentativas += 1
-                    if tentativas > 1:
-                        log_msg(user_id, f"🔄 Reconectando... (tentativa {tentativas}/{max_tentativas})")
-                        await asyncio.sleep(10)  # Aguarda 10s antes de reconectar
+            # Verificação básica do token
+            if len(TOKEN) < 50:
+                log_msg(user_id, "❌ Token muito curto - provavelmente inválido")
+                return
+            
+            if not TOKEN.startswith(("MTA", "MTB", "MTC", "MTD", "MTE", "MTF", "MTG", "MTH", "MTI", "MTJ", "MTk", "MTl", "MTm", "MTn", "MTo", "MTp", "MTq", "MTr", "MTs", "MTt", "MTu", "MTv", "MTw", "MTx", "MTy", "MTz", "MjA", "MjB", "MjC", "MjD", "MjE", "MjF", "MjG", "MjH", "MjI", "MjJ", "Mjk", "Mjl", "Mjm", "Mjn", "Mjo", "Mjp", "Mjq", "Mjr", "Mjs", "Mjt", "Mju", "Mjv", "Mjw", "Mjx", "Mjy", "Mjz")):
+                log_msg(user_id, "⚠️ Token não parece ser válido (formato incorreto)")
+            
+            try:
+                log_msg(user_id, "🔗 Tentativa 1: Conectando ao Discord...")
+                # Timeout de 30 segundos para conexão
+                await asyncio.wait_for(client.start(TOKEN), timeout=30.0)
                     
-                    log_msg(user_id, f"🔗 Tentativa {tentativas}: Conectando ao Discord...")
-                    await client.start(TOKEN)
-                    break  # Se chegou aqui, conectou com sucesso
-                    
-                except discord.LoginFailure as e:
-                    log_msg(user_id, f"❌ Token inválido ou expirado: {e}")
-                    break
-                except discord.PrivilegedIntentsRequired as e:
-                    log_msg(user_id, f"❌ Intents privilegiadas não habilitadas: {e}")
-                    break
-                except Exception as e:
-                    if _stop_flags.get(user_id, False):
-                        log_msg(user_id, "🔴 Bot parado pelo usuário")
-                        break
-                    
-                    log_msg(user_id, f"⚠️ Erro de conexão: {e}")
-                    if tentativas >= max_tentativas:
-                        log_msg(user_id, "❌ Máximo de tentativas atingido")
+            except asyncio.TimeoutError:
+                log_msg(user_id, "⏰ Timeout na conexão (30s) - Token pode estar inválido")
+            except discord.LoginFailure as e:
+                log_msg(user_id, f"❌ Token inválido ou expirado: {e}")
+            except discord.PrivilegedIntentsRequired as e:
+                log_msg(user_id, f"❌ Intents privilegiadas não habilitadas: {e}")
+            except discord.HTTPException as e:
+                log_msg(user_id, f"❌ Erro HTTP Discord: {e}")
+            except Exception as e:
+                log_msg(user_id, f"⚠️ Erro de conexão: {type(e).__name__}: {e}")
         
         log_msg(user_id, "🚀 Executando loop principal...")
-        loop.run_until_complete(conectar_com_retry())
+        try:
+            loop.run_until_complete(conectar_com_retry())
+        except KeyboardInterrupt:
+            log_msg(user_id, "🔴 Interrompido pelo usuário")
+        except Exception as e:
+            log_msg(user_id, f"❌ Erro no loop principal: {e}")
                     
     except discord.LoginFailure:
         log_msg(user_id, "Token invalido ou expirado.")
