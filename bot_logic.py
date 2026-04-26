@@ -141,72 +141,131 @@ def _salvar_thread(user_id: int, thread_id: int):
 
 def _buscar_pagamento_otimizado(cfg: dict, nome: str, user_id: int):
     """Busca otimizada de pagamento usando o sistema de cache avançado"""
-    log_msg(user_id, f"🔍 Busca otimizada: {nome}")
+    if not nome or not isinstance(nome, str):
+        log_msg(user_id, "Nome inválido para busca")
+        return None
+        
+    nome = nome.strip()
+    if len(nome) < 2:
+        log_msg(user_id, "Nome muito curto para busca")
+        return None
+    
+    log_msg(user_id, f"Busca otimizada: {nome[:50]}...")  # Trunca nome longo
     
     # Rate limiting por usuário
     now = datetime.now()
     rate_limiter = _rate_limiters.setdefault(user_id, {"last_request": now, "count": 0})
     
-    # Permite até 10 requests por segundo por usuário
-    if (now - rate_limiter["last_request"]).total_seconds() < 0.1:
+    # Permite até 5 requests por segundo por usuário (reduzido)
+    if (now - rate_limiter["last_request"]).total_seconds() < 0.2:
         rate_limiter["count"] += 1
-        if rate_limiter["count"] > 10:
-            log_msg(user_id, "⚠️ Rate limit atingido, aguardando...")
+        if rate_limiter["count"] > 5:
+            log_msg(user_id, "Rate limit atingido, aguardando...")
             return None
     else:
         rate_limiter["count"] = 0
         rate_limiter["last_request"] = now
     
     try:
-        # Obtém cache otimizado
+        # Obtém cache otimizado com timeout
         cache = imap_manager.get_cache(user_id, cfg)
+        if not cache:
+            log_msg(user_id, "Cache não disponível")
+            return None
         
         # Busca no cache otimizado
         resultado = cache.search_payment_optimized(nome)
         
         if resultado:
-            log_msg(user_id, f"✅ Pagamento encontrado (cache): {nome} - {resultado['banco']} - R$ {resultado['valor']}")
+            # Valida resultado
+            if not isinstance(resultado, dict) or 'banco' not in resultado or 'valor' not in resultado:
+                log_msg(user_id, "Resultado de busca inválido")
+                return None
+                
+            log_msg(user_id, f"Pagamento encontrado (cache): {nome[:30]} - {resultado['banco'][:20]}")
             return {
-                "valor": resultado["valor"],
-                "banco": resultado["banco"]
+                "valor": str(resultado["valor"])[:20],  # Limita tamanho
+                "banco": str(resultado["banco"])[:50]   # Limita tamanho
             }
         else:
-            log_msg(user_id, f"❌ Pagamento não encontrado: {nome}")
+            log_msg(user_id, f"Pagamento não encontrado: {nome[:30]}")
             return None
             
     except Exception as e:
-        log_msg(user_id, f"❌ Erro na busca otimizada: {e}")
+        log_msg(user_id, f"Erro na busca otimizada: {type(e).__name__}: {str(e)[:100]}")
         return None
 
 
 async def _criar_sala_api(salaid: str = "") -> dict:
+    """Cria sala via API com validação e timeout adequado"""
     if not salaid:
         salaid = SALA_PADRAO
+    
+    # Validação de entrada
+    if not isinstance(salaid, str) or len(salaid) < 5:
+        return {"_erro": "ID de sala inválido"}
+    
     url = API_CRIAR_URL.format(salaid=salaid)
+    
     try:
-        async with aiohttp.ClientSession() as sess:
+        # Timeout mais conservador
+        timeout = aiohttp.ClientTimeout(total=30, connect=10)
+        async with aiohttp.ClientSession(timeout=timeout) as sess:
             async with sess.get(url) as resp:
+                if resp.status != 200:
+                    return {"_erro": f"HTTP {resp.status}: {resp.reason}"}
+                    
                 texto = await resp.text()
+                if not texto:
+                    return {"_erro": "Resposta vazia da API"}
+                    
                 try:
                     data = json.loads(texto)
-                except Exception as e:
-                    return {"_erro": f"JSON invalido: {e} | resposta: {texto[:200]}"}
+                except json.JSONDecodeError as e:
+                    return {"_erro": f"JSON inválido: {str(e)[:100]} | resposta: {texto[:200]}"}
+            
+            # Aguarda processamento com limite de tentativas
             tentativas = 0
-            while data.get("status") == 2 and tentativas < 12:
-                await asyncio.sleep(5)
+            max_tentativas = 10  # Reduzido de 12
+            
+            while data.get("status") == 2 and tentativas < max_tentativas:
+                await asyncio.sleep(3)  # Reduzido de 5s
                 tentativas += 1
-                pedido_id = data.get("pedidoid", "")
+                
+                pedido_id = data.get("pedidoid")
+                if not pedido_id:
+                    return {"_erro": "ID do pedido não encontrado"}
+                
                 ts = int(asyncio.get_event_loop().time() * 1000)
                 url_info = API_INFO_URL.format(pedidoid=pedido_id, ts=ts)
-                async with sess.get(url_info) as resp2:
-                    texto2 = await resp2.text()
-                    try:
-                        data = json.loads(texto2)
-                    except Exception as e:
-                        return {"_erro": f"JSON info invalido: {e} | resposta: {texto2[:200]}"}
+                
+                try:
+                    async with sess.get(url_info) as resp2:
+                        if resp2.status != 200:
+                            return {"_erro": f"Erro ao verificar status: HTTP {resp2.status}"}
+                            
+                        texto2 = await resp2.text()
+                        if not texto2:
+                            return {"_erro": "Resposta vazia ao verificar status"}
+                            
+                        try:
+                            data = json.loads(texto2)
+                        except json.JSONDecodeError as e:
+                            return {"_erro": f"JSON inválido no status: {str(e)[:100]}"}
+                except Exception as e:
+                    return {"_erro": f"Erro na verificação: {type(e).__name__}: {str(e)[:100]}"}
+            
+            if tentativas >= max_tentativas:
+                return {"_erro": f"Timeout após {max_tentativas} tentativas"}
+                
         return data
+        
+    except asyncio.TimeoutError:
+        return {"_erro": "Timeout na conexão com API"}
+    except aiohttp.ClientError as e:
+        return {"_erro": f"Erro de conexão: {type(e).__name__}: {str(e)[:100]}"}
     except Exception as e:
-        return {"_erro": str(e)}
+        return {"_erro": f"Erro inesperado: {type(e).__name__}: {str(e)[:100]}"}
 
 
 def parar_selfbot(user_id: int):
@@ -751,6 +810,9 @@ def run_selfbot(config: dict, user_id: int):
                 
             except Exception as e:
                 log_msg(user_id, f"❌ Erro no evento on_thread_join: {type(e).__name__}: {str(e)[:100]}")
+    
+    @client.event
+    async def on_message(message: discord.Message):
         if not message.guild or message.guild.id != SERVER_ID:
             return
         channel = message.channel

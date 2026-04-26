@@ -1,34 +1,83 @@
 import os
 import multiprocessing
+import secrets
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify, make_response
 from werkzeug.security import generate_password_hash, check_password_hash
 from models import db, User, LicenseKey, BotConfig
 from bot_logic import run_selfbot
 
 app = Flask(__name__)
-app.secret_key = os.getenv("SECRET_KEY", "manager_secret_key")
+
+# Configuração de segurança melhorada
+secret_key = os.getenv("FLASK_SECRET_KEY")
+if not secret_key:
+    # Gera uma chave secreta aleatória se não estiver configurada
+    secret_key = secrets.token_hex(32)
+    print("AVISO: Usando chave secreta temporária. Configure FLASK_SECRET_KEY no .env")
+
+app.secret_key = secret_key
 app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
+app.config["SESSION_COOKIE_SECURE"] = False  # Mude para True em produção com HTTPS
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+
+# Configuração do banco de dados
 _db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "selfbot.db")
 _database_url = os.getenv("DATABASE_URL", f"sqlite:///{_db_path}")
-# Heroku/Railway/SquareCloud retornam postgres://, SQLAlchemy exige postgresql://
+
+# Correção para Heroku/Railway/SquareCloud
 if _database_url.startswith("postgres://"):
     _database_url = _database_url.replace("postgres://", "postgresql://", 1)
+
 app.config["SQLALCHEMY_DATABASE_URI"] = _database_url
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+    "pool_pre_ping": True,
+    "pool_recycle": 300,
+    "connect_args": {"check_same_thread": False} if "sqlite" in _database_url else {}
+}
+
 db.init_app(app)
 
+# Dicionário para controlar processos com limite
+MAX_PROCESSOS = 50  # Limite máximo de processos simultâneos
 processos: dict[int, multiprocessing.Process] = {}
 
 
+def _limpar_processos_mortos():
+    """Remove processos mortos do dicionário"""
+    mortos = []
+    for user_id, processo in processos.items():
+        if not processo.is_alive():
+            mortos.append(user_id)
+    
+    for user_id in mortos:
+        processos.pop(user_id, None)
+    
+    return len(mortos)
+
+
 def _config_dict(cfg: BotConfig) -> dict:
+    """Converte configuração do banco para dicionário com validação"""
+    if not cfg:
+        return {}
+    
+    # Validação básica dos campos obrigatórios
+    required_fields = ["discord_token", "server_id", "categoria_id"]
+    for field in required_fields:
+        if not getattr(cfg, field, None):
+            raise ValueError(f"Campo obrigatório '{field}' não configurado")
+    
     return {
-        "discord_token": cfg.discord_token,
-        "server_id": cfg.server_id,
-        "categoria_id": cfg.categoria_id,
-        "email_user": cfg.email_user,
-        "email_pass": cfg.email_pass,
-        "imap_server": cfg.imap_server,
-        "mensagem_entrada": cfg.mensagem_entrada,
+        "discord_token": str(cfg.discord_token).strip(),
+        "server_id": str(cfg.server_id).strip(),
+        "categoria_id": str(cfg.categoria_id).strip(),
+        "email_user": str(cfg.email_user or "").strip(),
+        "email_pass": str(cfg.email_pass or "").strip(),
+        "imap_server": str(cfg.imap_server or "imap.gmail.com").strip(),
+        "mensagem_entrada": str(cfg.mensagem_entrada or "Olá! Use pg Nome Sobrenome para verificar pagamento.").strip(),
+        "imagem_entrada": str(cfg.imagem_entrada or "").strip(),
+        "prefixo_sala": str(cfg.prefixo_sala or "").strip(),
     }
 
 
@@ -153,21 +202,48 @@ def cliente_salvar_config():
 @login_required
 def cliente_start_bot(user_id: int):
     if session["cliente_id"] != user_id:
-        return jsonify({"erro": "Sem permissao"}), 403
+        return jsonify({"erro": "Sem permissão"}), 403
+    
+    # Verifica limite de processos
+    if len(processos) >= MAX_PROCESSOS:
+        user = db.session.get(User, session["cliente_id"])
+        cfg = user.config
+        return _render_cliente(user, cfg, False, "Limite máximo de bots atingido. Tente novamente mais tarde.", "warning")
+    
     if user_id in processos and processos[user_id].is_alive():
         user = db.session.get(User, session["cliente_id"])
         cfg = user.config
         ativo = True
         return _render_cliente(user, cfg, ativo, "Bot já está rodando!", "info")
+    
     user = db.session.get(User, user_id)
     if not user or not user.config:
         return _render_cliente(user, None, False, "SELFBOT NÃO CONFIGURADO", "danger")
-    p = multiprocessing.Process(target=run_selfbot, args=(_config_dict(user.config), user_id), daemon=True)
-    p.start()
-    processos[user_id] = p
-    cfg = user.config
-    ativo = True
-    return _render_cliente(user, cfg, ativo, "Bot iniciado com sucesso!", "success")
+    
+    try:
+        # Valida configuração antes de iniciar
+        config_dict = _config_dict(user.config)
+        
+        # Limpa processos mortos antes de criar novo
+        _limpar_processos_mortos()
+        
+        p = multiprocessing.Process(
+            target=run_selfbot, 
+            args=(config_dict, user_id), 
+            daemon=True,
+            name=f"selfbot_user_{user_id}"
+        )
+        p.start()
+        processos[user_id] = p
+        
+        cfg = user.config
+        ativo = True
+        return _render_cliente(user, cfg, ativo, "Bot iniciado com sucesso!", "success")
+        
+    except ValueError as e:
+        return _render_cliente(user, user.config, False, f"Erro de configuração: {str(e)}", "danger")
+    except Exception as e:
+        return _render_cliente(user, user.config, False, f"Erro ao iniciar bot: {str(e)[:100]}", "danger")
 
 
 @app.route("/cliente/stop_bot/<int:user_id>")
