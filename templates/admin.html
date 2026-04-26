@@ -588,6 +588,11 @@
               </a>
             </li>
             <li class="nav-item">
+              <a class="nav-link" onclick="showPage('gerar', this)">
+                <i class="fas fa-user-plus"></i> Gerar Usuário + Key
+              </a>
+            </li>
+            <li class="nav-item">
               <a class="nav-link" onclick="showPage('bots', this)">
                 <i class="fas fa-robot"></i> Bots
               </a>
@@ -736,6 +741,73 @@
                   {% endfor %}
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="page" id="page-gerar">
+          <div class="card">
+            <div class="card-header">
+              <h2 class="card-title">
+                <i class="fas fa-user-plus"></i> Gerar Usuário + Key
+              </h2>
+            </div>
+            <div class="card-body">
+              {% if msg_gerar %}
+              <div class="alert {% if msg_gerar_tipo == 'danger' %}alert-danger{% else %}alert-success{% endif %}">
+                <i class="fas {% if msg_gerar_tipo == 'danger' %}fa-exclamation-triangle{% else %}fa-check-circle{% endif %}"></i>
+                {{ msg_gerar }}
+              </div>
+              {% endif %}
+              
+              <form method="POST" action="/admin/gerar_usuario_key">
+                <div class="form-group">
+                  <label class="form-label">Nome do Usuário</label>
+                  <input type="text" name="username" class="form-input" placeholder="Digite o nome" required>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Tipo de Licença</label>
+                  <select name="tipo" class="form-select">
+                    <option value="semanal">Semanal (7 dias)</option>
+                    <option value="mensal" selected>Mensal (30 dias)</option>
+                    <option value="permanente">Permanente</option>
+                  </select>
+                </div>
+                <button type="submit" class="btn btn-primary">
+                  <i class="fas fa-plus"></i> Gerar Usuário + Key
+                </button>
+              </form>
+              
+              {% if usuario_key_gerado %}
+              <div style="margin-top: 2rem; padding: 1.5rem; background: var(--bg-secondary); border-radius: var(--radius-md); border: 1px solid var(--border);">
+                <h4 style="margin-bottom: 1rem; color: var(--accent);"><i class="fas fa-check-circle"></i> Usuário e Key Criados!</h4>
+                
+                <div style="display: grid; gap: 1rem;">
+                  <div style="padding: 1rem; background: white; border-radius: var(--radius-md); border: 1px solid var(--border);">
+                    <h5 style="margin-bottom: 0.5rem; color: var(--text-primary);">👤 Usuário Criado:</h5>
+                    <div style="font-family: monospace; font-size: 1rem; color: var(--primary); font-weight: 600;">{{ usuario_key_gerado.username }}</div>
+                    <div style="font-size: 0.875rem; color: var(--text-secondary); margin-top: 0.25rem;">
+                      Tipo: {{ usuario_key_gerado.tipo }} | 
+                      Expira: {{ usuario_key_gerado.expira_em.strftime('%d/%m/%Y') if usuario_key_gerado.expira_em else 'Permanente' }}
+                    </div>
+                  </div>
+                  
+                  <div style="padding: 1rem; background: white; border-radius: var(--radius-md); border: 1px solid var(--border);">
+                    <h5 style="margin-bottom: 0.5rem; color: var(--text-primary);">🔑 Key Gerada:</h5>
+                    <div style="font-family: monospace; font-size: 1rem; color: var(--accent); font-weight: 600; word-break: break-all;">{{ usuario_key_gerado.key }}</div>
+                    <div style="font-size: 0.875rem; color: var(--text-secondary); margin-top: 0.25rem;">
+                      Status: Disponível | Tipo: {{ usuario_key_gerado.tipo }}
+                    </div>
+                  </div>
+                </div>
+                
+                <div style="margin-top: 1rem; padding: 1rem; background: linear-gradient(135deg, #f0fdf4, #dcfce7); border-radius: var(--radius-md); border: 1px solid #bbf7d0;">
+                  <div style="font-size: 0.875rem; color: #166534;">
+                    <strong>✅ Pronto para usar!</strong> O usuário pode usar esta key para ativar sua licença.
+                  </div>
+                </div>
+              </div>
+              {% endif %}
             </div>
           </div>
         </div>
@@ -1103,6 +1175,7 @@
       const titles = {
         'usuarios': 'Usuários',
         'keys': 'Keys',
+        'gerar': 'Gerar Usuário + Key',
         'bots': 'Bots',
         'salas': 'Salas FF'
       };
@@ -1226,10 +1299,16 @@
     document.addEventListener('DOMContentLoaded', function() {
       // Verifica se há âncora na URL para mostrar a aba correta
       const hash = window.location.hash.substring(1);
-      if (hash && ['usuarios', 'keys', 'bots', 'salas'].includes(hash)) {
+      if (hash && ['usuarios', 'keys', 'gerar', 'bots', 'salas'].includes(hash)) {
         const targetLink = document.querySelector(`[onclick*="${hash}"]`);
         if (targetLink) {
           showPage(hash, targetLink);
+        }
+      } else {
+        // Se não há hash, mostra a primeira aba (usuários)
+        const firstLink = document.querySelector('[onclick*="usuarios"]');
+        if (firstLink) {
+          showPage('usuarios', firstLink);
         }
       }
       
@@ -1240,13 +1319,36 @@
       setInterval(updateBotStatus, 5000);
       
       // Atualiza quando a aba de bots é selecionada
-      document.querySelector('[onclick*="bots"]').addEventListener('click', function() {
-        setTimeout(updateBotStatus, 100);
-        setTimeout(updateIMAPStats, 200);
-      });
+      const botsLink = document.querySelector('[onclick*="bots"]');
+      if (botsLink) {
+        botsLink.addEventListener('click', function() {
+          setTimeout(updateBotStatus, 100);
+          setTimeout(updateIMAPStats, 200);
+        });
+      }
       
       // Atualiza estatísticas IMAP a cada 30 segundos
       setInterval(updateIMAPStats, 30000);
+      
+      // Escuta mudanças no hash da URL
+      window.addEventListener('hashchange', function() {
+        const newHash = window.location.hash.substring(1);
+        if (newHash && ['usuarios', 'keys', 'gerar', 'bots', 'salas'].includes(newHash)) {
+          const targetLink = document.querySelector(`[onclick*="${newHash}"]`);
+          if (targetLink) {
+            showPage(newHash, targetLink);
+          }
+        }
+      });
+      
+      // Verifica se há mensagens de feedback para mostrar a aba correta
+      {% if msg_gerar %}
+      showPage('gerar', document.querySelector('[onclick*="gerar"]'));
+      {% elif msg and '#usuarios' in request.url %}
+      showPage('usuarios', document.querySelector('[onclick*="usuarios"]'));
+      {% elif msg and '#keys' in request.url %}
+      showPage('keys', document.querySelector('[onclick*="keys"]'));
+      {% endif %}
     });
   </script>
 </body>

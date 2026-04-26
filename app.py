@@ -296,6 +296,9 @@ def admin():
     # Pega mensagens da sessão
     msg = session.pop("msg", None)
     msg_tipo = session.pop("msg_tipo", None)
+    msg_gerar = session.pop("msg_gerar", None)
+    msg_gerar_tipo = session.pop("msg_gerar_tipo", None)
+    usuario_key_gerado = session.pop("usuario_key_gerado", None)
     
     seriais = session.pop("seriais", None)
     resultado_resgate = session.pop("resultado_resgate", None)
@@ -308,7 +311,44 @@ def admin():
     return render_template("admin.html", users=users, keys=keys, status=status, salas_info=salas_info, 
                          seriais=seriais, resultado_resgate=resultado_resgate, saldo_salas=saldo_salas, 
                          teste_api=teste_api, keys_criadas=keys_criadas, verificacao_key=verificacao_key, 
-                         adicao_salas=adicao_salas, msg=msg, msg_tipo=msg_tipo)
+                         adicao_salas=adicao_salas, msg=msg, msg_tipo=msg_tipo, msg_gerar=msg_gerar, 
+                         msg_gerar_tipo=msg_gerar_tipo, usuario_key_gerado=usuario_key_gerado)
+
+
+@app.route("/admin/gerar_usuario_key", methods=["POST"])
+@admin_required
+def gerar_usuario_key():
+    username = request.form["username"].strip()
+    tipo = request.form.get("tipo", "mensal")
+    
+    if User.query.filter_by(username=username).first():
+        session["msg_gerar"] = "Usuário já existe."
+        session["msg_gerar_tipo"] = "danger"
+        return redirect(url_for("admin") + "#gerar")
+    
+    # Gera a key
+    lic = LicenseKey.gerar(tipo)
+    lic.usado = True
+    
+    # Cria o usuário
+    user = User(
+        username=username,
+        password=generate_password_hash(username),
+        key_id=lic.id,
+    )
+    
+    db.session.add(user)
+    db.session.commit()
+    
+    # Armazena os dados para exibir na página
+    session["usuario_key_gerado"] = {
+        "username": username,
+        "key": lic.key,
+        "tipo": tipo,
+        "expira_em": lic.expira_em
+    }
+    
+    return redirect(url_for("admin") + "#gerar")
 
 
 @app.route("/admin/criar_usuario", methods=["POST"])
@@ -783,6 +823,30 @@ def resetar_salas(user_id: int):
         username = user.username if user else f"ID {user_id}"
         session["msg"] = f"Salas de {username} resetadas com sucesso!"
         session["msg_tipo"] = "success"
+    return redirect(url_for("admin") + "#salas")
+
+
+@app.route("/admin/deletar_key", methods=["POST"])
+@admin_required
+def deletar_key():
+    key_id = request.form.get("key_id")
+    if key_id:
+        key_id = int(key_id)
+        key = LicenseKey.query.get(key_id)
+        if key:
+            # Desvincula usuários antes de deletar
+            User.query.filter_by(key_id=key.id).update({"key_id": None})
+            db.session.delete(key)
+            db.session.commit()
+            session["msg"] = f"Key deletada com sucesso!"
+            session["msg_tipo"] = "success"
+    return redirect(url_for("admin") + "#keys")
+
+
+@app.route("/admin/limpar_seriais")
+@admin_required
+def limpar_seriais():
+    session.pop("seriais", None)
     return redirect(url_for("admin") + "#salas")
 
 
