@@ -745,12 +745,15 @@
             <div class="card-header">
               <h2 class="card-title">
                 <i class="fas fa-robot"></i> Status dos Bots
+                <span id="status-indicator" style="margin-left: 1rem; font-size: 0.75rem; color: var(--text-secondary);">
+                  <i class="fas fa-sync fa-spin"></i> Atualizando...
+                </span>
               </h2>
             </div>
             <div class="card-body">
               <div class="bot-grid">
                 {% for user in users %}
-                <div class="bot-card">
+                <div class="bot-card" data-user-id="{{ user.id }}">
                   <div class="bot-header">
                     <h4>{{ user.username }}</h4>
                     <span class="status-indicator {% if status.get(user.id) %}online{% else %}offline{% endif %}"></span>
@@ -1070,6 +1073,85 @@
       };
       document.getElementById('page-title').textContent = titles[pageId];
     }
+    
+    // Função para atualizar status dos bots em tempo real
+    function updateBotStatus() {
+      const statusIndicator = document.getElementById('status-indicator');
+      if (statusIndicator) {
+        statusIndicator.innerHTML = '<i class="fas fa-sync fa-spin"></i> Atualizando...';
+      }
+      
+      fetch('/admin/status_json')
+        .then(response => response.json())
+        .then(data => {
+          // Atualiza os indicadores de status na aba de bots
+          document.querySelectorAll('.bot-card').forEach(card => {
+            const userId = card.dataset.userId;
+            if (userId && data.hasOwnProperty(userId)) {
+              const indicator = card.querySelector('.status-indicator');
+              const statusText = card.querySelector('.bot-status');
+              const actions = card.querySelector('.bot-actions');
+              
+              if (data[userId]) {
+                // Bot online
+                indicator.className = 'status-indicator online';
+                statusText.textContent = 'Bot Online';
+                actions.innerHTML = `
+                  <a href="/admin/stop_bot/${userId}" class="btn btn-danger btn-sm">
+                    <i class="fas fa-stop"></i> Parar
+                  </a>
+                  <a href="/admin/restart_bot/${userId}" class="btn btn-warning btn-sm" style="background: var(--warning); color: white;">
+                    <i class="fas fa-redo"></i> Reiniciar
+                  </a>
+                `;
+              } else {
+                // Bot offline
+                indicator.className = 'status-indicator offline';
+                statusText.textContent = 'Bot Offline';
+                actions.innerHTML = `
+                  <a href="/admin/start_bot/${userId}" class="btn btn-primary btn-sm">
+                    <i class="fas fa-play"></i> Iniciar
+                  </a>
+                `;
+              }
+            }
+          });
+          
+          // Atualiza contador na sidebar
+          const onlineCount = Object.values(data).filter(status => status).length;
+          const onlineCountElement = document.querySelector('.sidebar-stats .stat-card:nth-child(2) .stat-number');
+          if (onlineCountElement) {
+            onlineCountElement.textContent = onlineCount;
+          }
+          
+          // Atualiza indicador de status
+          if (statusIndicator) {
+            const now = new Date();
+            const timeString = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            statusIndicator.innerHTML = `<i class="fas fa-check" style="color: var(--accent);"></i> Última atualização: ${timeString}`;
+          }
+        })
+        .catch(error => {
+          console.error('Erro ao atualizar status:', error);
+          if (statusIndicator) {
+            statusIndicator.innerHTML = '<i class="fas fa-exclamation-triangle" style="color: var(--danger);"></i> Erro na atualização';
+          }
+        });
+    }
+    
+    // Inicia o polling quando a página carrega
+    document.addEventListener('DOMContentLoaded', function() {
+      // Atualiza imediatamente
+      updateBotStatus();
+      
+      // Atualiza a cada 5 segundos
+      setInterval(updateBotStatus, 5000);
+      
+      // Atualiza quando a aba de bots é selecionada
+      document.querySelector('[onclick*="bots"]').addEventListener('click', function() {
+        setTimeout(updateBotStatus, 100);
+      });
+    });
   </script>
 </body>
 </html>

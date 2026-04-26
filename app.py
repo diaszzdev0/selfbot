@@ -373,7 +373,36 @@ def criar_admin():
 @admin_required
 def status_json():
     from models import BotStatus
-    data = {str(s.user_id): s.ativo for s in BotStatus.query.all()}
+    # Verifica status real dos processos
+    status_real = {}
+    for user_id, processo in processos.items():
+        status_real[user_id] = processo.is_alive() if processo else False
+    
+    # Atualiza o banco de dados com o status real
+    for user_id, ativo in status_real.items():
+        bot_status = BotStatus.query.filter_by(user_id=user_id).first()
+        if bot_status:
+            bot_status.ativo = ativo
+        else:
+            bot_status = BotStatus(user_id=user_id, ativo=ativo)
+            db.session.add(bot_status)
+    
+    # Adiciona usuários que não têm processo rodando
+    users = User.query.filter_by(is_admin=False).all()
+    for user in users:
+        if user.id not in status_real:
+            status_real[user.id] = False
+            bot_status = BotStatus.query.filter_by(user_id=user.id).first()
+            if bot_status:
+                bot_status.ativo = False
+            else:
+                bot_status = BotStatus(user_id=user.id, ativo=False)
+                db.session.add(bot_status)
+    
+    db.session.commit()
+    
+    # Retorna status como strings para compatibilidade com JavaScript
+    data = {str(user_id): status for user_id, status in status_real.items()}
     return jsonify(data)
 
 @app.route("/admin/api_saldo_total")
