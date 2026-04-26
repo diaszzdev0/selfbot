@@ -3,10 +3,12 @@ import multiprocessing
 import secrets
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify, make_response
 from werkzeug.security import generate_password_hash, check_password_hash
+from flask_wtf.csrf import CSRFProtect
 from models import db, User, LicenseKey, BotConfig
 from bot_logic import run_selfbot
 
 app = Flask(__name__)
+csrf = CSRFProtect(app)
 
 # Configuração de segurança melhorada
 secret_key = os.getenv("FLASK_SECRET_KEY")
