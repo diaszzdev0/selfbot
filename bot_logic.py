@@ -454,14 +454,16 @@ def run_selfbot(config: dict, user_id: int):
 
     @client.event
     async def on_disconnect():
-        log_msg(user_id, "⚠️ Conexão perdida com Discord")
-        # Log detalhado sobre o estado da conexão
-        log_msg(user_id, f"📊 Estado: closed={client.is_closed()}, latency={getattr(client, 'latency', 'N/A')}")
+        # Só loga se não foi parada intencional
+        if not _stop_flags.get(user_id, False):
+            log_msg(user_id, "Conexão perdida com Discord")
+            log_msg(user_id, f"Estado: closed={client.is_closed()}, latency={getattr(client, 'latency', 'N/A')}")
     
     @client.event
     async def on_resumed():
-        log_msg(user_id, "✅ Conexão restaurada com Discord")
-        log_msg(user_id, f"📊 Latência atual: {client.latency:.3f}s")
+        log_msg(user_id, "Conexão restaurada com Discord")
+        if hasattr(client, 'latency') and client.latency != float('inf'):
+            log_msg(user_id, f"Latência atual: {client.latency:.3f}s")
     
     @client.event
     async def on_ready():
@@ -561,72 +563,71 @@ def run_selfbot(config: dict, user_id: int):
     async def health_check():
         """Monitora a saúde da conexão com reconexão automática melhorada"""
         reconnect_attempts = 0
-        max_attempts = 5  # Aumentado para 5 tentativas
+        max_attempts = 3  # Reduzido para 3 tentativas
         last_ping = datetime.now()
         
         while not _stop_flags.get(user_id, False):
             try:
-                await asyncio.sleep(15)  # Verifica a cada 15s (mais frequente)
+                await asyncio.sleep(30)  # Verifica a cada 30s (menos frequente)
                 current_time = datetime.now()
                 
-                # Verifica se o cliente está fechado
+                # Só considera desconectado se realmente estiver fechado E com latência ruim
                 if client.is_closed():
-                    log_msg(user_id, "⚠️ Cliente desconectado detectado")
+                    log_msg(user_id, "Cliente desconectado detectado")
                     if reconnect_attempts < max_attempts:
                         reconnect_attempts += 1
-                        log_msg(user_id, f"🔄 Tentativa de reconexão {reconnect_attempts}/{max_attempts}")
+                        log_msg(user_id, f"Tentativa de reconexão {reconnect_attempts}/{max_attempts}")
                         try:
-                            # Cria novo cliente se necessário
-                            if client.is_closed():
-                                log_msg(user_id, "🔄 Reiniciando cliente...")
-                                # Não podemos recriar o client aqui, então tentamos reconectar
-                                await asyncio.sleep(5)
-                                continue
+                            await asyncio.sleep(10)  # Aguarda mais antes de tentar
+                            # Não tenta reconectar se foi parado intencionalmente
+                            if _stop_flags.get(user_id, False):
+                                break
                             
                             await client.connect(reconnect=True)
-                            reconnect_attempts = 0  # Reset contador em caso de sucesso
-                            log_msg(user_id, "✅ Reconexão bem-sucedida")
+                            reconnect_attempts = 0
+                            log_msg(user_id, "Reconexão bem-sucedida")
                             last_ping = current_time
                         except Exception as e:
-                            log_msg(user_id, f"❌ Falha na reconexão: {e}")
-                            await asyncio.sleep(10)  # Aguarda antes da próxima tentativa
+                            log_msg(user_id, f"Falha na reconexão: {type(e).__name__}")
+                            await asyncio.sleep(20)  # Aguarda mais entre tentativas
                     else:
-                        log_msg(user_id, "🔴 Máximo de tentativas de reconexão atingido")
+                        log_msg(user_id, "Máximo de tentativas de reconexão atingido")
                         break
                 
-                # Verifica latência e heartbeat
-                if hasattr(client, 'latency'):
+                # Verifica latência apenas se conectado
+                elif hasattr(client, 'latency') and not client.is_closed():
                     if client.latency == float('inf'):
-                        log_msg(user_id, "⚠️ Latência infinita - possível problema de rede")
-                        # Força uma verificação de conectividade
-                        try:
-                            guild = client.get_guild(SERVER_ID)
-                            if guild is None:
-                                log_msg(user_id, "⚠️ Servidor não encontrado - possível desconexão")
-                        except Exception:
-                            log_msg(user_id, "⚠️ Erro ao verificar servidor - cliente pode estar desconectado")
-                    elif client.latency > 10.0:
-                        log_msg(user_id, f"⚠️ Latência alta: {client.latency:.2f}s")
+                        log_msg(user_id, "Latência infinita detectada")
+                        # Só força verificação se latência ruim por muito tempo
+                        if (current_time - last_ping).total_seconds() > 300:  # 5 minutos
+                            try:
+                                guild = client.get_guild(SERVER_ID)
+                                if guild is None:
+                                    log_msg(user_id, "Servidor não encontrado - possível problema")
+                            except Exception:
+                                log_msg(user_id, "Erro ao verificar servidor")
+                    elif client.latency > 15.0:  # Aumentado limite para 15s
+                        log_msg(user_id, f"Latência alta: {client.latency:.2f}s")
                     else:
-                        # Latência normal, reset contador de reconexão
+                        # Latência normal, reset contador
                         if reconnect_attempts > 0:
                             reconnect_attempts = 0
                         last_ping = current_time
                 
-                # Verifica se não recebemos ping há muito tempo
-                if (current_time - last_ping).total_seconds() > 120:  # 2 minutos sem ping
-                    log_msg(user_id, "⚠️ Sem heartbeat há mais de 2 minutos")
+                # Verifica heartbeat apenas se muito tempo sem resposta
+                if (current_time - last_ping).total_seconds() > 600:  # 10 minutos (aumentado)
                     if not client.is_closed():
+                        log_msg(user_id, "Sem heartbeat há mais de 10 minutos")
                         try:
-                            # Tenta forçar um ping
+                            # Tenta um ping suave
                             await client.change_presence()
                             last_ping = current_time
                         except Exception as e:
-                            log_msg(user_id, f"⚠️ Erro ao tentar ping: {e}")
+                            log_msg(user_id, f"Erro ao tentar ping: {type(e).__name__}")
                 
             except Exception as e:
-                log_msg(user_id, f"⚠️ Erro no health check: {e}")
-                await asyncio.sleep(30)  # Aguarda mais tempo em caso de erro
+                log_msg(user_id, f"Erro no health check: {type(e).__name__}")
+                await asyncio.sleep(60)  # Aguarda mais tempo em caso de erro
     
     async def monitorar_threads():
         em_envio: set[int] = set()
@@ -924,67 +925,48 @@ def run_selfbot(config: dict, user_id: int):
         
         # Função async para reconexão com diagnóstico
         async def conectar_com_retry():
-            log_msg(user_id, "🔗 Iniciando conexão com Discord...")
+            log_msg(user_id, "Iniciando conexão com Discord...")
             
             # Verificação básica do token
             if len(TOKEN) < 50:
-                log_msg(user_id, "❌ Token muito curto - provavelmente inválido")
+                log_msg(user_id, "Token muito curto - provavelmente inválido")
                 return
-            
-            # Executa diagnóstico antes da primeira tentativa
-            log_msg(user_id, "🔍 Executando diagnóstico de conectividade...")
-            try:
-                from connection_diagnostics import test_discord_connectivity, test_dns_resolution
-                
-                # Testa conectividade básica
-                connectivity = await test_discord_connectivity()
-                for service, data in connectivity.items():
-                    log_msg(user_id, f"📡 {service}: {data['status']} ({data['latency']})")
-                
-                # Testa DNS
-                dns = test_dns_resolution()
-                for domain, data in dns.items():
-                    if data['status'] != '✅':
-                        log_msg(user_id, f"🌐 DNS {domain}: {data['status']}")
-                        
-            except Exception as e:
-                log_msg(user_id, f"⚠️ Erro no diagnóstico: {e}")
             
             max_retries = 3
             for attempt in range(1, max_retries + 1):
                 try:
-                    log_msg(user_id, f"🔗 Tentativa {attempt}/{max_retries}: Conectando ao Discord...")
+                    log_msg(user_id, f"Tentativa {attempt}/{max_retries}: Conectando ao Discord...")
                     
-                    # Timeout progressivo: 30s, 60s, 90s
-                    timeout = 30 * attempt
+                    # Timeout progressivo: 45s, 60s, 90s
+                    timeout = 30 + (15 * attempt)
                     await asyncio.wait_for(client.start(TOKEN), timeout=timeout)
                     
                     # Se chegou aqui, conexão foi bem-sucedida
-                    log_msg(user_id, "✅ Conexão estabelecida com sucesso!")
+                    log_msg(user_id, "Conexão estabelecida com sucesso!")
                     return
                         
                 except asyncio.TimeoutError:
-                    log_msg(user_id, f"⏰ Timeout na tentativa {attempt} ({timeout}s)")
+                    log_msg(user_id, f"Timeout na tentativa {attempt} ({timeout}s)")
                     if attempt < max_retries:
-                        wait_time = 5 * attempt
-                        log_msg(user_id, f"⏳ Aguardando {wait_time}s antes da próxima tentativa...")
+                        wait_time = 10 * attempt
+                        log_msg(user_id, f"Aguardando {wait_time}s antes da próxima tentativa...")
                         await asyncio.sleep(wait_time)
                 except discord.LoginFailure as e:
-                    log_msg(user_id, f"❌ Token inválido ou expirado: {e}")
+                    log_msg(user_id, f"Token inválido ou expirado: {e}")
                     return  # Não tenta novamente se o token está inválido
                 except discord.PrivilegedIntentsRequired as e:
-                    log_msg(user_id, f"❌ Intents privilegiadas não habilitadas: {e}")
+                    log_msg(user_id, f"Intents privilegiadas não habilitadas: {e}")
                     return
                 except discord.HTTPException as e:
-                    log_msg(user_id, f"❌ Erro HTTP Discord (tentativa {attempt}): {e}")
+                    log_msg(user_id, f"Erro HTTP Discord (tentativa {attempt}): {e}")
                     if attempt < max_retries:
-                        await asyncio.sleep(10)  # Aguarda mais tempo para erros HTTP
+                        await asyncio.sleep(15)  # Aguarda mais tempo para erros HTTP
                 except Exception as e:
-                    log_msg(user_id, f"⚠️ Erro na tentativa {attempt}: {type(e).__name__}: {e}")
+                    log_msg(user_id, f"Erro na tentativa {attempt}: {type(e).__name__}: {str(e)[:50]}")
                     if attempt < max_retries:
-                        await asyncio.sleep(5)
+                        await asyncio.sleep(10)
             
-            log_msg(user_id, f"❌ Falha em todas as {max_retries} tentativas de conexão")
+            log_msg(user_id, f"Falha em todas as {max_retries} tentativas de conexão")
         
         log_msg(user_id, "🚀 Executando loop principal...")
         try:
