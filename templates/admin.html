@@ -1,523 +1,257 @@
 <!DOCTYPE html>
-<html lang="pt-BR" data-bs-theme="dark">
+<html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Cloud Maneger</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <title>Cloud Manager</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+          },
+          colors: {
+            slate: {
+              950: '#020617',
+              900: '#0F172A',
+              850: '#0B1221',
+              800: '#1E293B',
+              750: '#162032',
+              700: '#334155',
+              600: '#475569',
+              500: '#64748B',
+              400: '#94A3B8',
+              300: '#CBD5E1',
+              200: '#E2E8F0',
+              100: '#F1F5F9',
+            }
+          }
+        }
+      }
+    }
+  </script>
   <style>
-    :root { --sidebar-w: 230px; }
-    * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
-    body { background: #0d1117; margin: 0; overflow-x: hidden; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
-
-    /* ── Sidebar ── */
-    .sidebar {
-      position: fixed; top: 0; left: 0;
-      width: var(--sidebar-w); height: 100vh;
-      background: #161b22; border-right: 1px solid #30363d;
-      display: flex; flex-direction: column; z-index: 100;
+    * { -webkit-tap-highlight-color: transparent; }
+    body { font-family: 'Inter', system-ui, sans-serif; }
+    
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(148,163,184,0.2); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(148,163,184,0.35); }
+    
+    .glass {
+      background: rgba(15, 23, 42, 0.7);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(51, 65, 85, 0.5);
     }
-    .sidebar-brand {
-      padding: 20px 18px 14px;
-      font-size: 1rem; font-weight: 600; color: #e6edf3;
-      border-bottom: 1px solid #30363d;
+    
+    .page {
+      display: none;
+      animation: fadeIn 0.25s ease-out;
     }
-    .sidebar-brand small { display: block; font-size: .72rem; color: #6e7681; font-weight: 400; margin-top: 2px; }
-    .nav-link-side {
-      display: flex; align-items: center; gap: 10px;
-      padding: 9px 18px; color: #8b949e; font-size: .85rem; font-weight: 400;
-      cursor: pointer; border: none; background: none; width: 100%;
-      text-align: left; transition: background .15s, color .15s; text-decoration: none;
-      border-radius: 0;
-    }
-    .nav-link-side:hover { background: #21262d; color: #e6edf3; }
-    .nav-link-side.active { background: rgba(137,87,229,.12); color: #8957e5; border-left: 2px solid #8957e5; }
-    .nav-link-side i { font-size: .95rem; width: 18px; text-align: center; opacity: .8; }
-    .stat-box { margin: 10px 12px; padding: 12px; background: #0d1117; border: 1px solid #30363d; border-radius: 12px; }
-    .stat-box .num { font-size: 1.5rem; font-weight: 700; color: #8957e5; }
-    .stat-box .lbl { font-size: .73rem; color: #6e7681; margin-top: 2px; }
-    .sidebar-footer { margin-top: auto; padding: 14px 18px; border-top: 1px solid #30363d; }
-
-    /* ── Layout ── */
-    .main { margin-left: var(--sidebar-w); min-height: 100vh; }
-    .topbar { background: #161b22; border-bottom: 1px solid #30363d; padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; }
-    .content { padding: 24px; }
-    .page { display: none; }
     .page.active { display: block; }
-
-    /* ── Cards ── */
-    .card { background: #161b22; border: 1px solid #30363d; border-radius: 12px !important; }
-
-    /* ── Table ── */
-    .table { --bs-table-bg: transparent; --bs-table-color: #c9d1d9; }
-    .table thead th { color: #8b949e; border-color: #30363d; font-size: .78rem; text-transform: uppercase; letter-spacing: .5px; }
-    .table td { border-color: #21262d; vertical-align: middle; font-size: .88rem; }
-
-    /* ── Badges ── */
-    .badge-semanal { background: #1f6feb; }
-    .badge-mensal { background: #388bfd; }
-    .badge-permanente { background: #3fb950; }
-
-    /* ── Status ── */
-    .status-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
-    .dot-on { background: #3fb950; box-shadow: 0 0 5px #3fb950; }
-    .dot-off { background: #6e7681; }
-
-    /* ── Misc ── */
-    .key-text { font-family: monospace; font-size: .85rem; color: #d29922; letter-spacing: .5px; }
-
-    /* ── Forms ── */
-    .form-control, .form-select, textarea {
-      background: #0d1117 !important; border-color: #30363d !important;
-      color: #c9d1d9 !important; border-radius: 8px !important;
-      padding: 12px !important;
+    
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
     }
-    .form-control:focus, .form-select:focus, textarea:focus {
-      border-color: #8957e5 !important; box-shadow: 0 0 0 3px rgba(137,87,229,.15) !important;
+    
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
     }
-
-    /* ── Buttons override ── */
-    .btn-primary { background: #8957e5 !important; border-color: #8957e5 !important; border-radius: 8px; }
-    .btn-primary:hover { background: #7c3aed !important; border-color: #7c3aed !important; }
-    .btn-success { background: #238636 !important; border-color: #238636 !important; border-radius: 8px; }
-    .btn-success:hover { background: #2ea043 !important; border-color: #2ea043 !important; }
-    .btn-outline-danger { border-radius: 8px; }
-    .btn-outline-warning { border-radius: 8px; }
-    .btn-outline-info { border-radius: 8px; }
-    .btn-outline-secondary { border-radius: 8px; }
-    .btn-warning { border-radius: 8px; }
-    .btn-danger { border-radius: 8px; }
-
-    /* ── Copy btn ── */
-    .btn-copy { background: #21262d; border: 1px solid #30363d; color: #8b949e; padding: 4px 10px; font-size: .75rem; border-radius: 6px; cursor: pointer; }
-    .btn-copy:hover { background: #30363d; color: #c9d1d9; }
-    .btn-copy.copied { color: #3fb950; border-color: #3fb950; }
-
-    .serial-box { background: #010409; border: 1px solid #21262d; border-radius: 8px; padding: 12px; font-family: monospace; font-size: .8rem; color: #3fb950; max-height: 200px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; }
-
-    /* ── Mobile ── */
-    .sidebar-toggle { display: none; }
-    .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 99; }
-    .overlay.show { display: block; }
-    @media (max-width: 768px) {
-      :root { --sidebar-w: 0px; }
-      .sidebar { transform: translateX(-280px); width: 80vw; max-width: 280px; transition: transform .25s; }
+    .animate-pulse-dot { animation: pulse-dot 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+    
+    .nav-item {
+      transition: all 0.2s ease;
+    }
+    .nav-item:hover {
+      background: rgba(59, 130, 246, 0.08);
+    }
+    .nav-item.active {
+      background: rgba(59, 130, 246, 0.12);
+      border-right: 3px solid #3B82F6;
+    }
+    
+    .card-hover {
+      transition: all 0.2s ease;
+    }
+    .card-hover:hover {
+      border-color: rgba(71, 85, 105, 0.8);
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
+    }
+    
+    .btn-primary {
+      background: #3B82F6;
+      transition: all 0.2s ease;
+    }
+    .btn-primary:hover {
+      background: #2563EB;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 16px rgba(59, 130, 246, 0.3);
+    }
+    
+    .input-field {
+      transition: all 0.2s ease;
+    }
+    .input-field:focus {
+      border-color: #3B82F6;
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+    }
+    
+    .modal-backdrop {
+      background: rgba(2, 6, 23, 0.7);
+      backdrop-filter: blur(4px);
+    }
+    
+    .avatar {
+      background: linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%);
+    }
+    .avatar-emerald {
+      background: linear-gradient(135deg, #10B981 0%, #059669 100%);
+    }
+    .avatar-amber {
+      background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%);
+    }
+    .avatar-rose {
+      background: linear-gradient(135deg, #F43F5E 0%, #E11D48 100%);
+    }
+    
+    @media (max-width: 1024px) {
+      .sidebar { transform: translateX(-100%); transition: transform 0.3s ease; }
       .sidebar.open { transform: translateX(0); }
-      .main { margin-left: 0; }
-      .sidebar-toggle { display: inline-flex !important; }
-      .content { padding: 10px; }
-      .topbar { padding: 10px 12px; }
-      .table td, .table th { font-size: .75rem; padding: 5px 4px; }
-      .table td .d-flex { flex-direction: column; gap: 4px !important; }
-      .table td .d-flex a, .table td .d-flex button { width: 100%; text-align: center; min-height: 36px; }
-      .stat-box .num { font-size: 1.2rem; }
-      h6 { font-size: .88rem; }
-      .card.p-4 { padding: 12px !important; }
-      input, textarea, select { font-size: 16px !important; min-height: 44px; }
-      .btn { min-height: 40px; }
-      .key-text { font-size: .75rem; word-break: break-all; }
-      .col-lg-4, .col-lg-8, .col-lg-5, .col-lg-7 { width: 100% !important; }
-      .modal-dialog { margin: 10px; }
+      .main-content { margin-left: 0 !important; }
     }
   </style>
 </head>
-<body>
+<body class="bg-slate-950 text-slate-200 min-h-screen antialiased">
 
-  <div class="overlay" id="overlay" onclick="toggleSidebar()"></div>
+  <!-- Mobile Overlay -->
+  <div id="overlay" class="fixed inset-0 z-40 hidden lg:hidden modal-backdrop" onclick="toggleSidebar()"></div>
 
-  <aside class="sidebar" id="sidebar">
-    <div class="sidebar-brand">
-      🛡️ Cloud Maneger
-      <small>Manager</small>
+  <!-- Sidebar -->
+  <aside id="sidebar" class="sidebar fixed top-0 left-0 h-screen w-64 glass z-50 flex flex-col border-r border-slate-800/50">
+    <!-- Brand -->
+    <div class="p-6 border-b border-slate-800/50">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-lg bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
+          <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+        </div>
+        <div>
+          <div class="font-semibold text-white text-sm tracking-tight">Cloud Manager</div>
+          <div class="text-xs text-slate-500">Admin Panel</div>
+        </div>
+      </div>
     </div>
-    <div class="stat-box mt-2">
-      <div class="num">{{ users|length }}</div>
-      <div class="lbl">Usuários cadastrados</div>
+
+    <!-- Stats -->
+    <div class="px-4 py-4 space-y-2">
+      <div class="bg-slate-900/80 rounded-lg p-3 border border-slate-800/60">
+        <div class="text-2xl font-bold text-white">{{ users|length }}</div>
+        <div class="text-xs text-slate-500 mt-0.5">Usuários cadastrados</div>
+      </div>
+      <div class="bg-slate-900/80 rounded-lg p-3 border border-slate-800/60">
+        <div class="text-2xl font-bold text-emerald-400">{{ status.values()|select|list|length }}</div>
+        <div class="text-xs text-slate-500 mt-0.5">Bots online</div>
+      </div>
+      <div class="bg-slate-900/80 rounded-lg p-3 border border-slate-800/60">
+        <div class="text-2xl font-bold text-blue-400">{{ keys|selectattr('usado', 'equalto', false)|list|length }}</div>
+        <div class="text-xs text-slate-500 mt-0.5">Keys disponíveis</div>
+      </div>
     </div>
-    <div class="stat-box">
-      <div class="num" style="color:#3fb950">{{ status.values()|select|list|length }}</div>
-      <div class="lbl">Bots online</div>
-    </div>
-    <div class="stat-box">
-      <div class="num" style="color:#388bfd">{{ keys|selectattr('usado', 'equalto', false)|list|length }}</div>
-      <div class="lbl">Keys disponíveis</div>
-    </div>
-    <nav class="mt-2 d-flex flex-column">
-      <button class="nav-link-side active" onclick="showPage('usuarios', this)">
-        <i class="bi bi-people"></i> Usuários
+
+    <!-- Navigation -->
+    <nav class="flex-1 px-3 py-2 space-y-1 overflow-y-auto">
+      <button class="nav-item active w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-200" onclick="showPage('usuarios', this)">
+        <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+        Usuários
       </button>
-      <button class="nav-link-side" onclick="showPage('keys', this)">
-        <i class="bi bi-key"></i> Keys
+      <button class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-400 hover:text-slate-200" onclick="showPage('keys', this)">
+        <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>
+        Keys
       </button>
-      <button class="nav-link-side" onclick="showPage('bots', this)">
-        <i class="bi bi-robot"></i> Bots
+      <button class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-400 hover:text-slate-200" onclick="showPage('bots', this)">
+        <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+        Bots
       </button>
-      <button class="nav-link-side" onclick="showPage('salas', this)">
-        <i class="bi bi-controller"></i> Salas FF
+      <button class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-400 hover:text-slate-200" onclick="showPage('salas', this)">
+        <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 4a2 2 0 114 0v1a1 1 0 001 1h3a1 1 0 011 1v3a1 1 0 01-1 1h-1a2 2 0 100 4h1a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1v-1a2 2 0 10-4 0v1a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 00-1-1H4a2 2 0 110-4h1a1 1 0 001-1V7a1 1 0 011-1h3a1 1 0 001-1V4z"/></svg>
+        Salas FF
       </button>
     </nav>
-    <div class="sidebar-footer">
-      <a href="/logout" class="btn btn-outline-danger btn-sm w-100">
-        <i class="bi bi-box-arrow-left"></i> Sair
+
+    <!-- Footer -->
+    <div class="p-4 border-t border-slate-800/50">
+      <a href="/logout" class="flex items-center justify-center gap-2 w-full px-4 py-2.5 rounded-lg border border-red-500/30 text-red-400 text-sm font-medium hover:bg-red-500/10 transition-all duration-200">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+        Sair
       </a>
     </div>
   </aside>
 
-  <div class="main">
-    <div class="topbar">
-      <div class="d-flex align-items-center gap-2">
-        <button class="btn btn-sm btn-outline-secondary sidebar-toggle" onclick="toggleSidebar()">
-          <i class="bi bi-list"></i>
-        </button>
-        <span class="text-white fw-semibold" id="page-title">Usuários</span>
+  <!-- Main Content -->
+  <main class="main-content lg:ml-64 min-h-screen">
+    <!-- Topbar -->
+    <header class="sticky top-0 z-30 glass border-b border-slate-800/50 px-4 lg:px-8 py-4">
+      <div class="max-w-7xl mx-auto flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <button class="lg:hidden p-2 rounded-lg border border-slate-700 text-slate-400 hover:text-white hover:border-slate-600 transition-colors" onclick="toggleSidebar()">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+          </button>
+          <h1 id="page-title" class="text-lg font-semibold text-white">Usuários</h1>
+        </div>
+        <div class="flex items-center gap-3">
+          <div class="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-900 border border-slate-800 text-xs text-slate-400">
+            <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse-dot"></span>
+            Sistema operacional
+          </div>
+        </div>
       </div>
-    </div>
+    </header>
 
-    <div class="content">
+    <!-- Content -->
+    <div class="max-w-7xl mx-auto px-4 lg:px-8 py-6">
 
-      <!-- ── USUÁRIOS ── -->
+      <!-- ================================================================ -->
+      <!-- PAGINA: USUARIOS -->
+      <!-- ================================================================ -->
       <div class="page active" id="page-usuarios">
-        <div class="row g-3">
-          <div class="col-lg-4">
-            <div class="card p-3">
-              <h6 class="text-white mb-3"><i class="bi bi-person-plus me-1"></i> Criar Usuário</h6>
-              {% if msg %}<div class="alert alert-{{ msg_tipo }} py-2 small">{{ msg }}</div>{% endif %}
-              <form method="POST" action="/admin/criar_usuario">
-                <div class="mb-2">
-                  <label class="text-secondary small">Usuário</label>
-                  <input name="username" class="form-control" placeholder="nome do cliente" required>
+        <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+          <!-- Left Column: Forms -->
+          <div class="xl:col-span-1 space-y-6">
+            <!-- Create User -->
+            <div class="bg-slate-900 rounded-xl border border-slate-800 p-5 card-hover">
+              <h2 class="text-white font-semibold text-sm mb-4 flex items-center gap-2">
+                <svg class="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"/></svg>
+                Criar Usuário
+              </h2>
+              {% if msg %}
+              <div class="mb-4 px-3 py-2 rounded-lg text-sm {% if msg_tipo == 'danger' %}bg-red-500/10 text-red-400 border border-red-500/20{% else %}bg-emerald-500/10 text-emerald-400 border border-emerald-500/20{% endif %}">
+                {{ msg }}
+              </div>
+              {% endif %}
+              <form method="POST" action="/admin/criar_usuario" class="space-y-3">
+                <div>
+                  <label class="block text-xs text-slate-500 mb-1.5">Usuário</label>
+                  <input name="username" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2.5 text-sm text-white placeholder-slate-600 input-field focus:outline-none" placeholder="nome do cliente" required>
                 </div>
-                <div class="mb-3">
-                  <label class="text-secondary small">Tipo de Licença</label>
-                  <select name="tipo" class="form-select">
+                <div>
+                  <label class="block text-xs text-slate-500 mb-1.5">Tipo de Licença</label>
+                  <select name="tipo" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2.5 text-sm text-white input-field focus:outline-none">
                     <option value="semanal">Semanal (7 dias)</option>
                     <option value="mensal" selected>Mensal (30 dias)</option>
                     <option value="permanente">Permanente</option>
                   </select>
                 </div>
-                <button class="btn btn-success w-100">+ Criar Usuário</button>
+                <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium py-2.5 rounded-lg transition-all duration-200 hover:shadow-lg hover:shadow-emerald-500/20">
+                  + Criar Usuário
+                </button>
               </form>
             </div>
-            <div class="card p-3 mt-3">
-              <h6 class="text-white mb-3"><i class="bi bi-shield-plus me-1"></i> Criar Admin</h6>
-              <form method="POST" action="/admin/criar_admin">
-                <div class="mb-2">
-                  <input name="username" class="form-control" placeholder="Usuário" required>
-                </div>
-                <div class="mb-3">
-                  <input name="password" type="password" class="form-control" placeholder="Senha" required>
-                </div>
-                <button class="btn btn-outline-warning w-100">Criar Admin</button>
-              </form>
-            </div>
-          </div>
-          <div class="col-lg-8">
-            <div class="card p-3">
-              <h6 class="text-white mb-3"><i class="bi bi-people me-1"></i> Usuários Cadastrados</h6>
-              {% for u in users %}
-              <div class="p-3 mb-2 rounded" style="background:#0d1117;border:1px solid #30363d">
-                <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
-                  <div>
-                    <div class="text-white fw-semibold">{{ u.username }}</div>
-                    <div class="mt-1">
-                      {% if u.license %}<span class="badge badge-{{ u.license.tipo }}">{{ u.license.tipo.capitalize() }}</span>{% endif %}
-                      <span class="text-secondary small ms-1">
-                        {% if u.license and u.license.expira_em %}{{ u.license.expira_em.strftime('%d/%m/%Y') }}
-                        {% elif u.license %}∞{% endif %}
-                      </span>
-                    </div>
-                  </div>
-                  <div class="d-flex gap-2">
-                    <a href="/admin/deletar_usuario/{{ u.id }}" class="btn btn-sm btn-outline-danger" onclick="return confirm('Deletar {{ u.username }}?')">🗑</a>
-                    <button class="btn btn-sm btn-outline-info" onclick="abrirRenovar({{ u.id }}, '{{ u.username }}')">🔄 Renovar</button>
-                  </div>
-                </div>
-              </div>
-              {% else %}
-              <div class="text-secondary text-center py-3">Nenhum usuário.</div>
-              {% endfor %}
-            </div>
-          </div>
-        </div>
-      </div>
 
-      <!-- ── KEYS ── -->
-      <div class="page" id="page-keys">
-        <div class="card p-3">
-          <h6 class="text-white mb-3"><i class="bi bi-key me-1"></i> Keys Geradas</h6>
-          {% for k in keys %}
-          <div class="p-3 mb-2 rounded" style="background:#0d1117;border:1px solid #30363d">
-            <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
-              <div>
-                <div class="key-text">{{ k.key }}</div>
-                <div class="mt-1">
-                  <span class="badge badge-{{ k.tipo }}">{{ k.tipo.capitalize() }}</span>
-                  {% if k.usado %}<span class="badge bg-secondary ms-1">Usada</span>
-                  {% elif not k.valida() %}<span class="badge bg-danger ms-1">Expirada</span>
-                  {% else %}<span class="badge bg-success ms-1">Disponível</span>{% endif %}
-                </div>
-                <div class="text-secondary small mt-1">{{ k.expira_em.strftime('%d/%m/%Y') if k.expira_em else '∞ Permanente' }}</div>
-              </div>
-              <div class="d-flex gap-2">
-                <button class="btn-copy" onclick="copiarKey('{{ k.key }}', this)"><i class="bi bi-clipboard"></i> Copiar</button>
-                <a href="/admin/revogar_key/{{ k.id }}" class="btn btn-sm btn-outline-danger" onclick="return confirm('Revogar esta key?')">Revogar</a>
-              </div>
-            </div>
-          </div>
-          {% else %}
-          <div class="text-secondary text-center py-3">Nenhuma key gerada.</div>
-          {% endfor %}
-        </div>
-      </div>
-
-      <!-- ── BOTS ── -->
-      <div class="page" id="page-bots">
-        <div class="card p-3">
-          {% if msg %}<div class="alert alert-{{ msg_tipo }} fw-bold">⚠️ {{ msg }}</div>{% endif %}
-          <div class="d-flex justify-content-between align-items-center mb-3">
-            <h6 class="text-white mb-0"><i class="bi bi-robot me-1"></i> Status dos Bots</h6>
-            <span class="text-secondary small">Atualiza a cada 30s</span>
-          </div>
-          {% for u in users %}
-          {% set bs = salas_info.get(u.id, {}) %}
-          <div class="p-3 mb-2 rounded" style="background:#0d1117;border:1px solid #30363d" data-uid="{{ u.id }}">
-            <div class="d-flex justify-content-between align-items-center mb-2">
-              <span class="text-white fw-semibold">{{ u.username }}</span>
-              <span>
-                <span class="status-dot {{ 'dot-on' if status.get(u.id) else 'dot-off' }} bot-dot"></span>
-                <span class="small ms-1 bot-lbl {{ 'text-success' if status.get(u.id) else 'text-secondary' }}">{{ 'Online' if status.get(u.id) else 'Offline' }}</span>
-              </span>
-            </div>
-            <div class="text-warning small mb-2">Salas: {{ bs.get('usadas', 0) }}/{{ bs.get('limite', 10) }}</div>
-            <div class="d-flex gap-2 flex-wrap">
-              <a href="/admin/start_bot/{{ u.id }}" class="btn btn-sm btn-success flex-fill">▶ Ligar</a>
-              <a href="/admin/stop_bot/{{ u.id }}" class="btn btn-sm btn-danger flex-fill" onclick="return confirm('Parar {{ u.username }}?')">■ Stop</a>
-              <a href="/admin/restart_bot/{{ u.id }}" class="btn btn-sm btn-warning text-dark flex-fill">↺ Restart</a>
-              <button class="btn btn-sm btn-outline-secondary flex-fill" onclick="abrirLimite({{ u.id }}, '{{ u.username }}', {{ bs.get('limite', 10) }})">✏️ Limite</button>
-              <a href="/admin/resetar_salas/{{ u.id }}" class="btn btn-sm btn-outline-info flex-fill" onclick="return confirm('Resetar {{ u.username }}?')">↺ Reset</a>
-            </div>
-          </div>
-          {% else %}
-          <div class="text-secondary text-center py-3">Nenhum usuário.</div>
-          {% endfor %}
-        </div>
-      </div>
-
-      <!-- ── SALAS FF ── -->
-      <div class="page" id="page-salas">
-        <div class="row g-4">
-
-          <!-- Saldo + Resgatar -->
-          <div class="col-lg-5">
-
-            <!-- Saldo na API -->
-            <div class="card p-4 mb-4" id="saldo-api-card">
-              <h6 class="text-white mb-3"><i class="bi bi-wallet2 me-1"></i> Saldo API Salas <span id="saldo-loading" class="spinner-border spinner-border-sm ms-1" style="display:none"></span></h6>
-              <div id="saldo-display" class="text-center py-4">
-                <div class="spinner-border spinner-border-sm text-info mx-auto mb-2" style="width:2rem;height:2rem"></div>
-                <div class="text-secondary small">Carregando saldo API...</div>
-              </div>
-            </div>
-
-            <!-- Salas Utilizadas por Usuário -->
-            <div class="card p-4 mb-4">
-              <h6 class="text-white mb-3"><i class="bi bi-people me-1"></i> Salas por Usuário</h6>
-              <div class="row g-3">
-                {% for u in users %}
-                {% set bs = salas_info.get(u.id, {}) %}
-                <div class="col-6">
-                  <div class="p-2 rounded" style="background:#0d1117;border:1px solid #30363d">
-                    <div class="text-secondary small">{{ u.username }}</div>
-                    <div class="fw-bold text-warning">{{ bs.get('usadas', 0) }}/{{ bs.get('limite', 0) }}</div>
-                  </div>
-                </div>
-                {% else %}
-                <div class="text-secondary small">Nenhum usuário.</div>
-                {% endfor %}
-              </div>
-            </div>
-
-            <!-- Resgatar Seriais -->
-            <div class="card p-4">
-              <h6 class="text-white mb-3"><i class="bi bi-arrow-repeat me-1"></i> Resgatar Seriais na API</h6>
-              <div class="alert alert-warning py-2 small">
-                ⚠️ Gere os seriais pelo bot <strong>@flashconfigbot</strong> no Telegram e cole aqui.
-              </div>
-              <form method="POST" action="/admin/resgatar_seriais">
-                <div class="mb-3">
-                  <label class="text-secondary small">Seriais (um por linha ou separados por vírgula)</label>
-                  <textarea name="seriais" class="form-control" rows="6" placeholder="SALAMKVKM7GIMAL4&#10;SALAKMUXMZI0NQ8D"></textarea>
-                </div>
-                <button class="btn btn-primary w-100">Resgatar na API</button>
-              </form>
-              {% if resultado_resgate %}
-              <div class="mt-3 p-3 rounded" style="background:#0d1117;border:1px solid #30363d">
-                <div class="text-success small">✅ Resgatados: {{ resultado_resgate.resgatados|length }}</div>
-                <div class="text-danger small">❌ Não resgatados: {{ resultado_resgate.nao_resgatados|length }}</div>
-                <div class="text-warning small mt-1" style="white-space:pre-wrap">{{ resultado_resgate.mensagem }}</div>
-              </div>
-              {% endif %}
-            </div>
-          </div>
-
-          <!-- Instrucoes -->
-          <div class="col-lg-7">
-            <div class="card p-4">
-              <h6 class="text-white mb-3"><i class="bi bi-info-circle me-1"></i> Como adicionar salas</h6>
-              <ol class="text-secondary" style="font-size:.88rem;line-height:2">
-                <li>Acesse o Telegram e abra o bot <strong class="text-white">@flashconfigbot</strong></li>
-                <li>Gere os seriais de salas pelo bot</li>
-                <li>Copie os seriais gerados</li>
-                <li>Cole no campo <strong class="text-white">Resgatar Seriais</strong> ao lado</li>
-                <li>Clique em <strong class="text-white">Resgatar na API</strong></li>
-                <li>Consulte o saldo para confirmar que as salas foram adicionadas</li>
-              </ol>
-            </div>
-          </div>
-
-        </div>
-      </div>
-
-    </div>
-  </div>
-
-  <!-- Modal Renovar Key -->
-  <div class="modal fade" id="modalRenovar" tabindex="-1">
-    <div class="modal-dialog modal-sm">
-      <div class="modal-content" style="background:#161b22;border:1px solid #30363d">
-        <div class="modal-header border-secondary">
-          <h6 class="modal-title text-white">🔄 Renovar Key</h6>
-          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-        </div>
-        <form id="formRenovar" method="POST">
-          <div class="modal-body">
-            <p class="text-secondary small mb-2">Usuário: <strong class="text-white" id="renovar-username"></strong></p>
-            <label class="text-secondary small">Novo Plano</label>
-            <select name="tipo" class="form-select mt-1">
-              <option value="semanal">Semanal (7 dias)</option>
-              <option value="mensal" selected>Mensal (30 dias)</option>
-              <option value="permanente">Permanente</option>
-            </select>
-          </div>
-          <div class="modal-footer border-secondary">
-            <button type="submit" class="btn btn-success btn-sm w-100">Confirmar Renovação</button>
-          </div>
-        </form>
-      </div>
-    </div>
-  </div>
-
-  <!-- Modal Limite Salas -->
-  <div class="modal fade" id="modalLimite" tabindex="-1">
-    <div class="modal-dialog modal-sm">
-      <div class="modal-content" style="background:#161b22;border:1px solid #30363d">
-        <div class="modal-header border-secondary">
-          <h6 class="modal-title text-white">🎮 Limite de Salas</h6>
-          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-        </div>
-        <form id="formLimite" method="POST">
-          <div class="modal-body">
-            <p class="text-secondary small mb-2">Usuário: <strong class="text-white" id="limite-username"></strong></p>
-            <label class="text-secondary small">Quantidade de Salas</label>
-            <input type="number" name="limite" id="limite-valor" class="form-control mt-1" min="0" value="10">
-          </div>
-          <div class="modal-footer border-secondary">
-            <button type="submit" class="btn btn-warning btn-sm w-100 text-dark">Salvar Limite</button>
-          </div>
-        </form>
-      </div>
-    </div>
-  </div>
-
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <script>
-    function showPage(name, btn) {
-      document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-      document.querySelectorAll('.nav-link-side').forEach(b => b.classList.remove('active'));
-      document.getElementById('page-' + name).classList.add('active');
-      if (btn) btn.classList.add('active');
-      const titles = { usuarios: 'Usuários', keys: 'Keys', bots: 'Bots', salas: 'Salas FF' };
-      document.getElementById('page-title').textContent = titles[name];
-      // fecha sidebar no mobile ao navegar
-      document.getElementById('sidebar').classList.remove('open');
-      document.getElementById('overlay').classList.remove('show');
-    }
-
-    function toggleSidebar() {
-      document.getElementById('sidebar').classList.toggle('open');
-      document.getElementById('overlay').classList.toggle('show');
-    }
-
-    function copiarKey(key, btn) {
-      navigator.clipboard.writeText(key).then(() => {
-        btn.classList.add('copied');
-        btn.innerHTML = '<i class="bi bi-check2"></i> Copiado!';
-        setTimeout(() => { btn.classList.remove('copied'); btn.innerHTML = '<i class="bi bi-clipboard"></i> Copiar'; }, 2000);
-      });
-    }
-
-    function copiarTodos() {
-      const txt = document.getElementById('serial-box').textContent;
-      navigator.clipboard.writeText(txt);
-    }
-
-    function abrirLimite(userId, username, limiteAtual) {
-      document.getElementById('limite-username').textContent = username;
-      document.getElementById('limite-valor').value = limiteAtual;
-      document.getElementById('formLimite').action = '/admin/limite_salas/' + userId;
-      new bootstrap.Modal(document.getElementById('modalLimite')).show();
-    }
-
-    function abrirRenovar(userId, username) {
-      document.getElementById('renovar-username').textContent = username;
-      document.getElementById('formRenovar').action = '/admin/renovar_key/' + userId;
-      new bootstrap.Modal(document.getElementById('modalRenovar')).show();
-    }
-
-    // Refresh saldo API
-    function updateSaldoAPI() {
-      var loading = document.getElementById('saldo-loading');
-      if (loading) loading.style.display = 'inline-block';
-      fetch('/admin/api_saldo_total').then(function(r) { return r.json(); }).then(function(data) {
-        if (loading) loading.style.display = 'none';
-        var display = document.getElementById('saldo-display');
-        if (data.status === 'ok') {
-          display.innerHTML = '<div class="num text-success fs-1">' + data.salas + '</div><div class="text-secondary small mt-1">salas disponíveis</div>';
-        } else {
-          display.innerHTML = '<div class="text-warning small">Erro: ' + data.status + '</div>';
-        }
-      }).catch(function() {
-        if (loading) loading.style.display = 'none';
-        var display = document.getElementById('saldo-display');
-        display.innerHTML = '<div class="text-danger small">Falha conexão</div>';
-      });
-    }
-
-    setInterval(function() {
-      fetch('/admin/status_json').then(function(r) { return r.json(); }).then(function(data) {
-        document.querySelectorAll('[data-uid]').forEach(function(card) {
-          var uid = card.getAttribute('data-uid');
-          var online = data[uid] === true;
-          var dot = card.querySelector('.bot-dot');
-          var lbl = card.querySelector('.bot-lbl');
-          if (dot) dot.className = 'status-dot ' + (online ? 'dot-on' : 'dot-off') + ' bot-dot';
-          if (lbl) { lbl.className = 'small ms-1 bot-lbl ' + (online ? 'text-success' : 'text-secondary'); lbl.textContent = online ? 'Online' : 'Offline'; }
-        });
-      });
-      var pageSalas = document.getElementById('page-salas');
-      if (pageSalas && pageSalas.classList.contains('active')) updateSaldoAPI();
-    }, 30000);
-
-    // Load initial when page shown
-    if (document.addEventListener) {
-      document.addEventListener('DOMContentLoaded', function() {
-        var pageSalas = document.getElementById('page-salas');
-        if (pageSalas && pageSalas.classList.contains('active')) {
-          updateSaldoAPI();
-        }
-      });
-    }
-  </script>
-</body>
-</html>
