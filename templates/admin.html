@@ -2,255 +2,379 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Cloud Manager</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-  <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          fontFamily: {
-            sans: ['Inter', 'system-ui', 'sans-serif'],
-          },
-          colors: {
-            slate: {
-              950: '#020617',
-              900: '#0F172A',
-              850: '#0B1221',
-              800: '#1E293B',
-              750: '#162032',
-              700: '#334155',
-              600: '#475569',
-              500: '#64748B',
-              400: '#94A3B8',
-              300: '#CBD5E1',
-              200: '#E2E8F0',
-              100: '#F1F5F9',
-            }
-          }
-        }
-      }
-    }
-  </script>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Panel - Cloud Manager</title>
   <style>
-    * { -webkit-tap-highlight-color: transparent; }
-    body { font-family: 'Inter', system-ui, sans-serif; }
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
     
-    ::-webkit-scrollbar { width: 6px; height: 6px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: rgba(148,163,184,0.2); border-radius: 3px; }
-    ::-webkit-scrollbar-thumb:hover { background: rgba(148,163,184,0.35); }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      min-height: 100vh;
+    }
     
-    .glass {
-      background: rgba(15, 23, 42, 0.7);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      border: 1px solid rgba(51, 65, 85, 0.5);
+    .container {
+      display: flex;
+      min-height: 100vh;
+    }
+    
+    .sidebar {
+      width: 250px;
+      background: #1e293b;
+      border-right: 1px solid #334155;
+      padding: 20px;
+    }
+    
+    .logo {
+      text-align: center;
+      margin-bottom: 30px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid #334155;
+    }
+    
+    .logo h1 {
+      color: #3b82f6;
+      font-size: 20px;
+      margin-bottom: 5px;
+    }
+    
+    .logo p {
+      color: #64748b;
+      font-size: 12px;
+    }
+    
+    .stats {
+      margin-bottom: 30px;
+    }
+    
+    .stat-card {
+      background: #334155;
+      padding: 15px;
+      border-radius: 8px;
+      margin-bottom: 10px;
+      text-align: center;
+    }
+    
+    .stat-number {
+      font-size: 24px;
+      font-weight: bold;
+      color: #3b82f6;
+    }
+    
+    .stat-label {
+      font-size: 12px;
+      color: #94a3b8;
+      margin-top: 5px;
+    }
+    
+    .nav-menu {
+      list-style: none;
+    }
+    
+    .nav-item {
+      margin-bottom: 5px;
+    }
+    
+    .nav-link {
+      display: block;
+      padding: 12px 15px;
+      color: #94a3b8;
+      text-decoration: none;
+      border-radius: 6px;
+      transition: all 0.2s;
+      cursor: pointer;
+    }
+    
+    .nav-link:hover,
+    .nav-link.active {
+      background: #3b82f6;
+      color: white;
+    }
+    
+    .main-content {
+      flex: 1;
+      padding: 20px;
+    }
+    
+    .header {
+      background: #1e293b;
+      padding: 15px 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      border: 1px solid #334155;
     }
     
     .page {
       display: none;
-      animation: fadeIn 0.25s ease-out;
-    }
-    .page.active { display: block; }
-    
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(6px); }
-      to { opacity: 1; transform: translateY(0); }
     }
     
-    @keyframes pulse-dot {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.5; }
-    }
-    .animate-pulse-dot { animation: pulse-dot 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
-    
-    .nav-item {
-      transition: all 0.2s ease;
-    }
-    .nav-item:hover {
-      background: rgba(59, 130, 246, 0.08);
-    }
-    .nav-item.active {
-      background: rgba(59, 130, 246, 0.12);
-      border-right: 3px solid #3B82F6;
+    .page.active {
+      display: block;
     }
     
-    .card-hover {
-      transition: all 0.2s ease;
-    }
-    .card-hover:hover {
-      border-color: rgba(71, 85, 105, 0.8);
-      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
-    }
-    
-    .input-field {
-      transition: all 0.2s ease;
-    }
-    .input-field:focus {
-      border-color: #3B82F6;
-      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+    .card {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
     }
     
-    @media (max-width: 1024px) {
-      .sidebar { transform: translateX(-100%); transition: transform 0.3s ease; }
-      .sidebar.open { transform: translateX(0); }
-      .main-content { margin-left: 0 !important; }
+    .card h2 {
+      color: #e2e8f0;
+      margin-bottom: 15px;
+      font-size: 18px;
+    }
+    
+    .form-group {
+      margin-bottom: 15px;
+    }
+    
+    .form-label {
+      display: block;
+      margin-bottom: 5px;
+      color: #94a3b8;
+      font-size: 14px;
+    }
+    
+    .form-input,
+    .form-select {
+      width: 100%;
+      padding: 10px;
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 6px;
+      color: #e2e8f0;
+      font-size: 14px;
+    }
+    
+    .form-input:focus,
+    .form-select:focus {
+      outline: none;
+      border-color: #3b82f6;
+    }
+    
+    .btn {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: all 0.2s;
+    }
+    
+    .btn-primary {
+      background: #3b82f6;
+      color: white;
+    }
+    
+    .btn-primary:hover {
+      background: #2563eb;
+    }
+    
+    .btn-danger {
+      background: #ef4444;
+      color: white;
+      padding: 5px 10px;
+      font-size: 12px;
+    }
+    
+    .btn-danger:hover {
+      background: #dc2626;
+    }
+    
+    .user-list,
+    .key-list {
+      max-height: 400px;
+      overflow-y: auto;
+    }
+    
+    .user-item,
+    .key-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 15px;
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 6px;
+      margin-bottom: 10px;
+    }
+    
+    .user-info h4 {
+      color: #e2e8f0;
+      margin-bottom: 5px;
+    }
+    
+    .user-info p {
+      color: #94a3b8;
+      font-size: 12px;
+    }
+    
+    .status-badge {
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: bold;
+    }
+    
+    .status-active {
+      background: #10b981;
+      color: white;
+    }
+    
+    .status-inactive {
+      background: #ef4444;
+      color: white;
+    }
+    
+    .status-available {
+      background: #10b981;
+      color: white;
+    }
+    
+    .status-used {
+      background: #ef4444;
+      color: white;
+    }
+    
+    .alert {
+      padding: 10px 15px;
+      border-radius: 6px;
+      margin-bottom: 15px;
+    }
+    
+    .alert-success {
+      background: #10b981;
+      color: white;
+    }
+    
+    .alert-danger {
+      background: #ef4444;
+      color: white;
+    }
+    
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 2fr;
+      gap: 20px;
+    }
+    
+    @media (max-width: 768px) {
+      .container {
+        flex-direction: column;
+      }
+      
+      .sidebar {
+        width: 100%;
+      }
+      
+      .grid {
+        grid-template-columns: 1fr;
+      }
     }
   </style>
 </head>
-<body class="bg-slate-950 text-slate-200 min-h-screen antialiased">
-
-  <!-- Mobile Overlay -->
-  <div id="overlay" class="fixed inset-0 z-40 hidden lg:hidden modal-backdrop" onclick="toggleSidebar()"></div>
-
-  <!-- Sidebar -->
-  <aside id="sidebar" class="sidebar fixed top-0 left-0 h-screen w-64 glass z-50 flex flex-col border-r border-slate-800/50">
-    <!-- Brand -->
-    <div class="p-6 border-b border-slate-800/50">
-      <div class="flex items-center gap-3">
-        <div class="w-9 h-9 rounded-lg bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
-          <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+<body>
+  <div class="container">
+    <!-- Sidebar -->
+    <div class="sidebar">
+      <div class="logo">
+        <h1>Cloud Manager</h1>
+        <p>Admin Panel</p>
+      </div>
+      
+      <div class="stats">
+        <div class="stat-card">
+          <div class="stat-number">{{ users|length }}</div>
+          <div class="stat-label">Usuários</div>
         </div>
-        <div>
-          <div class="font-semibold text-white text-sm tracking-tight">Cloud Manager</div>
-          <div class="text-xs text-slate-500">Admin Panel</div>
+        <div class="stat-card">
+          <div class="stat-number">{{ status.values()|select|list|length }}</div>
+          <div class="stat-label">Bots Online</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number">{{ keys|selectattr('usado', 'equalto', false)|list|length }}</div>
+          <div class="stat-label">Keys Disponíveis</div>
         </div>
       </div>
+      
+      <ul class="nav-menu">
+        <li class="nav-item">
+          <a class="nav-link active" onclick="showPage('usuarios', this)">👥 Usuários</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" onclick="showPage('keys', this)">🔑 Keys</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" onclick="showPage('bots', this)">🤖 Bots</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" onclick="showPage('salas', this)">🎮 Salas FF</a>
+        </li>
+        <li class="nav-item" style="margin-top: 20px;">
+          <a href="/logout" class="nav-link" style="background: #ef4444;">🚪 Sair</a>
+        </li>
+      </ul>
     </div>
-
-    <!-- Stats -->
-    <div class="px-4 py-4 space-y-2">
-      <div class="bg-slate-900/80 rounded-lg p-3 border border-slate-800/60">
-        <div class="text-2xl font-bold text-white">{{ users|length }}</div>
-        <div class="text-xs text-slate-500 mt-0.5">Usuários cadastrados</div>
+    
+    <!-- Main Content -->
+    <div class="main-content">
+      <div class="header">
+        <h1 id="page-title">Usuários</h1>
       </div>
-      <div class="bg-slate-900/80 rounded-lg p-3 border border-slate-800/60">
-        <div class="text-2xl font-bold text-emerald-400">{{ status.values()|select|list|length }}</div>
-        <div class="text-xs text-slate-500 mt-0.5">Bots online</div>
-      </div>
-      <div class="bg-slate-900/80 rounded-lg p-3 border border-slate-800/60">
-        <div class="text-2xl font-bold text-blue-400">{{ keys|selectattr('usado', 'equalto', false)|list|length }}</div>
-        <div class="text-xs text-slate-500 mt-0.5">Keys disponíveis</div>
-      </div>
-    </div>
-
-    <!-- Navigation -->
-    <nav class="flex-1 px-3 py-2 space-y-1 overflow-y-auto">
-      <button class="nav-item active w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-200" onclick="showPage('usuarios', this)">
-        <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
-        Usuários
-      </button>
-      <button class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-400 hover:text-slate-200" onclick="showPage('keys', this)">
-        <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>
-        Keys
-      </button>
-      <button class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-400 hover:text-slate-200" onclick="showPage('bots', this)">
-        <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
-        Bots
-      </button>
-      <button class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-400 hover:text-slate-200" onclick="showPage('salas', this)">
-        <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 4a2 2 0 114 0v1a1 1 0 001 1h3a1 1 0 011 1v3a1 1 0 01-1 1h-1a2 2 0 100 4h1a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1v-1a2 2 0 10-4 0v1a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 00-1-1H4a2 2 0 110-4h1a1 1 0 001-1V7a1 1 0 011-1h3a1 1 0 001-1V4z"/></svg>
-        Salas FF
-      </button>
-    </nav>
-
-    <!-- Footer -->
-    <div class="p-4 border-t border-slate-800/50">
-      <a href="/logout" class="flex items-center justify-center gap-2 w-full px-4 py-2.5 rounded-lg border border-red-500/30 text-red-400 text-sm font-medium hover:bg-red-500/10 transition-all duration-200">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
-        Sair
-      </a>
-    </div>
-  </aside>
-
-  <!-- Main Content -->
-  <main class="main-content lg:ml-64 min-h-screen">
-    <!-- Topbar -->
-    <header class="sticky top-0 z-30 glass border-b border-slate-800/50 px-4 lg:px-8 py-4">
-      <div class="max-w-7xl mx-auto flex items-center justify-between">
-        <div class="flex items-center gap-3">
-          <button class="lg:hidden p-2 rounded-lg border border-slate-700 text-slate-400 hover:text-white hover:border-slate-600 transition-colors" onclick="toggleSidebar()">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
-          </button>
-          <h1 id="page-title" class="text-lg font-semibold text-white">Usuários</h1>
-        </div>
-        <div class="flex items-center gap-3">
-          <div class="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-900 border border-slate-800 text-xs text-slate-400">
-            <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse-dot"></span>
-            Sistema operacional
-          </div>
-        </div>
-      </div>
-    </header>
-
-    <!-- Content -->
-    <div class="max-w-7xl mx-auto px-4 lg:px-8 py-6">
-
-      <!-- PAGINA: USUARIOS -->
+      
+      <!-- Página Usuários -->
       <div class="page active" id="page-usuarios">
-        <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
-          <!-- Left Column: Forms -->
-          <div class="xl:col-span-1 space-y-6">
-            <!-- Create User -->
-            <div class="bg-slate-900 rounded-xl border border-slate-800 p-5 card-hover">
-              <h2 class="text-white font-semibold text-sm mb-4 flex items-center gap-2">
-                <svg class="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"/></svg>
-                Criar Usuário
-              </h2>
+        <div class="grid">
+          <div>
+            <div class="card">
+              <h2>Criar Usuário</h2>
               {% if msg %}
-              <div class="mb-4 px-3 py-2 rounded-lg text-sm {% if msg_tipo == 'danger' %}bg-red-500/10 text-red-400 border border-red-500/20{% else %}bg-emerald-500/10 text-emerald-400 border border-emerald-500/20{% endif %}">
+              <div class="alert {% if msg_tipo == 'danger' %}alert-danger{% else %}alert-success{% endif %}">
                 {{ msg }}
               </div>
               {% endif %}
-              <form method="POST" action="/admin/criar_usuario" class="space-y-3">
-                <div>
-                  <label class="block text-xs text-slate-500 mb-1.5">Usuário</label>
-                  <input name="username" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2.5 text-sm text-white placeholder-slate-600 input-field focus:outline-none" placeholder="nome do cliente" required>
+              <form method="POST" action="/admin/criar_usuario">
+                <div class="form-group">
+                  <label class="form-label">Nome do Usuário</label>
+                  <input type="text" name="username" class="form-input" placeholder="Digite o nome" required>
                 </div>
-                <div>
-                  <label class="block text-xs text-slate-500 mb-1.5">Tipo de Licença</label>
-                  <select name="tipo" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2.5 text-sm text-white input-field focus:outline-none">
+                <div class="form-group">
+                  <label class="form-label">Tipo de Licença</label>
+                  <select name="tipo" class="form-select">
                     <option value="semanal">Semanal (7 dias)</option>
                     <option value="mensal" selected>Mensal (30 dias)</option>
                     <option value="permanente">Permanente</option>
                   </select>
                 </div>
-                <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium py-2.5 rounded-lg transition-all duration-200 hover:shadow-lg hover:shadow-emerald-500/20">
-                  + Criar Usuário
-                </button>
+                <button type="submit" class="btn btn-primary">Criar Usuário</button>
               </form>
             </div>
           </div>
-
-          <!-- Right Column: Users List -->
-          <div class="xl:col-span-2">
-            <div class="bg-slate-900 rounded-xl border border-slate-800 p-5 card-hover">
-              <h2 class="text-white font-semibold text-sm mb-4">Lista de Usuários</h2>
-              <div class="space-y-3">
+          
+          <div>
+            <div class="card">
+              <h2>Lista de Usuários</h2>
+              <div class="user-list">
                 {% for user in users %}
-                <div class="flex items-center justify-between p-3 bg-slate-950 rounded-lg border border-slate-800">
-                  <div class="flex items-center gap-3">
-                    <div class="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-medium">
-                      {{ user.username[0].upper() }}
-                    </div>
-                    <div>
-                      <div class="text-white text-sm font-medium">{{ user.username }}</div>
-                      <div class="text-xs text-slate-500">{{ user.tipo }} - Expira: {{ user.expira_em.strftime('%d/%m/%Y') if user.expira_em else 'Permanente' }}</div>
-                    </div>
+                <div class="user-item">
+                  <div class="user-info">
+                    <h4>{{ user.username }}</h4>
+                    <p>{{ user.tipo }} - Expira: {{ user.expira_em.strftime('%d/%m/%Y') if user.expira_em else 'Permanente' }}</p>
                   </div>
-                  <div class="flex items-center gap-2">
-                    <span class="px-2 py-1 rounded text-xs {% if user.ativo %}bg-emerald-500/10 text-emerald-400{% else %}bg-red-500/10 text-red-400{% endif %}">
+                  <div>
+                    <span class="status-badge {% if user.ativo %}status-active{% else %}status-inactive{% endif %}">
                       {% if user.ativo %}Ativo{% else %}Inativo{% endif %}
                     </span>
-                    <form method="POST" action="/admin/deletar_usuario" class="inline">
+                    <form method="POST" action="/admin/deletar_usuario" style="display: inline; margin-left: 10px;">
                       <input type="hidden" name="user_id" value="{{ user.id }}">
-                      <button type="submit" class="text-red-400 hover:text-red-300 p-1">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
-                      </button>
+                      <button type="submit" class="btn btn-danger" onclick="return confirm('Deletar usuário?')">Deletar</button>
                     </form>
                   </div>
                 </div>
@@ -260,53 +384,44 @@
           </div>
         </div>
       </div>
-
-      <!-- PAGINA: KEYS -->
+      
+      <!-- Página Keys -->
       <div class="page" id="page-keys">
-        <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
-          <!-- Left Column: Create Key -->
-          <div class="xl:col-span-1">
-            <div class="bg-slate-900 rounded-xl border border-slate-800 p-5 card-hover">
-              <h2 class="text-white font-semibold text-sm mb-4 flex items-center gap-2">
-                <svg class="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
-                Gerar Key
-              </h2>
-              <form method="POST" action="/admin/gerar_key" class="space-y-3">
-                <div>
-                  <label class="block text-xs text-slate-500 mb-1.5">Tipo de Licença</label>
-                  <select name="tipo" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2.5 text-sm text-white input-field focus:outline-none">
+        <div class="grid">
+          <div>
+            <div class="card">
+              <h2>Gerar Key</h2>
+              <form method="POST" action="/admin/gerar_key">
+                <div class="form-group">
+                  <label class="form-label">Tipo de Licença</label>
+                  <select name="tipo" class="form-select">
                     <option value="semanal">Semanal (7 dias)</option>
                     <option value="mensal" selected>Mensal (30 dias)</option>
                     <option value="permanente">Permanente</option>
                   </select>
                 </div>
-                <button type="submit" class="w-full bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium py-2.5 rounded-lg transition-all duration-200">
-                  + Gerar Key
-                </button>
+                <button type="submit" class="btn btn-primary">Gerar Key</button>
               </form>
             </div>
           </div>
-
-          <!-- Right Column: Keys List -->
-          <div class="xl:col-span-2">
-            <div class="bg-slate-900 rounded-xl border border-slate-800 p-5 card-hover">
-              <h2 class="text-white font-semibold text-sm mb-4">Keys Disponíveis</h2>
-              <div class="space-y-3">
+          
+          <div>
+            <div class="card">
+              <h2>Keys Disponíveis</h2>
+              <div class="key-list">
                 {% for key in keys %}
-                <div class="flex items-center justify-between p-3 bg-slate-950 rounded-lg border border-slate-800">
-                  <div>
-                    <div class="text-white text-sm font-mono">{{ key.key }}</div>
-                    <div class="text-xs text-slate-500">{{ key.tipo }} - {% if key.usado %}Usado{% else %}Disponível{% endif %}</div>
+                <div class="key-item">
+                  <div class="user-info">
+                    <h4 style="font-family: monospace;">{{ key.key }}</h4>
+                    <p>{{ key.tipo }} - {% if key.usado %}Usado{% else %}Disponível{% endif %}</p>
                   </div>
-                  <div class="flex items-center gap-2">
-                    <span class="px-2 py-1 rounded text-xs {% if not key.usado %}bg-emerald-500/10 text-emerald-400{% else %}bg-red-500/10 text-red-400{% endif %}">
+                  <div>
+                    <span class="status-badge {% if not key.usado %}status-available{% else %}status-used{% endif %}">
                       {% if not key.usado %}Disponível{% else %}Usado{% endif %}
                     </span>
-                    <form method="POST" action="/admin/deletar_key" class="inline">
+                    <form method="POST" action="/admin/deletar_key" style="display: inline; margin-left: 10px;">
                       <input type="hidden" name="key_id" value="{{ key.id }}">
-                      <button type="submit" class="text-red-400 hover:text-red-300 p-1">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
-                      </button>
+                      <button type="submit" class="btn btn-danger" onclick="return confirm('Deletar key?')">Deletar</button>
                     </form>
                   </div>
                 </div>
@@ -316,62 +431,54 @@
           </div>
         </div>
       </div>
-
-      <!-- PAGINA: BOTS -->
+      
+      <!-- Página Bots -->
       <div class="page" id="page-bots">
-        <div class="bg-slate-900 rounded-xl border border-slate-800 p-5 card-hover">
-          <h2 class="text-white font-semibold text-sm mb-4">Status dos Bots</h2>
-          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div class="card">
+          <h2>Status dos Bots</h2>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px;">
             {% for user_id, online in status.items() %}
-            <div class="p-4 bg-slate-950 rounded-lg border border-slate-800">
-              <div class="flex items-center justify-between">
-                <div class="text-white text-sm font-medium">Usuário {{ user_id }}</div>
-                <span class="w-3 h-3 rounded-full {% if online %}bg-emerald-500{% else %}bg-red-500{% endif %}"></span>
+            <div style="padding: 15px; background: #0f172a; border: 1px solid #334155; border-radius: 6px;">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h4>Usuário {{ user_id }}</h4>
+                <span style="width: 12px; height: 12px; border-radius: 50%; background: {% if online %}#10b981{% else %}#ef4444{% endif %};"></span>
               </div>
-              <div class="text-xs text-slate-500 mt-1">
+              <p style="color: #94a3b8; font-size: 12px; margin-top: 5px;">
                 {% if online %}Bot Online{% else %}Bot Offline{% endif %}
-              </div>
+              </p>
             </div>
             {% endfor %}
           </div>
         </div>
       </div>
-
-      <!-- PAGINA: SALAS -->
+      
+      <!-- Página Salas -->
       <div class="page" id="page-salas">
-        <div class="bg-slate-900 rounded-xl border border-slate-800 p-5 card-hover">
-          <h2 class="text-white font-semibold text-sm mb-4">Salas Free Fire</h2>
-          <div class="text-slate-400 text-sm">
-            Funcionalidade em desenvolvimento...
-          </div>
+        <div class="card">
+          <h2>Salas Free Fire</h2>
+          <p style="color: #94a3b8;">Funcionalidade em desenvolvimento...</p>
         </div>
       </div>
-
     </div>
-  </main>
+  </div>
 
   <script>
-    function showPage(pageId, button) {
-      // Hide all pages
+    function showPage(pageId, element) {
+      // Esconder todas as páginas
       document.querySelectorAll('.page').forEach(page => {
         page.classList.remove('active');
       });
       
-      // Show selected page
+      // Mostrar página selecionada
       document.getElementById('page-' + pageId).classList.add('active');
       
-      // Update navigation
-      document.querySelectorAll('.nav-item').forEach(item => {
-        item.classList.remove('active');
-        item.classList.add('text-slate-400');
-        item.classList.remove('text-slate-200');
+      // Atualizar navegação
+      document.querySelectorAll('.nav-link').forEach(link => {
+        link.classList.remove('active');
       });
+      element.classList.add('active');
       
-      button.classList.add('active');
-      button.classList.add('text-slate-200');
-      button.classList.remove('text-slate-400');
-      
-      // Update page title
+      // Atualizar título
       const titles = {
         'usuarios': 'Usuários',
         'keys': 'Keys',
@@ -380,15 +487,6 @@
       };
       document.getElementById('page-title').textContent = titles[pageId];
     }
-
-    function toggleSidebar() {
-      const sidebar = document.getElementById('sidebar');
-      const overlay = document.getElementById('overlay');
-      
-      sidebar.classList.toggle('open');
-      overlay.classList.toggle('hidden');
-    }
   </script>
-
 </body>
 </html>
