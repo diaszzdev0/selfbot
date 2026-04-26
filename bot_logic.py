@@ -216,37 +216,36 @@ def parar_selfbot(user_id: int):
 def run_selfbot(config: dict, user_id: int):
     log_msg(user_id, "🚀 Iniciando selfbot...")
     
-    try:
-        TOKEN = config.get("discord_token", "").strip()
-        if not TOKEN:
-            log_msg(user_id, "Token vazio.")
-            return
-        
-        log_msg(user_id, "🔑 Token configurado")
+    TOKEN = config.get("discord_token", "").strip()
+    if not TOKEN:
+        log_msg(user_id, "Token vazio.")
+        return
+    
+    log_msg(user_id, "🔑 Token configurado")
 
-        SERVER_ID = int(config["server_id"])
-        CATEGORIA_ID = int(config["categoria_id"])
-        log_msg(user_id, f"🏠 Servidor: {SERVER_ID}, Categoria: {CATEGORIA_ID}")
-        
-        MENSAGEM_ENTRADA = config.get("mensagem_entrada", "Ola! Use pg Nome Sobrenome para verificar seu pagamento.")
-        IMAGEM_ENTRADA = config.get("imagem_entrada", "").strip()
+    SERVER_ID = int(config["server_id"])
+    CATEGORIA_ID = int(config["categoria_id"])
+    log_msg(user_id, f"🏠 Servidor: {SERVER_ID}, Categoria: {CATEGORIA_ID}")
+    
+    MENSAGEM_ENTRADA = config.get("mensagem_entrada", "Ola! Use pg Nome Sobrenome para verificar seu pagamento.")
+    IMAGEM_ENTRADA = config.get("imagem_entrada", "").strip()
 
-        # Configurações para reduzir desconexões
-        log_msg(user_id, "⚙️ Configurando cliente Discord...")
-        intents = discord.Intents.default()
-        intents.message_content = True
-        intents.guilds = True
-        intents.guild_messages = True
-        
-        client = discord.Client(
-            chunk_guilds_at_startup=False,
-            intents=intents,
-            heartbeat_timeout=60.0,  # Timeout do heartbeat
-            guild_ready_timeout=10.0,  # Timeout para guild ready
-            max_messages=1000  # Limita cache de mensagens
-        )
-        _clientes[user_id] = client
-        log_msg(user_id, "✅ Cliente Discord criado")
+    # Configurações para reduzir desconexões
+    log_msg(user_id, "⚙️ Configurando cliente Discord...")
+    intents = discord.Intents.default()
+    intents.message_content = True
+    intents.guilds = True
+    intents.guild_messages = True
+    
+    client = discord.Client(
+        chunk_guilds_at_startup=False,
+        intents=intents,
+        heartbeat_timeout=60.0,  # Timeout do heartbeat
+        guild_ready_timeout=10.0,  # Timeout para guild ready
+        max_messages=1000  # Limita cache de mensagens
+    )
+    _clientes[user_id] = client
+    log_msg(user_id, "✅ Cliente Discord criado")
 
     threads_com_mensagem: set[int] = _carregar_threads(user_id)
     log_msg(user_id, f"🧵 {len(threads_com_mensagem)} thread(s) carregada(s).")
