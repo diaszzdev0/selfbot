@@ -222,18 +222,16 @@ def _buscar_pagamento_otimizado(cfg: dict, nome: str, user_id: int):
         resultado = cache.search_payment_optimized(nome)
         
         if resultado:
-            # Valida resultado
             if not isinstance(resultado, dict) or 'banco' not in resultado or 'valor' not in resultado:
                 log_msg(user_id, "Resultado de busca inválido")
                 return None
-                
-            log_msg(user_id, f"Pagamento encontrado (cache): {nome[:30]} - {resultado['banco'][:20]}")
+            log_msg(user_id, f"✅ Pagamento encontrado: {nome[:30]} - banco: {resultado['banco']}")
             return {
-                "valor": str(resultado["valor"])[:20],  # Limita tamanho
-                "banco": str(resultado["banco"])[:50]   # Limita tamanho
+                "valor": str(resultado["valor"])[:20],
+                "banco": str(resultado["banco"])[:50]
             }
         else:
-            log_msg(user_id, f"Pagamento não encontrado: {nome[:30]}")
+            log_msg(user_id, f"❌ Pagamento não encontrado no IMAP: {nome[:30]}")
             return None
             
     except Exception as e:
@@ -434,15 +432,17 @@ def run_selfbot(config: dict, user_id: int):
             try:
                 async with aiohttp.ClientSession() as sess:
                     async with sess.get(IMAGEM_ENTRADA) as resp:
-                        dados = await resp.read()
-                        ext = resp.headers.get("Content-Type", "image/png").split("/")[-1].split(";")[0] or "png"
-                arquivo = discord.File(io.BytesIO(dados), filename=f"imagem.{ext}")
-                await canal.send(MENSAGEM_ENTRADA, file=arquivo)
-            except Exception as e:
-                log_msg(user_id, f"Erro imagem: {e}")
-                await canal.send(MENSAGEM_ENTRADA)
-        else:
-            await canal.send(MENSAGEM_ENTRADA)
+                        if resp.status == 200:
+                            dados = await resp.read()
+                            ct = resp.headers.get("Content-Type", "image/png")
+                            ext = ct.split("/")[-1].split(";")[0].strip() or "png"
+                            arquivo = discord.File(io.BytesIO(dados), filename=f"imagem.{ext}")
+                            await canal.send(MENSAGEM_ENTRADA, file=arquivo)
+                            return
+                        log_msg(user_id, f"Imagem HTTP {resp.status}, enviando sem imagem")
+            except Exception as exc:
+                log_msg(user_id, f"Erro imagem: {exc}")
+        await canal.send(MENSAGEM_ENTRADA)
 
     async def _dar_go(channel, pedidoid: str):
         try:

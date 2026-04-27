@@ -189,25 +189,33 @@ class OptimizedIMAPCache:
             mb.login(self.config["email_user"], self.config["email_pass"], initial_folder="INBOX")
             msgs = list(mb.fetch(AND(date_gte=date.today() - timedelta(days=2)), mark_seen=False, limit=200))
             mb.logout()
+            logger.info(f"User {self.user_id}: busca direta - {len(msgs)} emails, procurando '{nome_norm}'")
             for msg in msgs:
                 content = f"{msg.subject or ''} {msg.text or ''} {msg.html or ''}"
                 content_norm = self._normalize(content)
-                match = False
+                # Busca exata
                 if nome_norm in content_norm:
-                    match = True
-                elif len(partes) >= 2:
-                    encontradas = sum(1 for p in partes if p in content_norm)
-                    if encontradas / len(partes) >= 0.7:
-                        match = True
-                if match:
                     ed = self._extract(content)
-                    # Adiciona ao cache para próximas buscas
                     with self.lock:
                         self.emails[ed.hash_id] = ed
                         self._build_indexes()
                         self.stats.total_emails = len(self.emails)
                     self.stats.cache_hits += 1
+                    logger.info(f"User {self.user_id}: encontrado por busca exata - assunto: {msg.subject}")
                     return {"valor": ed.valor or "N/A", "banco": ed.banco}
+                # Busca fuzzy por partes
+                if len(partes) >= 2:
+                    encontradas = sum(1 for p in partes if p in content_norm)
+                    if encontradas / len(partes) >= 0.6:
+                        ed = self._extract(content)
+                        with self.lock:
+                            self.emails[ed.hash_id] = ed
+                            self._build_indexes()
+                            self.stats.total_emails = len(self.emails)
+                        self.stats.cache_hits += 1
+                        logger.info(f"User {self.user_id}: encontrado por fuzzy ({encontradas}/{len(partes)}) - assunto: {msg.subject}")
+                        return {"valor": ed.valor or "N/A", "banco": ed.banco}
+            logger.info(f"User {self.user_id}: '{nome_norm}' nao encontrado em {len(msgs)} emails")
         except Exception as exc:
             logger.error(f"User {self.user_id}: Erro busca direta IMAP: {exc}")
         return None
