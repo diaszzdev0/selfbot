@@ -139,15 +139,28 @@ class OptimizedIMAPCache:
                 self.update_incremental()
 
     def search_payment(self, nome: str) -> Optional[dict]:
-        """Busca pagamento diretamente, sem cache de nomes bloqueante."""
+        """Busca pagamento - primeiro no cache, depois direto no IMAP."""
         nome_norm = self._normalize(nome)
         partes = nome_norm.split()
 
+        # Tenta no cache primeiro
+        resultado = self._search_in_cache(nome_norm, partes)
+        if resultado:
+            return resultado
+
+        # Fallback: busca direta no IMAP
+        log_msg_fn = getattr(self, '_log', None)
+        resultado = self._search_direct_imap(nome_norm, partes)
+        if resultado:
+            return resultado
+
+        self.stats.cache_misses += 1
+        return None
+
+    def _search_in_cache(self, nome_norm: str, partes: list) -> Optional[dict]:
         with self.lock:
             if not self.emails:
                 return None
-
-            # Estratégia 1: intersecção de índices por partes do nome
             if len(partes) >= 2:
                 primeiro, ultimo = partes[0], partes[-1]
                 candidatos = self.nome_index.get(primeiro, set()) & self.nome_index.get(ultimo, set())
@@ -157,22 +170,46 @@ class OptimizedIMAPCache:
                     if nome_norm in content_norm or (primeiro in content_norm and ultimo in content_norm):
                         self.stats.cache_hits += 1
                         return {"valor": ed.valor or "N/A", "banco": ed.banco}
-
-            # Estratégia 2: busca linear por nome completo
             for ed in self.emails.values():
                 content_norm = self._normalize(ed.content)
                 if nome_norm in content_norm:
                     self.stats.cache_hits += 1
                     return {"valor": ed.valor or "N/A", "banco": ed.banco}
-
-                # Fuzzy: 70% das palavras presentes
                 if len(partes) >= 2:
                     encontradas = sum(1 for p in partes if p in content_norm)
                     if encontradas / len(partes) >= 0.7:
                         self.stats.cache_hits += 1
                         return {"valor": ed.valor or "N/A", "banco": ed.banco}
+        return None
 
-        self.stats.cache_misses += 1
+    def _search_direct_imap(self, nome_norm: str, partes: list) -> Optional[dict]:
+        """Busca direta no IMAP sem depender do cache."""
+        try:
+            mb = MailBox(self.config["imap_server"])
+            mb.login(self.config["email_user"], self.config["email_pass"], initial_folder="INBOX")
+            msgs = list(mb.fetch(AND(date_gte=date.today() - timedelta(days=2)), mark_seen=False, limit=200))
+            mb.logout()
+            for msg in msgs:
+                content = f"{msg.subject or ''} {msg.text or ''} {msg.html or ''}"
+                content_norm = self._normalize(content)
+                match = False
+                if nome_norm in content_norm:
+                    match = True
+                elif len(partes) >= 2:
+                    encontradas = sum(1 for p in partes if p in content_norm)
+                    if encontradas / len(partes) >= 0.7:
+                        match = True
+                if match:
+                    ed = self._extract(content)
+                    # Adiciona ao cache para próximas buscas
+                    with self.lock:
+                        self.emails[ed.hash_id] = ed
+                        self._build_indexes()
+                        self.stats.total_emails = len(self.emails)
+                    self.stats.cache_hits += 1
+                    return {"valor": ed.valor or "N/A", "banco": ed.banco}
+        except Exception as exc:
+            logger.error(f"User {self.user_id}: Erro busca direta IMAP: {exc}")
         return None
 
     # Mantém compatibilidade com código existente
