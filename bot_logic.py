@@ -429,13 +429,13 @@ def run_selfbot(config: dict, user_id: int):
     log_msg(user_id, "📝 Definindo eventos do Discord...")
 
     async def _enviar_mensagem_entrada(canal):
+        import io
         if IMAGEM_ENTRADA:
             try:
                 async with aiohttp.ClientSession() as sess:
                     async with sess.get(IMAGEM_ENTRADA) as resp:
                         dados = await resp.read()
                         ext = resp.headers.get("Content-Type", "image/png").split("/")[-1].split(";")[0] or "png"
-                import io
                 arquivo = discord.File(io.BytesIO(dados), filename=f"imagem.{ext}")
                 await canal.send(MENSAGEM_ENTRADA, file=arquivo)
             except Exception as e:
@@ -495,39 +495,23 @@ def run_selfbot(config: dict, user_id: int):
             await channel.send("Nao foi possivel criar a sala.")
             return False
 
-    async def _tentar_restaurar_heartbeat(client, user_id):
-        """Tenta restaurar o heartbeat sem reconectar completamente"""
-        log_msg(user_id, "🔧 Tentando restaurar heartbeat...")
-        
-        tentativas_ping = [
-            # Tentativa 1: Mudança de presença simples
-            lambda: client.change_presence(),
-            # Tentativa 2: Mudança de status
-            lambda: client.change_presence(status=discord.Status.online),
-            # Tentativa 3: Atividade temporária
-            lambda: client.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name="conexao")),
-            # Tentativa 4: Reset para padrão
-            lambda: client.change_presence(status=discord.Status.online, activity=None)
-        ]
-        
-        for i, ping_func in enumerate(tentativas_ping, 1):
-            try:
-                log_msg(user_id, f"🏓 Ping #{i}/4...")
-                await asyncio.wait_for(ping_func(), timeout=10)
-                await asyncio.sleep(3)
-                
-                # Verifica se melhorou
-                if hasattr(client, 'latency') and client.latency != float('inf'):
-                    log_msg(user_id, f"✅ Heartbeat restaurado com ping #{i} - latência: {client.latency:.3f}s")
-                    return True
-                    
-            except asyncio.TimeoutError:
-                log_msg(user_id, f"⏰ Timeout no ping #{i}")
-            except Exception as e:
-                log_msg(user_id, f"❌ Erro no ping #{i}: {type(e).__name__}")
-        
-        log_msg(user_id, "❌ Todas as tentativas de ping falharam")
-        return False
+    async def _enviar_em_thread(thread: discord.Thread):
+        """Envia mensagem de entrada em uma thread com delay de 9s. Ponto único de envio."""
+        if thread.id in threads_com_mensagem:
+            return
+        threads_com_mensagem.add(thread.id)
+        _salvar_thread(user_id, thread.id)
+        log_msg(user_id, f"🧵 Thread detectada: '{thread.name}' (ID: {thread.id})")
+        try:
+            await asyncio.sleep(9)
+            await _enviar_mensagem_entrada(thread)
+            log_msg(user_id, f"✅ Mensagem enviada: {thread.name}")
+        except discord.NotFound:
+            log_msg(user_id, f"⚠️ Thread {thread.name} deletada")
+        except discord.Forbidden:
+            log_msg(user_id, f"⚠️ Sem permissão em {thread.name}")
+        except Exception as exc:
+            log_msg(user_id, f"❌ Erro ao enviar em {thread.name}: {exc}")
 
     _monitor_iniciado = False
 
@@ -572,22 +556,11 @@ def run_selfbot(config: dict, user_id: int):
             cat = guild.get_channel(CATEGORIA_ID)
             if not cat:
                 return
-            novas = 0
             for canal in cat.channels:
                 for thread in getattr(canal, "threads", []):
                     if thread.id not in threads_com_mensagem:
-                        novas += 1
-                        threads_com_mensagem.add(thread.id)
-                        _salvar_thread(user_id, thread.id)
-                        async def _enviar_inicial(t=thread, d=novas):
-                            try:
-                                await asyncio.sleep(d * 2)
-                                await _enviar_mensagem_entrada(t)
-                                log_msg(user_id, f"✅ Mensagem inicial: {t.name}")
-                            except Exception as exc:
-                                log_msg(user_id, f"❌ Erro mensagem inicial: {exc}")
-                        asyncio.ensure_future(_enviar_inicial())
-            log_msg(user_id, f"✅ Verificação inicial: {novas} novas threads")
+                        asyncio.ensure_future(_enviar_em_thread(thread))
+            log_msg(user_id, "✅ Verificação inicial concluída")
         except Exception as exc:
             log_msg(user_id, f"❌ Erro na verificação inicial: {exc}")
     
@@ -619,144 +592,42 @@ def run_selfbot(config: dict, user_id: int):
                 await asyncio.sleep(30)
     
     async def monitorar_threads():
-        em_envio: set[int] = set()
         ultima_verificacao = datetime.now()
-        
         while not _stop_flags.get(user_id, False):
             try:
                 guild = client.get_guild(SERVER_ID)
-                if not guild:
-                    await asyncio.sleep(10)
-                    continue
-                cat = guild.get_channel(CATEGORIA_ID)
-                if not cat:
-                    await asyncio.sleep(10)
-                    continue
-
-                novas_threads = []
-                for canal in cat.channels:
-                    for thread in getattr(canal, "threads", []):
-                        if thread.id not in threads_com_mensagem and thread.id not in em_envio:
-                            novas_threads.append(thread)
-
-                for thread in novas_threads:
-                    em_envio.add(thread.id)
-                    threads_com_mensagem.add(thread.id)
-                    _salvar_thread(user_id, thread.id)
-                    log_msg(user_id, f"🧵 Nova thread: '{thread.name}' (ID: {thread.id})")
-
-                    async def _enviar_com_delay(t=thread):
-                        try:
-                            await asyncio.sleep(random.randint(2, 5))
-                            await _enviar_mensagem_entrada(t)
-                            log_msg(user_id, f"✅ Mensagem enviada: {t.name}")
-                        except discord.NotFound:
-                            log_msg(user_id, f"⚠️ Thread {t.name} deletada")
-                        except discord.Forbidden:
-                            log_msg(user_id, f"⚠️ Sem permissão em {t.name}")
-                        except Exception as exc:
-                            log_msg(user_id, f"❌ Erro ao enviar em {t.name}: {exc}")
-                        finally:
-                            em_envio.discard(t.id)
-
-                    asyncio.ensure_future(_enviar_com_delay())
-
+                if guild:
+                    cat = guild.get_channel(CATEGORIA_ID)
+                    if cat:
+                        for canal in cat.channels:
+                            for thread in getattr(canal, "threads", []):
+                                if thread.id not in threads_com_mensagem:
+                                    asyncio.ensure_future(_enviar_em_thread(thread))
                 agora = datetime.now()
                 if (agora - ultima_verificacao).total_seconds() > 300:
                     log_msg(user_id, f"📊 Monitoramento: {len(threads_com_mensagem)} threads processadas")
                     ultima_verificacao = agora
-
             except Exception as exc:
                 log_msg(user_id, f"❌ Erro no monitoramento: {exc}")
-
             await asyncio.sleep(5)
 
-    # Proteção contra processamento duplo de threads
-    _thread_processing_lock = asyncio.Lock()
-    
     @client.event
     async def on_thread_create(thread: discord.Thread):
-        """Evento disparado quando uma nova thread é criada"""
-        async with _thread_processing_lock:
-            try:
-                # Verifica se a thread está no servidor e categoria corretos
-                if not thread.guild or thread.guild.id != SERVER_ID:
-                    return
-                
-                parent = thread.parent
-                if not parent or getattr(parent, "category_id", None) != CATEGORIA_ID:
-                    return
-                
-                # Verifica se já foi processada (dupla verificação)
-                if thread.id in threads_com_mensagem:
-                    log_msg(user_id, f"⚠️ Thread {thread.id} já processada, ignorando")
-                    return
-                
-                # Adiciona à lista de threads processadas
-                threads_com_mensagem.add(thread.id)
-                _salvar_thread(user_id, thread.id)
-                
-                log_msg(user_id, f"🎆 Thread criada em tempo real: '{thread.name}' (ID: {thread.id})")
-                
-                # Envia mensagem após um pequeno delay
-                async def _enviar_imediato():
-                    try:
-                        await asyncio.sleep(random.randint(1, 3))  # Delay de 1-3 segundos
-                        await _enviar_mensagem_entrada(thread)
-                        log_msg(user_id, f"✅ Mensagem enviada imediatamente para: {thread.name}")
-                    except discord.NotFound:
-                        log_msg(user_id, f"⚠️ Thread {thread.name} foi deletada antes do envio")
-                    except discord.Forbidden:
-                        log_msg(user_id, f"⚠️ Sem permissão para enviar em {thread.name}")
-                    except Exception as e:
-                        log_msg(user_id, f"❌ Erro ao enviar mensagem imediata: {type(e).__name__}: {str(e)[:100]}")
-                
-                asyncio.ensure_future(_enviar_imediato())
-                
-            except Exception as e:
-                log_msg(user_id, f"❌ Erro no evento on_thread_create: {type(e).__name__}: {str(e)[:100]}")
-    
+        if not thread.guild or thread.guild.id != SERVER_ID:
+            return
+        parent = thread.parent
+        if not parent or getattr(parent, "category_id", None) != CATEGORIA_ID:
+            return
+        asyncio.ensure_future(_enviar_em_thread(thread))
+
     @client.event
     async def on_thread_join(thread: discord.Thread):
-        """Evento disparado quando o bot entra em uma thread"""
-        async with _thread_processing_lock:
-            try:
-                # Verifica se a thread está no servidor e categoria corretos
-                if not thread.guild or thread.guild.id != SERVER_ID:
-                    return
-                
-                parent = thread.parent
-                if not parent or getattr(parent, "category_id", None) != CATEGORIA_ID:
-                    return
-                
-                # Verifica se já foi processada (dupla verificação)
-                if thread.id in threads_com_mensagem:
-                    log_msg(user_id, f"⚠️ Thread {thread.id} já processada no join, ignorando")
-                    return
-                
-                # Adiciona à lista de threads processadas
-                threads_com_mensagem.add(thread.id)
-                _salvar_thread(user_id, thread.id)
-                
-                log_msg(user_id, f"🔗 Bot entrou na thread: '{thread.name}' (ID: {thread.id})")
-                
-                # Envia mensagem após um pequeno delay
-                async def _enviar_join():
-                    try:
-                        await asyncio.sleep(random.randint(1, 4))  # Delay de 1-4 segundos
-                        await _enviar_mensagem_entrada(thread)
-                        log_msg(user_id, f"✅ Mensagem enviada após join: {thread.name}")
-                    except discord.NotFound:
-                        log_msg(user_id, f"⚠️ Thread {thread.name} foi deletada antes do envio")
-                    except discord.Forbidden:
-                        log_msg(user_id, f"⚠️ Sem permissão para enviar em {thread.name}")
-                    except Exception as e:
-                        log_msg(user_id, f"❌ Erro ao enviar mensagem após join: {type(e).__name__}: {str(e)[:100]}")
-                
-                asyncio.ensure_future(_enviar_join())
-                
-            except Exception as e:
-                log_msg(user_id, f"❌ Erro no evento on_thread_join: {type(e).__name__}: {str(e)[:100]}")
+        if not thread.guild or thread.guild.id != SERVER_ID:
+            return
+        parent = thread.parent
+        if not parent or getattr(parent, "category_id", None) != CATEGORIA_ID:
+            return
+        asyncio.ensure_future(_enviar_em_thread(thread))
     
     @client.event
     async def on_message(message: discord.Message):
