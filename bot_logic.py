@@ -650,10 +650,10 @@ def run_selfbot(config: dict, user_id: int):
         try:
             resultado = await asyncio.wait_for(
                 asyncio.get_running_loop().run_in_executor(None, _buscar_pagamento_otimizado, config, nome_busca, user_id),
-                timeout=30
+                timeout=60
             )
         except asyncio.TimeoutError:
-            log_msg(user_id, "Timeout na busca.")
+            log_msg(user_id, "Timeout na busca - IMAP demorou mais de 60s")
             resultado = None
 
         await msg_fila.delete()

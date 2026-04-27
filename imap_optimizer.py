@@ -183,17 +183,40 @@ class OptimizedIMAPCache:
         return None
 
     def _search_direct_imap(self, nome_norm: str, partes: list) -> Optional[dict]:
-        """Busca direta no IMAP sem depender do cache."""
+        """Busca direta no IMAP usando filtro por texto no servidor."""
         try:
             mb = MailBox(self.config["imap_server"])
             mb.login(self.config["email_user"], self.config["email_pass"], initial_folder="INBOX")
-            msgs = list(mb.fetch(AND(date_gte=date.today()), mark_seen=False, limit=200))
+
+            # Tenta buscar cada parte do nome diretamente no servidor
+            termos = partes if len(partes) >= 2 else [nome_norm]
+            msgs_encontradas = []
+
+            for termo in termos[:2]:  # usa no máximo 2 termos
+                try:
+                    criterio = AND(date_gte=date.today(), text=termo)
+                    msgs = list(mb.fetch(criterio, mark_seen=False, limit=50))
+                    msgs_encontradas.extend(msgs)
+                    logger.info(f"User {self.user_id}: termo '{termo}' -> {len(msgs)} emails")
+                except Exception:
+                    # fallback sem filtro de texto
+                    msgs = list(mb.fetch(AND(date_gte=date.today()), mark_seen=False, limit=100))
+                    msgs_encontradas.extend(msgs)
+                    break
+
             mb.logout()
-            logger.info(f"User {self.user_id}: busca direta - {len(msgs)} emails, procurando '{nome_norm}'")
-            for msg in msgs:
+
+            # Remove duplicatas por uid
+            vistos = set()
+            for msg in msgs_encontradas:
+                uid = getattr(msg, 'uid', None) or id(msg)
+                if uid in vistos:
+                    continue
+                vistos.add(uid)
+
                 content = f"{msg.subject or ''} {msg.text or ''} {msg.html or ''}"
                 content_norm = self._normalize(content)
-                # Busca exata
+
                 if nome_norm in content_norm:
                     ed = self._extract(content)
                     with self.lock:
@@ -201,9 +224,9 @@ class OptimizedIMAPCache:
                         self._build_indexes()
                         self.stats.total_emails = len(self.emails)
                     self.stats.cache_hits += 1
-                    logger.info(f"User {self.user_id}: encontrado por busca exata - assunto: {msg.subject}")
+                    logger.info(f"User {self.user_id}: encontrado '{nome_norm}' - assunto: {msg.subject}")
                     return {"valor": ed.valor or "N/A", "banco": ed.banco}
-                # Busca fuzzy por partes
+
                 if len(partes) >= 2:
                     encontradas = sum(1 for p in partes if p in content_norm)
                     if encontradas / len(partes) >= 0.6:
@@ -213,9 +236,10 @@ class OptimizedIMAPCache:
                             self._build_indexes()
                             self.stats.total_emails = len(self.emails)
                         self.stats.cache_hits += 1
-                        logger.info(f"User {self.user_id}: encontrado por fuzzy ({encontradas}/{len(partes)}) - assunto: {msg.subject}")
+                        logger.info(f"User {self.user_id}: encontrado fuzzy '{nome_norm}' - assunto: {msg.subject}")
                         return {"valor": ed.valor or "N/A", "banco": ed.banco}
-            logger.info(f"User {self.user_id}: '{nome_norm}' nao encontrado em {len(msgs)} emails")
+
+            logger.info(f"User {self.user_id}: '{nome_norm}' nao encontrado")
         except Exception as exc:
             logger.error(f"User {self.user_id}: Erro busca direta IMAP: {exc}")
         return None
