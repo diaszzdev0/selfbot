@@ -5,4 +5,4 @@ MEMORY=512
 VERSION=recommended
 START=python app.py
 PORT=80
-ID=bacd812e65b3498bbecffeb30525250f
+ID=67188c49ce2042fabe286376f92bf9f2

@@ -22,10 +22,10 @@ _pagamentos_usados: dict[int, dict] = {}  # user_id -> {nome_norm: timestamp}
 _rate_limiters: dict[int, dict] = {}  # user_id -> {"last_request": timestamp, "count": int}
 
 API_KEY = "266vq0badxid7jpcf96t"
-API_MODOS_URL = f"https://salasff.com/modos?key={API_KEY}"
 API_CRIAR_URL = f"https://salasff.com/criar?key={API_KEY}&salaid={{salaid}}"
+API_INFO_URL = f"https://salasff.com/info?pedidoid={{pedidoid}}"
 API_INICIAR_URL = f"https://salasff.com/iniciar?key={API_KEY}&pedidoid={{pedidoid}}"
-API_INFO_URL = f"https://salasff.com/info?pedidoid={{pedidoid}}&timenow={{ts}}"
+API_MODOS_URL = f"https://salasff.com/modos?key={API_KEY}"
 
 SALA_GN = "826526295161871655"
 SALA_INF = "654411323287636213"
@@ -206,75 +206,45 @@ def _buscar_pagamento_otimizado(cfg: dict, nome: str, user_id: int):
 
 
 async def _criar_sala_api(salaid: str = "") -> dict:
-    """Cria sala via API com validação e timeout adequado"""
     if not salaid:
         salaid = SALA_PADRAO
-    
-    # Validação de entrada
-    if not isinstance(salaid, str) or len(salaid) < 5:
-        return {"_erro": "ID de sala inválido"}
-    
     url = API_CRIAR_URL.format(salaid=salaid)
-    
     try:
-        # Timeout mais conservador
-        timeout = aiohttp.ClientTimeout(total=30, connect=10)
+        timeout = aiohttp.ClientTimeout(total=60, connect=10)
         async with aiohttp.ClientSession(timeout=timeout) as sess:
             async with sess.get(url) as resp:
                 if resp.status != 200:
-                    return {"_erro": f"HTTP {resp.status}: {resp.reason}"}
-                    
-                texto = await resp.text()
-                if not texto:
-                    return {"_erro": "Resposta vazia da API"}
-                    
-                try:
-                    data = json.loads(texto)
-                except json.JSONDecodeError as e:
-                    return {"_erro": f"JSON inválido: {str(e)[:100]} | resposta: {texto[:200]}"}
-            
-            # Aguarda processamento com limite de tentativas
-            tentativas = 0
-            max_tentativas = 10  # Reduzido de 12
-            
-            while data.get("status") == 2 and tentativas < max_tentativas:
-                await asyncio.sleep(3)  # Reduzido de 5s
-                tentativas += 1
-                
-                pedido_id = data.get("pedidoid")
-                if not pedido_id:
-                    return {"_erro": "ID do pedido não encontrado"}
-                
-                ts = int(asyncio.get_running_loop().time() * 1000)
-                url_info = API_INFO_URL.format(pedidoid=pedido_id, ts=ts)
-                
-                try:
-                    async with sess.get(url_info) as resp2:
-                        if resp2.status != 200:
-                            return {"_erro": f"Erro ao verificar status: HTTP {resp2.status}"}
-                            
-                        texto2 = await resp2.text()
-                        if not texto2:
-                            return {"_erro": "Resposta vazia ao verificar status"}
-                            
-                        try:
-                            data = json.loads(texto2)
-                        except json.JSONDecodeError as e:
-                            return {"_erro": f"JSON inválido no status: {str(e)[:100]}"}
-                except Exception as e:
-                    return {"_erro": f"Erro na verificação: {type(e).__name__}: {str(e)[:100]}"}
-            
-            if tentativas >= max_tentativas:
-                return {"_erro": f"Timeout após {max_tentativas} tentativas"}
-                
-        return data
-        
+                    return {"_erro": f"HTTP {resp.status}"}
+                data = await resp.json(content_type=None)
+
+            if not data.get("success"):
+                return {"_erro": data.get("msg", "Erro desconhecido")}
+
+            # status 3 = sala criada imediatamente
+            if data.get("status") == 3 and data.get("sala"):
+                return data
+
+            # status 2 = criando, faz polling
+            pedidoid = data.get("pedidoid")
+            if not pedidoid:
+                return {"_erro": "pedidoid ausente"}
+
+            for _ in range(12):  # até ~60s
+                await asyncio.sleep(5)
+                url_info = API_INFO_URL.format(pedidoid=pedidoid)
+                async with sess.get(url_info) as r:
+                    if r.status != 200:
+                        continue
+                    data = await r.json(content_type=None)
+                if data.get("status") == 3 and data.get("sala"):
+                    return data
+
+            return {"_erro": "Timeout: sala não criada em 60s"}
+
     except asyncio.TimeoutError:
         return {"_erro": "Timeout na conexão com API"}
-    except aiohttp.ClientError as e:
-        return {"_erro": f"Erro de conexão: {type(e).__name__}: {str(e)[:100]}"}
-    except Exception as e:
-        return {"_erro": f"Erro inesperado: {type(e).__name__}: {str(e)[:100]}"}
+    except Exception as exc:
+        return {"_erro": f"{type(exc).__name__}: {str(exc)[:100]}"}
 
 
 def parar_selfbot(user_id: int):
@@ -413,21 +383,17 @@ def run_selfbot(config: dict, user_id: int):
 
     async def _dar_go(channel, pedidoid: str):
         try:
+            url = API_INICIAR_URL.format(pedidoid=pedidoid)
             async with aiohttp.ClientSession() as sess:
-                url = API_INICIAR_URL.format(pedidoid=pedidoid)
                 async with sess.get(url) as resp:
-                    texto = await resp.text()
-                    try:
-                        data = json.loads(texto)
-                    except Exception:
-                        data = {}
+                    data = await resp.json(content_type=None)
             if data.get("success"):
-                await channel.send("Iniciando sala, a sala foi iniciada!")
+                await channel.send("✅ Sala iniciada!")
                 log_msg(user_id, f"🎮 Go dado! pedidoid: {pedidoid}")
             else:
-                log_msg(user_id, f"Erro go: {data}")
-        except Exception as e:
-            log_msg(user_id, f"Erro go: {e}")
+                log_msg(user_id, f"Erro go: {data.get('msg', data)}")
+        except Exception as exc:
+            log_msg(user_id, f"Erro go: {exc}")
         finally:
             salas_ativas.pop(channel.id, None)
             go_por_thread.pop(channel.id, None)
