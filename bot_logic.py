@@ -185,57 +185,23 @@ def _salvar_thread(user_id: int, thread_id: int):
 
 
 def _buscar_pagamento_otimizado(cfg: dict, nome: str, user_id: int):
-    """Busca otimizada de pagamento usando o sistema de cache avançado"""
-    if not nome or not isinstance(nome, str):
-        log_msg(user_id, "Nome inválido para busca")
+    if not nome or not isinstance(nome, str) or len(nome.strip()) < 2:
+        log_msg(user_id, f"Nome inválido para busca: '{nome}'")
         return None
-        
     nome = nome.strip()
-    if len(nome) < 2:
-        log_msg(user_id, "Nome muito curto para busca")
-        return None
-    
-    log_msg(user_id, f"Busca otimizada: {nome[:50]}...")  # Trunca nome longo
-    
-    # Rate limiting por usuário
-    now = datetime.now()
-    rate_limiter = _rate_limiters.setdefault(user_id, {"last_request": now, "count": 0})
-    
-    # Permite até 5 requests por segundo por usuário (reduzido)
-    if (now - rate_limiter["last_request"]).total_seconds() < 0.2:
-        rate_limiter["count"] += 1
-        if rate_limiter["count"] > 5:
-            log_msg(user_id, "Rate limit atingido, aguardando...")
-            return None
-    else:
-        rate_limiter["count"] = 0
-        rate_limiter["last_request"] = now
-    
+    log_msg(user_id, f"Buscando pagamento: {nome}")
     try:
-        # Obtém cache otimizado com timeout
         cache = imap_manager.get_cache(user_id, cfg)
-        if not cache:
-            log_msg(user_id, "Cache não disponível")
-            return None
-        
-        # Busca no cache otimizado
         resultado = cache.search_payment_optimized(nome)
-        
         if resultado:
             if not isinstance(resultado, dict) or 'banco' not in resultado or 'valor' not in resultado:
-                log_msg(user_id, "Resultado de busca inválido")
                 return None
             log_msg(user_id, f"✅ Pagamento encontrado: {nome[:30]} - banco: {resultado['banco']}")
-            return {
-                "valor": str(resultado["valor"])[:20],
-                "banco": str(resultado["banco"])[:50]
-            }
-        else:
-            log_msg(user_id, f"❌ Pagamento não encontrado no IMAP: {nome[:30]}")
-            return None
-            
+            return {"valor": str(resultado["valor"])[:20], "banco": str(resultado["banco"])[:50]}
+        log_msg(user_id, f"❌ Não encontrado no IMAP: {nome[:30]}")
+        return None
     except Exception as e:
-        log_msg(user_id, f"Erro na busca otimizada: {type(e).__name__}: {str(e)[:100]}")
+        log_msg(user_id, f"Erro na busca: {type(e).__name__}: {str(e)[:100]}")
         return None
 
 
@@ -750,44 +716,17 @@ def run_selfbot(config: dict, user_id: int):
         # Função async para reconexão com diagnóstico
         async def conectar_com_retry():
             log_msg(user_id, "Iniciando conexão com Discord...")
-            
-            # Verificação básica do token
             if len(TOKEN) < 50:
                 log_msg(user_id, "Token muito curto - provavelmente inválido")
                 return
-            
-            max_retries = 3
-            for attempt in range(1, max_retries + 1):
-                try:
-                    log_msg(user_id, f"Tentativa {attempt}/{max_retries}: Conectando ao Discord...")
-                    
-                    # Timeout progressivo: 45s, 60s, 90s
-                    timeout = 30 + (15 * attempt)
-                    await asyncio.wait_for(client.start(TOKEN), timeout=timeout)
-                    
-                    # Se chegou aqui, conexão foi bem-sucedida
-                    log_msg(user_id, "Conexão estabelecida com sucesso!")
-                    return
-                        
-                except asyncio.TimeoutError:
-                    log_msg(user_id, f"Timeout na tentativa {attempt} ({timeout}s)")
-                    if attempt < max_retries:
-                        wait_time = 10 * attempt
-                        log_msg(user_id, f"Aguardando {wait_time}s antes da próxima tentativa...")
-                        await asyncio.sleep(wait_time)
-                except discord.LoginFailure as e:
-                    log_msg(user_id, f"Token inválido ou expirado: {e}")
-                    return
-                except discord.HTTPException as e:
-                    log_msg(user_id, f"Erro HTTP Discord (tentativa {attempt}): {e}")
-                    if attempt < max_retries:
-                        await asyncio.sleep(15)  # Aguarda mais tempo para erros HTTP
-                except Exception as e:
-                    log_msg(user_id, f"Erro na tentativa {attempt}: {type(e).__name__}: {str(e)[:50]}")
-                    if attempt < max_retries:
-                        await asyncio.sleep(10)
-            
-            log_msg(user_id, f"Falha em todas as {max_retries} tentativas de conexão")
+            try:
+                await client.start(TOKEN)
+            except discord.LoginFailure as e:
+                log_msg(user_id, f"Token inválido ou expirado: {e}")
+            except discord.HTTPException as e:
+                log_msg(user_id, f"Erro HTTP Discord: {e}")
+            except Exception as e:
+                log_msg(user_id, f"Erro na conexão: {type(e).__name__}: {str(e)[:100]}")
         
         log_msg(user_id, "🚀 Executando loop principal...")
         try:
