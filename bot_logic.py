@@ -418,6 +418,7 @@ def run_selfbot(config: dict, user_id: int):
     _clientes[user_id] = client
 
     threads_com_mensagem: set[int] = _carregar_threads(user_id)
+    threads_em_processamento: set[int] = set()  # guard contra race condition
     log_msg(user_id, f"🧵 {len(threads_com_mensagem)} thread(s) carregada(s).")
     pagamentos_por_thread: dict[int, int] = {}
     salas_ativas: dict[int, str] = {}
@@ -496,9 +497,10 @@ def run_selfbot(config: dict, user_id: int):
             return False
 
     async def _enviar_em_thread(thread: discord.Thread):
-        """Envia mensagem de entrada em uma thread com delay de 9s. Ponto único de envio."""
-        if thread.id in threads_com_mensagem:
+        """Ponto único de envio. Garante que nunca envia duas vezes na mesma thread."""
+        if thread.id in threads_com_mensagem or thread.id in threads_em_processamento:
             return
+        threads_em_processamento.add(thread.id)
         threads_com_mensagem.add(thread.id)
         _salvar_thread(user_id, thread.id)
         log_msg(user_id, f"🧵 Thread detectada: '{thread.name}' (ID: {thread.id})")
@@ -512,6 +514,8 @@ def run_selfbot(config: dict, user_id: int):
             log_msg(user_id, f"⚠️ Sem permissão em {thread.name}")
         except Exception as exc:
             log_msg(user_id, f"❌ Erro ao enviar em {thread.name}: {exc}")
+        finally:
+            threads_em_processamento.discard(thread.id)
 
     _monitor_iniciado = False
 
