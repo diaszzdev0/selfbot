@@ -90,7 +90,7 @@ class OptimizedIMAPCache:
     def update_full(self):
         start = time.time()
         try:
-            msgs = self._fetch_emails(AND(date_gte=date.today() - timedelta(days=2)), 500)
+            msgs = self._fetch_emails(AND(date_gte=date.today()), 500)
             with self.lock:
                 self.emails.clear()
                 for msg in msgs:
@@ -187,7 +187,7 @@ class OptimizedIMAPCache:
         try:
             mb = MailBox(self.config["imap_server"])
             mb.login(self.config["email_user"], self.config["email_pass"], initial_folder="INBOX")
-            msgs = list(mb.fetch(AND(date_gte=date.today() - timedelta(days=2)), mark_seen=False, limit=200))
+            msgs = list(mb.fetch(AND(date_gte=date.today()), mark_seen=False, limit=200))
             mb.logout()
             logger.info(f"User {self.user_id}: busca direta - {len(msgs)} emails, procurando '{nome_norm}'")
             for msg in msgs:
