@@ -469,19 +469,19 @@
     setInterval(updateApiSalas, 30000);
 
     if (userId > 0) {
-      var es = new EventSource('/cliente/stream_logs/' + userId);
-      es.onmessage = function(e) { 
-        if (e.data && e.data.trim()) {
-          appendLog(e.data); 
-        }
-      };
-      es.onerror = function() {
-        // Reconexão automática silenciosa - não mostra erro no console
-        es.close();
-        setTimeout(function() {
-          es = new EventSource('/cliente/stream_logs/' + userId);
-        }, 3000);
-      };
+      function conectarStream() {
+        var es = new EventSource('/cliente/stream_logs/' + userId);
+        es.onmessage = function(e) {
+          if (e.data && e.data.trim()) {
+            appendLog(e.data);
+          }
+        };
+        es.onerror = function() {
+          es.close();
+          setTimeout(conectarStream, 3000);
+        };
+      }
+      conectarStream();
     }
   </script>
 
