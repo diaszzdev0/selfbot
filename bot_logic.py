@@ -502,17 +502,16 @@ def run_selfbot(config: dict, user_id: int):
         log_msg(user_id, f"📊 Cache stats: {stats['total_emails']} emails, hit rate: {stats['hit_rate']}")
 
     async def health_check():
-        """Monitora a saúde da conexão - apenas loga, não interfere na reconexão automática"""
         while not _stop_flags.get(user_id, False):
             try:
-                await asyncio.sleep(60)
+                await asyncio.sleep(300)
                 if _stop_flags.get(user_id, False):
                     break
                 latency_str = f"{client.latency:.3f}s" if hasattr(client, 'latency') and client.latency != float('inf') else "inf"
                 log_msg(user_id, f"📊 Status: conectado={not client.is_closed()}, latência={latency_str}")
             except Exception as e:
                 log_msg(user_id, f"❌ Erro no health check: {type(e).__name__}")
-                await asyncio.sleep(30)
+                await asyncio.sleep(60)
     
     async def monitorar_threads():
         ultima_verificacao = datetime.now()
