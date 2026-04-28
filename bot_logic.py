@@ -465,10 +465,13 @@ def run_selfbot(config: dict, user_id: int):
         if not _monitor_iniciado:
             _monitor_iniciado = True
             await asyncio.sleep(3)
-            asyncio.ensure_future(verificar_threads_iniciais())  # Nova função
+            cache = imap_manager.get_cache(user_id, config)
+            await asyncio.get_running_loop().run_in_executor(None, cache.update_full)
+            log_msg(user_id, f"📧 Cache pronto: {cache.stats.total_emails} emails")
+            asyncio.ensure_future(verificar_threads_iniciais())
             asyncio.ensure_future(monitorar_threads())
-            asyncio.ensure_future(atualizar_cache_imap())
-            asyncio.ensure_future(health_check())  # Inicia health check
+            asyncio.ensure_future(manter_cache_atualizado())
+            asyncio.ensure_future(health_check())
 
     async def verificar_threads_iniciais():
         log_msg(user_id, "🔍 Verificando threads existentes...")
@@ -487,11 +490,12 @@ def run_selfbot(config: dict, user_id: int):
         except Exception as exc:
             log_msg(user_id, f"❌ Erro na verificação inicial: {exc}")
     
-    async def atualizar_cache_imap():
+    async def manter_cache_atualizado():
         cache = imap_manager.get_cache(user_id, config)
-        # Força carregamento imediato em thread separada e aguarda
-        await asyncio.get_running_loop().run_in_executor(None, cache.update_full)
-        log_msg(user_id, f"📧 Cache pronto: {cache.stats.total_emails} emails")
+        while not _stop_flags.get(user_id, False):
+            await asyncio.sleep(30)
+            await asyncio.get_running_loop().run_in_executor(None, cache.update_incremental)
+            log_msg(user_id, f"📧 Cache atualizado: {cache.stats.total_emails} emails")
 
     async def health_check():
         while not _stop_flags.get(user_id, False):
