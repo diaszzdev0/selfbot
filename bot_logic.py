@@ -171,7 +171,7 @@ def _buscar_pagamento_otimizado(cfg: dict, nome: str, user_id: int):
     log_msg(user_id, f"Buscando: {nome}")
     try:
         cache = imap_manager.get_cache(user_id, cfg)
-        log_msg(user_id, f"Cache: {cache.stats.total_emails} emails")
+        log_msg(user_id, f"Cache: {cache._total} emails")
         resultado = cache.search_payment_optimized(nome)
         if resultado:
             log_msg(user_id, f"✅ Encontrado: {nome} - {resultado['banco']}")
@@ -328,7 +328,6 @@ def run_selfbot(config: dict, user_id: int):
     go_por_thread: dict[int, set] = {}       # channel_id -> set de user_ids
     go_auto_tasks: dict[int, asyncio.Task] = {}  # channel_id -> task do timer
     pg_em_processamento: set[str] = set()
-    fila_por_thread: dict[int, int] = {}  # channel_id -> quantidade na fila
     
     log_msg(user_id, "📝 Definindo eventos do Discord...")
 
@@ -466,10 +465,10 @@ def run_selfbot(config: dict, user_id: int):
         if not _monitor_iniciado:
             _monitor_iniciado = True
             await asyncio.sleep(3)
-            imap_manager.get_cache(user_id, config)  # inicia thread de cache
-            asyncio.ensure_future(verificar_threads_iniciais())
+            asyncio.ensure_future(verificar_threads_iniciais())  # Nova função
             asyncio.ensure_future(monitorar_threads())
-            asyncio.ensure_future(health_check())
+            asyncio.ensure_future(atualizar_cache_imap())
+            asyncio.ensure_future(health_check())  # Inicia health check
 
     async def verificar_threads_iniciais():
         log_msg(user_id, "🔍 Verificando threads existentes...")
@@ -488,6 +487,20 @@ def run_selfbot(config: dict, user_id: int):
         except Exception as exc:
             log_msg(user_id, f"❌ Erro na verificação inicial: {exc}")
     
+    async def atualizar_cache_imap():
+        """Task removida - agora usa sistema otimizado global"""
+        log_msg(user_id, "🚀 Sistema de cache otimizado ativado!")
+        
+        # Inicializa o cache otimizado
+        cache = imap_manager.get_cache(user_id, config)
+        
+        # Aguarda inicialização do cache
+        await asyncio.sleep(2)
+        
+        # Log das estatísticas iniciais
+        stats = cache.get_stats()
+        log_msg(user_id, f"📊 Cache stats: {stats['total_emails']} emails, hit rate: {stats['hit_rate']}")
+
     async def health_check():
         while not _stop_flags.get(user_id, False):
             try:
@@ -617,14 +630,7 @@ def run_selfbot(config: dict, user_id: int):
         pg_em_processamento.add(chave_pg)
         log_msg(user_id, f"💰 pg detectado: {nome_busca} | {message.author}")
 
-        posicao = fila_por_thread.get(channel.id, 0) + 1
-        fila_por_thread[channel.id] = posicao
-        espera = posicao * 10
-        msg_fila = await message.reply(
-            f"⏳ **Verificação na fila!**\n"
-            f"Sua posição: `{posicao}`\n"
-            f"Estimativa de espera: **{espera} segundos**."
-        )
+        msg_fila = await message.reply("⏳ **Verificando Pagamento…** aguarde!")
 
         try:
             resultado = await asyncio.wait_for(
@@ -640,7 +646,6 @@ def run_selfbot(config: dict, user_id: int):
         except Exception:
             pass
         pg_em_processamento.discard(chave_pg)
-        fila_por_thread[channel.id] = max(fila_por_thread.get(channel.id, 1) - 1, 0)
 
         if resultado:
             # verifica se pagamento ja foi usado nos ultimos 2 minutos (otimizado)
