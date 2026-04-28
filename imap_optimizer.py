@@ -96,11 +96,22 @@ class OptimizedIMAPCache:
         mb.logout()
         return msgs
 
+    def _fetch_emails_limitado(self, limit: int):
+        """Carrega poucos emails e atualiza o cache."""
+        msgs = self._fetch_emails(AND(date_gte=date.today()), limit)
+        with self.lock:
+            for msg in msgs:
+                content = f"{msg.subject or ''} {msg.text or ''} {msg.html or ''}"
+                ed = self._extract(content)
+                self.emails[ed.hash_id] = ed
+            self._build_indexes()
+            self.stats.total_emails = len(self.emails)
+
     def update_full(self):
         start = time.time()
         try:
             logger.info(f"User {self.user_id}: iniciando update_full...")
-            msgs = self._fetch_emails(AND(date_gte=date.today()), 500)
+            msgs = self._fetch_emails(AND(date_gte=date.today()), 100)
             logger.info(f"User {self.user_id}: {len(msgs)} emails baixados")
             with self.lock:
                 self.emails.clear()
