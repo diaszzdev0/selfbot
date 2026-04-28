@@ -115,11 +115,44 @@ class OptimizedIMAPCache:
             return None
 
         with self.lock:
-            # Busca do mais recente para o mais antigo
-            for ed in reversed(self.emails):
+            emails_snapshot = list(reversed(self.emails))
+
+        # Busca no cache
+        for ed in emails_snapshot:
+            if self._match(ed, partes):
+                self._cache_hits += 1
+                return {"valor": ed.valor or "N/A", "banco": ed.banco}
+
+        # Se cache vazio ou nao achou, busca direta rapida (so assunto)
+        try:
+            mb = MailBox(self.config["imap_server"])
+            mb.login(self.config["email_user"], self.config["email_pass"], initial_folder="INBOX")
+            msgs = list(mb.fetch(AND(date_gte=date.today()), mark_seen=False, limit=300))
+            mb.logout()
+
+            # Atualiza cache com novos
+            with self.lock:
+                hashes = {e.hash_id for e in self.emails}
+                for msg in msgs:
+                    ed = self._extract(msg.subject or "", msg.text or "", msg.html or "")
+                    if ed.hash_id not in hashes:
+                        self.emails.append(ed)
+                        hashes.add(ed.hash_id)
+                if len(self.emails) > MAX_EMAILS_CACHE:
+                    self.emails = self.emails[-MAX_EMAILS_CACHE:]
+                self._total = len(self.emails)
+                self._last_update = datetime.now()
+
+            # Busca nos emails recém baixados
+            for msg in reversed(msgs):
+                ed = self._extract(msg.subject or "", msg.text or "", msg.html or "")
                 if self._match(ed, partes):
                     self._cache_hits += 1
+                    logger.warning(f"User {self.user_id}: encontrado '{nome_norm}' - {msg.subject}")
                     return {"valor": ed.valor or "N/A", "banco": ed.banco}
+
+        except Exception as exc:
+            logger.warning(f"User {self.user_id}: Erro busca direta: {exc}")
 
         self._cache_misses += 1
         return None
