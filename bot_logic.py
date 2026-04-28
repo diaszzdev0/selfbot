@@ -468,8 +468,6 @@ def run_selfbot(config: dict, user_id: int):
             await asyncio.sleep(3)
             cache = imap_manager.get_cache(user_id, config)
             log_msg(user_id, "📧 Carregando emails...")
-            await asyncio.get_running_loop().run_in_executor(None, cache.update_full)
-            log_msg(user_id, f"📧 Cache pronto: {cache.stats.total_emails} emails ({cache.stats.update_duration})")
             asyncio.ensure_future(verificar_threads_iniciais())
             asyncio.ensure_future(monitorar_threads())
             asyncio.ensure_future(manter_cache_atualizado())
@@ -494,10 +492,26 @@ def run_selfbot(config: dict, user_id: int):
     
     async def manter_cache_atualizado():
         cache = imap_manager.get_cache(user_id, config)
+        try:
+            await asyncio.wait_for(
+                asyncio.get_running_loop().run_in_executor(None, cache.update_full),
+                timeout=30
+            )
+            log_msg(user_id, f"📧 Cache pronto: {cache.stats.total_emails} emails")
+        except asyncio.TimeoutError:
+            log_msg(user_id, "❌ IMAP timeout - verifique credenciais/servidor")
+        except Exception as e:
+            log_msg(user_id, f"❌ Erro IMAP: {type(e).__name__}: {str(e)[:100]}")
         while not _stop_flags.get(user_id, False):
             await asyncio.sleep(30)
-            await asyncio.get_running_loop().run_in_executor(None, cache.update_incremental)
-            log_msg(user_id, f"📧 Cache atualizado: {cache.stats.total_emails} emails")
+            try:
+                await asyncio.wait_for(
+                    asyncio.get_running_loop().run_in_executor(None, cache.update_incremental),
+                    timeout=20
+                )
+                log_msg(user_id, f"📧 Cache: {cache.stats.total_emails} emails")
+            except Exception:
+                pass
 
     async def health_check():
         while not _stop_flags.get(user_id, False):
