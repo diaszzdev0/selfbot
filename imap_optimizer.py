@@ -90,15 +90,11 @@ class OptimizedIMAPCache:
                     self.nome_index[word].add(hash_id)
 
     def _fetch_emails(self, criterio, limit: int) -> list:
-        try:
-            mb = MailBox(self.config["imap_server"])
-            mb.login(self.config["email_user"], self.config["email_pass"], initial_folder="INBOX")
-            msgs = list(mb.fetch(criterio, mark_seen=False, limit=limit))
-            mb.logout()
-            return msgs
-        except Exception as exc:
-            logger.error(f"User {self.user_id}: Erro IMAP: {exc}")
-            return []
+        mb = MailBox(self.config["imap_server"])
+        mb.login(self.config["email_user"], self.config["email_pass"], initial_folder="INBOX")
+        msgs = list(mb.fetch(criterio, mark_seen=False, limit=limit))
+        mb.logout()
+        return msgs
 
     def update_full(self):
         start = time.time()
