@@ -90,7 +90,7 @@ class OptimizedIMAPCache:
                     self.nome_index[word].add(hash_id)
 
     def _fetch_emails(self, criterio, limit: int) -> list:
-        mb = MailBox(self.config["imap_server"])
+        mb = MailBox(self.config["imap_server"], timeout=15)
         mb.login(self.config["email_user"], self.config["email_pass"], initial_folder="INBOX")
         msgs = list(mb.fetch(criterio, mark_seen=False, limit=limit))
         mb.logout()
