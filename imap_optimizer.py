@@ -1,164 +1,246 @@
 import threading
 import time
-from datetime import datetime, date
+from datetime import datetime, timedelta, date
 from typing import Optional
 from dataclasses import dataclass, field
+from collections import defaultdict
 import hashlib
 import re
 import unicodedata
 from imap_tools import MailBox, AND
 import logging
 
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 
 @dataclass
 class EmailData:
-    content_norm: str
-    content_orig: str
+    content: str
+    timestamp: datetime
     hash_id: str
     valor: Optional[str] = None
     banco: Optional[str] = None
+
+
+@dataclass
+class CacheStats:
+    total_emails: int = 0
+    cache_hits: int = 0
+    cache_misses: int = 0
+    last_update: Optional[datetime] = None
+    update_duration: float = 0.0
 
 
 class OptimizedIMAPCache:
     def __init__(self, user_id: int, config: dict):
         self.user_id = user_id
         self.config = config
-        self.emails: list[EmailData] = []
+        self.emails: dict[str, EmailData] = {}
+        self.nome_index: dict[str, set[str]] = defaultdict(set)
+        self.stats = CacheStats()
         self.lock = threading.RLock()
+        self.last_full_update = datetime.now() - timedelta(hours=2)
         self._stop = False
-        self._total = 0
-        self._cache_hits = 0
-        self._cache_misses = 0
-        self._last_update: Optional[datetime] = None
 
         self.valor_pattern = re.compile(r"R\$\s?([\d.,]+)", re.IGNORECASE)
-        self.bancos = [
-            "Nubank", "PicPay", "Itau", "Bradesco", "Caixa", "Santander",
-            "Inter", "C6 Bank", "Mercado Pago", "Next", "BTG", "Stone",
-            "Sicoob", "Sicredi", "Banrisul", "BRB", "Neon", "Banco do Brasil",
-            "Original", "Pan", "Agibank", "Pagbank", "PagSeguro", "Ame",
-            "Will Bank", "XP", "Daycoval", "Sofisa"
-        ]
+        self.pix_nome_pattern = re.compile(
+            r'(?:transfer[eê]ncia|pix|pagamento|recebeu?|recebido|enviado|depositado)\s+(?:de|do|da|por)?\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)',
+            re.IGNORECASE
+        )
+        self.bancos_patterns = {
+            b.lower(): re.compile(rf"\b{re.escape(b)}\b", re.IGNORECASE)
+            for b in [
+                "Nubank", "PicPay", "Itau", "Bradesco", "Caixa", "Santander",
+                "Inter", "C6 Bank", "Mercado Pago", "Next", "BTG", "Stone",
+                "Sicoob", "Sicredi", "Banrisul", "BRB", "Safra", "Votorantim",
+                "Neon", "Banco do Brasil", "BB", "Original", "Pan", "Agibank",
+                "Pagbank", "PagSeguro", "Ame", "99Pay", "RecargaPay", "Digio",
+                "Will Bank", "Banco Inter", "XP", "Modal", "Daycoval",
+                "Rendimento", "Sofisa", "Banese", "Banpara", "Banestes"
+            ]
+        }
 
-        # Carrega emails imediatamente em background
-        self._thread = threading.Thread(target=self._loop, daemon=True)
+        # Inicia thread de atualização
+        self._thread = threading.Thread(target=self._update_loop, daemon=True)
         self._thread.start()
 
     def _normalize(self, text: str) -> str:
         return unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii").lower().strip()
 
-    def _extract_banco(self, content: str) -> str:
-        cl = content.lower()
-        for b in self.bancos:
-            if b.lower() in cl:
-                return b
-        return "Desconhecido"
-
-    def _build(self, subject: str, text: str, html: str) -> EmailData:
-        corpo = text[:1000] if text.strip() else re.sub(r'<[^>]+>', ' ', html)[:1000]
-        content = f"{subject} {corpo}"
-        content_norm = self._normalize(content)
-        content_orig = content.lower()
-        hash_id = hashlib.md5(content_norm.encode()).hexdigest()
+    def _extract(self, content: str) -> EmailData:
+        content_lower = content.lower()
+        hash_id = hashlib.md5(content.encode()).hexdigest()
         valor_match = self.valor_pattern.search(content)
         valor = valor_match.group(1) if valor_match else None
-        banco = self._extract_banco(content)
-        return EmailData(content_norm=content_norm, content_orig=content_orig,
-                         hash_id=hash_id, valor=valor, banco=banco)
+        banco = "Desconhecido"
+        for nome_banco, pattern in self.bancos_patterns.items():
+            if pattern.search(content_lower):
+                banco = nome_banco.title()
+                break
+        return EmailData(content=content, timestamp=datetime.now(), hash_id=hash_id, valor=valor, banco=banco)
 
-    def _fetch(self):
+    def _build_indexes(self):
+        self.nome_index.clear()
+        for hash_id, email_data in self.emails.items():
+            for word in self._normalize(email_data.content).split():
+                if len(word) >= 2:
+                    self.nome_index[word].add(hash_id)
+
+    def _fetch_emails(self, criterio, limit: int) -> list:
         try:
             mb = MailBox(self.config["imap_server"])
             mb.login(self.config["email_user"], self.config["email_pass"], initial_folder="INBOX")
-            msgs = list(mb.fetch(AND(date_gte=date.today()), mark_seen=False, limit=300))
+            msgs = list(mb.fetch(criterio, mark_seen=False, limit=limit))
             mb.logout()
-            with self.lock:
-                hashes = {e.hash_id for e in self.emails}
-                novos = 0
-                for msg in msgs:
-                    ed = self._build(msg.subject or "", msg.text or "", msg.html or "")
-                    if ed.hash_id not in hashes:
-                        self.emails.append(ed)
-                        hashes.add(ed.hash_id)
-                        novos += 1
-                self._total = len(self.emails)
-                self._last_update = datetime.now()
-            if novos:
-                logger.warning(f"User {self.user_id}: +{novos} emails ({self._total} total)")
+            return msgs
         except Exception as exc:
-            logger.warning(f"User {self.user_id}: Erro IMAP: {exc}")
+            logger.error(f"User {self.user_id}: Erro IMAP: {exc}")
+            return []
 
-    def _loop(self):
-        self._fetch()  # carrega imediatamente
+    def update_full(self):
+        start = time.time()
+        try:
+            msgs = self._fetch_emails(AND(date_gte=date.today()), 500)
+            with self.lock:
+                self.emails.clear()
+                for msg in msgs:
+                    content = f"{msg.subject or ''} {msg.text or ''} {msg.html or ''}"
+                    ed = self._extract(content)
+                    self.emails[ed.hash_id] = ed
+                self._build_indexes()
+                self.stats.total_emails = len(self.emails)
+                self.stats.last_update = datetime.now()
+                self.last_full_update = datetime.now()
+            self.stats.update_duration = time.time() - start
+            logger.info(f"User {self.user_id}: {len(self.emails)} emails carregados em {self.stats.update_duration:.2f}s")
+        except Exception as exc:
+            logger.error(f"User {self.user_id}: Erro update_full: {exc}")
+
+    def update_incremental(self):
+        try:
+            msgs = self._fetch_emails(AND(date_gte=date.today()), 100)
+            new_count = 0
+            with self.lock:
+                for msg in msgs:
+                    content = f"{msg.subject or ''} {msg.text or ''} {msg.html or ''}"
+                    ed = self._extract(content)
+                    if ed.hash_id not in self.emails:
+                        self.emails[ed.hash_id] = ed
+                        new_count += 1
+                if new_count > 0:
+                    self._build_indexes()
+                    self.stats.total_emails = len(self.emails)
+                    self.stats.last_update = datetime.now()
+                    logger.info(f"User {self.user_id}: +{new_count} novos emails")
+        except Exception as exc:
+            logger.error(f"User {self.user_id}: Erro update_incremental: {exc}")
+
+    def _update_loop(self):
+        # Atualização completa inicial
+        self.update_full()
         while not self._stop:
             time.sleep(30)
-            if not self._stop:
-                self._fetch()
-
-    def _match(self, ed: EmailData, partes: list) -> bool:
-        return (
-            all(p in ed.content_norm for p in partes) or
-            all(p in ed.content_orig for p in partes)
-        )
+            if self._stop:
+                break
+            # Atualização completa a cada 30 minutos
+            if (datetime.now() - self.last_full_update).total_seconds() > 1800:
+                self.update_full()
+            else:
+                self.update_incremental()
 
     def search_payment(self, nome: str) -> Optional[dict]:
+        """Busca pagamento - primeiro no cache, depois direto no IMAP."""
         nome_norm = self._normalize(nome)
-        partes = [p for p in nome_norm.split() if len(p) >= 2]
-        if not partes:
-            return None
+        partes = nome_norm.split()
 
-        # Busca no cache
+        # Tenta no cache primeiro
+        resultado = self._search_in_cache(nome_norm, partes)
+        if resultado:
+            return resultado
+
+        # Fallback: busca direta no IMAP
+        log_msg_fn = getattr(self, '_log', None)
+        resultado = self._search_direct_imap(nome_norm, partes)
+        if resultado:
+            return resultado
+
+        self.stats.cache_misses += 1
+        return None
+
+    def _search_in_cache(self, nome_norm: str, partes: list) -> Optional[dict]:
         with self.lock:
-            for ed in reversed(self.emails):
-                if self._match(ed, partes):
-                    self._cache_hits += 1
+            if not self.emails:
+                return None
+            for ed in self.emails.values():
+                content_norm = self._normalize(ed.content)
+                if self._match_nome(content_norm, partes):
+                    self.stats.cache_hits += 1
                     return {"valor": ed.valor or "N/A", "banco": ed.banco}
+        return None
 
-        # Cache vazio ou não achou — busca direta
+    def _match_nome(self, content_norm: str, partes: list) -> bool:
+        """Todas as partes do nome presentes como palavras completas."""
+        return bool(partes) and all(
+            re.search(rf"\b{re.escape(p)}\b", content_norm) for p in partes
+        )
+
+    def _search_direct_imap(self, nome_norm: str, partes: list) -> Optional[dict]:
         try:
             mb = MailBox(self.config["imap_server"])
             mb.login(self.config["email_user"], self.config["email_pass"], initial_folder="INBOX")
-            msgs = list(mb.fetch(AND(date_gte=date.today()), mark_seen=False, limit=300))
+            termos = partes if len(partes) >= 2 else [nome_norm]
+            msgs_encontradas = []
+            for termo in termos[:2]:
+                try:
+                    msgs = list(mb.fetch(AND(date_gte=date.today(), text=termo), mark_seen=False, limit=50))
+                    msgs_encontradas.extend(msgs)
+                    logger.info(f"User {self.user_id}: termo '{termo}' -> {len(msgs)} emails")
+                except Exception:
+                    msgs = list(mb.fetch(AND(date_gte=date.today()), mark_seen=False, limit=100))
+                    msgs_encontradas.extend(msgs)
+                    break
             mb.logout()
 
-            # Atualiza cache
-            with self.lock:
-                hashes = {e.hash_id for e in self.emails}
-                for msg in msgs:
-                    ed = self._build(msg.subject or "", msg.text or "", msg.html or "")
-                    if ed.hash_id not in hashes:
-                        self.emails.append(ed)
-                        hashes.add(ed.hash_id)
-                self._total = len(self.emails)
-                self._last_update = datetime.now()
-
-            # Busca nos emails baixados
-            for msg in reversed(msgs):
-                ed = self._build(msg.subject or "", msg.text or "", msg.html or "")
-                if self._match(ed, partes):
-                    self._cache_hits += 1
+            vistos = set()
+            for msg in msgs_encontradas:
+                uid = getattr(msg, 'uid', None) or id(msg)
+                if uid in vistos:
+                    continue
+                vistos.add(uid)
+                content = f"{msg.subject or ''} {msg.text or ''} {msg.html or ''}"
+                content_norm = self._normalize(content)
+                if self._match_nome(content_norm, partes):
+                    ed = self._extract(content)
+                    with self.lock:
+                        self.emails[ed.hash_id] = ed
+                        self._build_indexes()
+                        self.stats.total_emails = len(self.emails)
+                    self.stats.cache_hits += 1
+                    logger.info(f"User {self.user_id}: encontrado '{nome_norm}' - assunto: {msg.subject}")
                     return {"valor": ed.valor or "N/A", "banco": ed.banco}
 
+            logger.info(f"User {self.user_id}: '{nome_norm}' nao encontrado")
         except Exception as exc:
-            logger.warning(f"User {self.user_id}: Erro busca direta: {exc}")
-
-        self._cache_misses += 1
+            logger.error(f"User {self.user_id}: Erro busca direta IMAP: {exc}")
         return None
 
+    # Mantém compatibilidade com código existente
     def search_payment_optimized(self, nome: str) -> Optional[dict]:
         return self.search_payment(nome)
 
     def get_stats(self) -> dict:
-        total = self._cache_hits + self._cache_misses
-        return {
-            "total_emails": self._total,
-            "cache_hits": self._cache_hits,
-            "cache_misses": self._cache_misses,
-            "hit_rate": f"{self._cache_hits/total:.2%}" if total > 0 else "0.00%",
-            "last_update": self._last_update.isoformat() if self._last_update else None,
-        }
+        with self.lock:
+            total = self.stats.cache_hits + self.stats.cache_misses
+            hit_rate = self.stats.cache_hits / total if total > 0 else 0
+            return {
+                "total_emails": self.stats.total_emails,
+                "cache_hits": self.stats.cache_hits,
+                "cache_misses": self.stats.cache_misses,
+                "hit_rate": f"{hit_rate:.2%}",
+                "last_update": self.stats.last_update.isoformat() if self.stats.last_update else None,
+                "update_duration": f"{self.stats.update_duration:.2f}s",
+            }
 
     def stop(self):
         self._stop = True
@@ -179,12 +261,13 @@ class IMAPCacheManager:
             del self.caches[user_id]
 
     def get_global_stats(self) -> dict:
-        total_hits = sum(c._cache_hits for c in self.caches.values())
-        total_misses = sum(c._cache_misses for c in self.caches.values())
+        total_emails = sum(c.stats.total_emails for c in self.caches.values())
+        total_hits = sum(c.stats.cache_hits for c in self.caches.values())
+        total_misses = sum(c.stats.cache_misses for c in self.caches.values())
         total = total_hits + total_misses
         return {
             "active_caches": len(self.caches),
-            "total_emails": sum(c._total for c in self.caches.values()),
+            "total_emails": total_emails,
             "global_hit_rate": f"{total_hits/total:.2%}" if total > 0 else "0.00%",
             "total_requests": total,
             "caches": {uid: c.get_stats() for uid, c in self.caches.items()},
