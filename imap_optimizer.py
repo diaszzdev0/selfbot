@@ -148,40 +148,69 @@ class OptimizedIMAPCache:
             logger.error(f"User {self.user_id}: Erro update_incremental: {exc}")
 
     def _update_loop(self):
-        # Atualização completa inicial
         self.update_full()
         while not self._stop:
-            time.sleep(30)
+            time.sleep(60)
             if self._stop:
                 break
-            # Atualização completa a cada 30 minutos
-            if (datetime.now() - self.last_full_update).total_seconds() > 1800:
-                self.update_full()
-            else:
-                self.update_incremental()
+            self.update_incremental()
 
     def search_payment(self, nome: str) -> Optional[dict]:
         nome_norm = self._normalize(nome)
         partes = [p for p in nome_norm.split() if len(p) >= 3]
         if not partes:
             return None
-        try:
-            mb = MailBox(self.config["imap_server"], timeout=15)
-            mb.login(self.config["email_user"], self.config["email_pass"], initial_folder="INBOX")
-            # Busca pelo assunto - Gmail suporta bem e é rápido
-            msgs = list(mb.fetch(AND(date_gte=date.today(), subject=partes[0]), mark_seen=False, limit=50))
-            mb.logout()
-            logger.info(f"User {self.user_id}: {len(msgs)} emails com assunto '{partes[0]}'")
-            for msg in msgs:
-                content = f"{msg.subject or ''} {msg.text or ''} {msg.html or ''}"
-                if self._match_nome(self._normalize(content), partes):
-                    ed = self._extract(content)
-                    self.stats.cache_hits += 1
-                    return {"valor": ed.valor or "N/A", "banco": ed.banco}
-        except Exception as exc:
-            logger.error(f"User {self.user_id}: Erro IMAP [{type(exc).__name__}]: {exc}")
+        # Busca no cache primeiro (instantaneo)
+        resultado = self._search_in_cache(nome_norm, partes)
+        if resultado:
+            self.stats.cache_hits += 1
+            return resultado
         self.stats.cache_misses += 1
         return None
+
+    def update_full(self):
+        start = time.time()
+        try:
+            mb = MailBox(self.config["imap_server"], timeout=20)
+            mb.login(self.config["email_user"], self.config["email_pass"], initial_folder="INBOX")
+            msgs = list(mb.fetch(AND(date_gte=date.today()), mark_seen=False, limit=50, bulk=True))
+            mb.logout()
+            with self.lock:
+                self.emails.clear()
+                for msg in msgs:
+                    content = f"{msg.subject or ''} {msg.text or ''} {msg.html or ''}"
+                    ed = self._extract(content)
+                    self.emails[ed.hash_id] = ed
+                self._build_indexes()
+                self.stats.total_emails = len(self.emails)
+                self.stats.last_update = datetime.now()
+                self.last_full_update = datetime.now()
+            self.stats.update_duration = time.time() - start
+            logger.info(f"User {self.user_id}: cache pronto - {len(self.emails)} emails em {self.stats.update_duration:.2f}s")
+        except Exception as exc:
+            logger.error(f"User {self.user_id}: Erro update_full [{type(exc).__name__}]: {exc}")
+
+    def update_incremental(self):
+        try:
+            mb = MailBox(self.config["imap_server"], timeout=20)
+            mb.login(self.config["email_user"], self.config["email_pass"], initial_folder="INBOX")
+            msgs = list(mb.fetch(AND(date_gte=date.today()), mark_seen=False, limit=20, bulk=True))
+            mb.logout()
+            new_count = 0
+            with self.lock:
+                for msg in msgs:
+                    content = f"{msg.subject or ''} {msg.text or ''} {msg.html or ''}"
+                    ed = self._extract(content)
+                    if ed.hash_id not in self.emails:
+                        self.emails[ed.hash_id] = ed
+                        new_count += 1
+                if new_count > 0:
+                    self._build_indexes()
+                    self.stats.total_emails = len(self.emails)
+                    self.stats.last_update = datetime.now()
+                    logger.info(f"User {self.user_id}: +{new_count} novos emails")
+        except Exception as exc:
+            logger.error(f"User {self.user_id}: Erro update_incremental [{type(exc).__name__}]: {exc}")
 
     def _search_in_cache(self, nome_norm: str, partes: list) -> Optional[dict]:
         with self.lock:

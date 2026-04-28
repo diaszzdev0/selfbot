@@ -466,6 +466,7 @@ def run_selfbot(config: dict, user_id: int):
         if not _monitor_iniciado:
             _monitor_iniciado = True
             await asyncio.sleep(3)
+            imap_manager.get_cache(user_id, config)  # inicia thread de cache
             asyncio.ensure_future(verificar_threads_iniciais())
             asyncio.ensure_future(monitorar_threads())
             asyncio.ensure_future(health_check())
