@@ -487,7 +487,7 @@ def run_selfbot(config: dict, user_id: int):
         except Exception as exc:
             log_msg(user_id, f"❌ Erro na verificação inicial: {exc}")
     
-async def health_check():
+    async def health_check():
         while not _stop_flags.get(user_id, False):
             try:
                 await asyncio.sleep(300)
