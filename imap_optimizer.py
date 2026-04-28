@@ -139,17 +139,19 @@ class OptimizedIMAPCache:
             logger.error(f"User {self.user_id}: Erro update_incremental: {exc}")
 
     def _update_loop(self):
-        # Atualização completa inicial
         self.update_full()
         while not self._stop:
-            time.sleep(10)
-            if self._stop:
-                break
-            # Atualização completa a cada 30 minutos
-            if (datetime.now() - self.last_full_update).total_seconds() > 1800:
-                self.update_full()
-            else:
-                self.update_incremental()
+            try:
+                mb = MailBox(self.config["imap_server"])
+                mb.login(self.config["email_user"], self.config["email_pass"], initial_folder="INBOX")
+                # IDLE: espera notificacao do servidor por ate 60s
+                responses = mb.idle.wait(timeout=60)
+                mb.logout()
+                if responses:  # chegou email novo
+                    self.update_incremental()
+            except Exception as exc:
+                logger.error(f"User {self.user_id}: Erro IDLE: {exc}")
+                time.sleep(10)  # aguarda antes de reconectar
 
     def search_payment(self, nome: str) -> Optional[dict]:
         """Busca pagamento - primeiro no cache, depois direto no IMAP."""
