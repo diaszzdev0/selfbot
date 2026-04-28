@@ -60,8 +60,13 @@ class OptimizedIMAPCache:
     def _normalize(self, text: str) -> str:
         return unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii").lower().strip()
 
-    def _extract(self, subject: str, text: str) -> EmailData:
-        content = f"{subject} {text[:500]}"
+    def _extract(self, subject: str, text: str, html: str = "") -> EmailData:
+        # Pega o melhor conteúdo disponível
+        corpo = text[:1000] if text.strip() else ""
+        if not corpo and html:
+            # Remove tags HTML para extrair texto puro
+            corpo = re.sub(r'<[^>]+>', ' ', html)[:1000]
+        content = f"{subject} {corpo}"
         content_norm = self._normalize(content)
         content_orig = content.lower()
         hash_id = hashlib.md5(content_norm.encode()).hexdigest()
@@ -88,7 +93,7 @@ class OptimizedIMAPCache:
             novos = []
             hashes_existentes = {e.hash_id for e in self.emails}
             for msg in msgs:
-                ed = self._extract(msg.subject or "", msg.text or "")
+                ed = self._extract(msg.subject or "", msg.text or "", msg.html or "")
                 if ed.hash_id not in hashes_existentes:
                     novos.append(ed)
 
@@ -162,7 +167,7 @@ class OptimizedIMAPCache:
                 if uid in vistos:
                     continue
                 vistos.add(uid)
-                ed = self._extract(msg.subject or "", msg.text or "")
+                ed = self._extract(msg.subject or "", msg.text or "", msg.html or "")
                 if self._match_qualquer(ed, partes):
                     with self.lock:
                         if ed.hash_id not in {e.hash_id for e in self.emails}:
