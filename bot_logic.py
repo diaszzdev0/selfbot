@@ -167,22 +167,20 @@ def _salvar_thread(user_id: int, thread_id: int):
 
 def _buscar_pagamento_otimizado(cfg: dict, nome: str, user_id: int):
     if not nome or not isinstance(nome, str) or len(nome.strip()) < 2:
-        log_msg(user_id, f"Nome inválido para busca: '{nome}'")
         return None
     nome = nome.strip()
-    log_msg(user_id, f"Buscando pagamento: {nome}")
+    log_msg(user_id, f"Buscando: {nome}")
     try:
         cache = imap_manager.get_cache(user_id, cfg)
+        log_msg(user_id, f"Cache: {cache._total} emails")
         resultado = cache.search_payment_optimized(nome)
         if resultado:
-            if not isinstance(resultado, dict) or 'banco' not in resultado or 'valor' not in resultado:
-                return None
-            log_msg(user_id, f"✅ Pagamento encontrado: {nome[:30]} - banco: {resultado['banco']}")
+            log_msg(user_id, f"✅ Encontrado: {nome} - {resultado['banco']}")
             return {"valor": str(resultado["valor"])[:20], "banco": str(resultado["banco"])[:50]}
-        log_msg(user_id, f"❌ Não encontrado no IMAP: {nome[:30]}")
+        log_msg(user_id, f"❌ Não encontrado: {nome}")
         return None
     except Exception as e:
-        log_msg(user_id, f"Erro na busca: {type(e).__name__}: {str(e)[:100]}")
+        log_msg(user_id, f"Erro busca: {type(e).__name__}: {str(e)[:100]}")
         return None
 
 
