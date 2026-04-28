@@ -17,7 +17,8 @@ MAX_EMAILS_CACHE = 200  # limite máximo de emails em memória
 
 @dataclass
 class EmailData:
-    content_norm: str  # já normalizado, economiza memória
+    content_norm: str  # normalizado (sem acento, lowercase)
+    content_orig: str  # original para busca com acento
     hash_id: str
     valor: Optional[str] = None
     banco: Optional[str] = None
@@ -60,10 +61,9 @@ class OptimizedIMAPCache:
         return unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii").lower().strip()
 
     def _extract(self, subject: str, text: str) -> EmailData:
-        # Usa apenas assunto + primeiros 500 chars do corpo para economizar RAM
         content = f"{subject} {text[:500]}"
-        content_lower = content.lower()
         content_norm = self._normalize(content)
+        content_orig = content.lower()
         hash_id = hashlib.md5(content_norm.encode()).hexdigest()
 
         valor_match = self.valor_pattern.search(content)
@@ -71,11 +71,11 @@ class OptimizedIMAPCache:
 
         banco = "Desconhecido"
         for nome_banco, pattern in self.bancos_patterns.items():
-            if pattern.search(content_lower):
+            if pattern.search(content):
                 banco = nome_banco
                 break
 
-        return EmailData(content_norm=content_norm, hash_id=hash_id, valor=valor, banco=banco)
+        return EmailData(content_norm=content_norm, content_orig=content_orig, hash_id=hash_id, valor=valor, banco=banco)
 
     def _fetch_and_update(self):
         try:
@@ -115,13 +115,19 @@ class OptimizedIMAPCache:
                 self._fetch_and_update()
 
     def _match_nome(self, content_norm: str, partes: list) -> bool:
-        """Verifica se todas as partes do nome estão no conteúdo."""
         return bool(partes) and all(p in content_norm for p in partes)
 
     def _match_nome_estrito(self, content_norm: str, partes: list) -> bool:
-        """Verifica com word boundary (para evitar falsos positivos)."""
         return bool(partes) and all(
             re.search(rf"(?<![a-z]){re.escape(p)}(?![a-z])", content_norm) for p in partes
+        )
+
+    def _match_qualquer(self, ed: EmailData, partes: list) -> bool:
+        """Tenta match no conteudo normalizado e no original (com acento)."""
+        return (
+            self._match_nome_estrito(ed.content_norm, partes) or
+            self._match_nome(ed.content_norm, partes) or
+            all(p in ed.content_orig for p in partes)
         )
 
     def search_payment(self, nome: str) -> Optional[dict]:
@@ -130,13 +136,8 @@ class OptimizedIMAPCache:
 
         # 1. Busca no cache
         with self.lock:
-            for ed in reversed(self.emails):  # mais recentes primeiro
-                if self._match_nome_estrito(ed.content_norm, partes):
-                    self.stats.cache_hits += 1
-                    return {"valor": ed.valor or "N/A", "banco": ed.banco}
-            # fallback: busca simples
             for ed in reversed(self.emails):
-                if self._match_nome(ed.content_norm, partes):
+                if self._match_qualquer(ed, partes):
                     self.stats.cache_hits += 1
                     return {"valor": ed.valor or "N/A", "banco": ed.banco}
 
@@ -162,7 +163,7 @@ class OptimizedIMAPCache:
                     continue
                 vistos.add(uid)
                 ed = self._extract(msg.subject or "", msg.text or "")
-                if self._match_nome(ed.content_norm, partes):
+                if self._match_qualquer(ed, partes):
                     with self.lock:
                         if ed.hash_id not in {e.hash_id for e in self.emails}:
                             self.emails.append(ed)

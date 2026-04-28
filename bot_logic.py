@@ -91,8 +91,8 @@ def _extrair_nome(conteudo: str):
     if not nome:
         return None
 
-    # Validações: nome precisa ter pelo menos 2 palavras e cada palavra >= 3 letras
-    palavras = [p for p in nome.split() if len(p) >= 3 and p.isalpha()]
+    # Validações: nome precisa ter pelo menos 2 palavras com 2+ letras cada
+    palavras = [p for p in nome.split() if len(p) >= 2 and re.match(r'^[a-zA-ZÀ-ÿ]+$', p)]
     if len(palavras) < 2:
         return None
 
