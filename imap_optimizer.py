@@ -137,10 +137,11 @@ class OptimizedIMAPCache:
 
     def search_payment(self, nome: str) -> Optional[dict]:
         nome_norm = self._normalize(nome)
-        partes = [p for p in nome_norm.split() if len(p) >= 3]
+        partes = [p for p in nome_norm.split() if len(p) >= 2]
 
         # 1. Busca no cache
         with self.lock:
+            logger.warning(f"User {self.user_id}: cache tem {len(self.emails)} emails, buscando '{nome_norm}'")
             for ed in reversed(self.emails):
                 if self._match_qualquer(ed, partes):
                     self.stats.cache_hits += 1
@@ -155,8 +156,16 @@ class OptimizedIMAPCache:
             for termo in partes[:2]:
                 try:
                     msgs = list(mb.fetch(AND(date_gte=date.today(), text=termo), mark_seen=False, limit=30))
+                    logger.warning(f"User {self.user_id}: termo '{termo}' -> {len(msgs)} emails")
+                    for m in msgs:
+                        logger.warning(f"  assunto: {m.subject}")
                     msgs_encontradas.extend(msgs)
-                except Exception:
+                except Exception as exc:
+                    logger.warning(f"User {self.user_id}: erro filtro '{termo}': {exc}")
+                    # fallback sem filtro
+                    msgs = list(mb.fetch(AND(date_gte=date.today()), mark_seen=False, limit=50))
+                    logger.warning(f"User {self.user_id}: fallback -> {len(msgs)} emails")
+                    msgs_encontradas.extend(msgs)
                     break
 
             mb.logout()
@@ -176,8 +185,10 @@ class OptimizedIMAPCache:
                                 self.emails = self.emails[-MAX_EMAILS_CACHE:]
                             self.stats.total_emails = len(self.emails)
                     self.stats.cache_hits += 1
-                    logger.warning(f"User {self.user_id}: encontrado '{nome_norm}' - assunto: {msg.subject}")
+                    logger.warning(f"User {self.user_id}: ENCONTRADO '{nome_norm}' - assunto: {msg.subject}")
                     return {"valor": ed.valor or "N/A", "banco": ed.banco}
+
+            logger.warning(f"User {self.user_id}: '{nome_norm}' NAO encontrado em {len(msgs_encontradas)} emails")
 
         except Exception as exc:
             logger.warning(f"User {self.user_id}: Erro busca direta: {exc}")
