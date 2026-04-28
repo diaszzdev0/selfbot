@@ -69,10 +69,16 @@ class OptimizedIMAPCache:
             self.stats.total_emails = len(msgs)
             for msg in msgs:
                 content = f"{msg.subject or ''} {msg.text or ''} {msg.html or ''}"
-                if _match_nome(_normalize(content), partes):
+                content_norm = _normalize(content)
+                if _match_nome(content_norm, partes):
                     logger.info(f"User {self.user_id}: encontrado '{nome_norm}' - {msg.subject}")
                     self.stats.cache_hits += 1
                     return _extrair_banco_valor(content)
+                # Log debug: mostra trecho do email onde o nome deveria estar
+                for p in partes:
+                    idx = content_norm.find(p)
+                    if idx != -1:
+                        logger.info(f"User {self.user_id}: parte '{p}' encontrada em: ...{content_norm[max(0,idx-20):idx+40]}...")
             logger.info(f"User {self.user_id}: '{nome_norm}' nao encontrado")
             self.stats.cache_misses += 1
         except Exception as exc:
