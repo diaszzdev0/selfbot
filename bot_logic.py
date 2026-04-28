@@ -171,6 +171,7 @@ def _buscar_pagamento_otimizado(cfg: dict, nome: str, user_id: int):
     log_msg(user_id, f"Buscando: {nome}")
     try:
         cache = imap_manager.get_cache(user_id, cfg)
+        log_msg(user_id, f"Cache: {cache.stats.total_emails} emails")
         resultado = cache.search_payment_optimized(nome)
         if resultado:
             log_msg(user_id, f"✅ Encontrado: {nome} - {resultado['banco']}")
@@ -487,7 +488,18 @@ def run_selfbot(config: dict, user_id: int):
             log_msg(user_id, f"❌ Erro na verificação inicial: {exc}")
     
     async def atualizar_cache_imap():
-        pass
+        """Task removida - agora usa sistema otimizado global"""
+        log_msg(user_id, "🚀 Sistema de cache otimizado ativado!")
+        
+        # Inicializa o cache otimizado
+        cache = imap_manager.get_cache(user_id, config)
+        
+        # Aguarda inicialização do cache
+        await asyncio.sleep(2)
+        
+        # Log das estatísticas iniciais
+        stats = cache.get_stats()
+        log_msg(user_id, f"📊 Cache stats: {stats['total_emails']} emails, hit rate: {stats['hit_rate']}")
 
     async def health_check():
         while not _stop_flags.get(user_id, False):
