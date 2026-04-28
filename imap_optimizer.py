@@ -44,10 +44,21 @@ class OptimizedIMAPCache:
         self._stop = False
 
         self.valor_pattern = re.compile(r"R\$\s?([\d.,]+)", re.IGNORECASE)
+        self.pix_nome_pattern = re.compile(
+            r'(?:transfer[eê]ncia|pix|pagamento|recebeu?|recebido|enviado|depositado)\s+(?:de|do|da|por)?\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)',
+            re.IGNORECASE
+        )
         self.bancos_patterns = {
-            banco.lower(): re.compile(rf"\b{re.escape(banco)}\b", re.IGNORECASE)
-            for banco in ["Nubank", "PicPay", "Itau", "Bradesco", "Caixa", "Santander",
-                          "Inter", "C6 Bank", "Mercado Pago", "Next", "BTG", "Stone"]
+            b.lower(): re.compile(rf"\b{re.escape(b)}\b", re.IGNORECASE)
+            for b in [
+                "Nubank", "PicPay", "Itau", "Bradesco", "Caixa", "Santander",
+                "Inter", "C6 Bank", "Mercado Pago", "Next", "BTG", "Stone",
+                "Sicoob", "Sicredi", "Banrisul", "BRB", "Safra", "Votorantim",
+                "Neon", "Banco do Brasil", "BB", "Original", "Pan", "Agibank",
+                "Pagbank", "PagSeguro", "Ame", "99Pay", "RecargaPay", "Digio",
+                "Will Bank", "Banco Inter", "XP", "Modal", "Daycoval",
+                "Rendimento", "Sofisa", "Banese", "Banpara", "Banestes"
+            ]
         }
 
         # Inicia thread de atualização
@@ -161,63 +172,45 @@ class OptimizedIMAPCache:
         with self.lock:
             if not self.emails:
                 return None
-            if len(partes) >= 2:
-                primeiro, ultimo = partes[0], partes[-1]
-                candidatos = self.nome_index.get(primeiro, set()) & self.nome_index.get(ultimo, set())
-                for hash_id in candidatos:
-                    ed = self.emails[hash_id]
-                    content_norm = self._normalize(ed.content)
-                    if nome_norm in content_norm or (primeiro in content_norm and ultimo in content_norm):
-                        self.stats.cache_hits += 1
-                        return {"valor": ed.valor or "N/A", "banco": ed.banco}
             for ed in self.emails.values():
                 content_norm = self._normalize(ed.content)
-                if nome_norm in content_norm:
+                if self._match_nome(content_norm, partes):
                     self.stats.cache_hits += 1
                     return {"valor": ed.valor or "N/A", "banco": ed.banco}
-                if len(partes) >= 2:
-                    encontradas = sum(1 for p in partes if p in content_norm)
-                    if encontradas / len(partes) >= 0.7:
-                        self.stats.cache_hits += 1
-                        return {"valor": ed.valor or "N/A", "banco": ed.banco}
         return None
 
+    def _match_nome(self, content_norm: str, partes: list) -> bool:
+        """Todas as partes do nome presentes como palavras completas."""
+        return bool(partes) and all(
+            re.search(rf"\b{re.escape(p)}\b", content_norm) for p in partes
+        )
+
     def _search_direct_imap(self, nome_norm: str, partes: list) -> Optional[dict]:
-        """Busca direta no IMAP usando filtro por texto no servidor."""
         try:
             mb = MailBox(self.config["imap_server"])
             mb.login(self.config["email_user"], self.config["email_pass"], initial_folder="INBOX")
-
-            # Tenta buscar cada parte do nome diretamente no servidor
             termos = partes if len(partes) >= 2 else [nome_norm]
             msgs_encontradas = []
-
-            for termo in termos[:2]:  # usa no máximo 2 termos
+            for termo in termos[:2]:
                 try:
-                    criterio = AND(date_gte=date.today(), text=termo)
-                    msgs = list(mb.fetch(criterio, mark_seen=False, limit=50))
+                    msgs = list(mb.fetch(AND(date_gte=date.today(), text=termo), mark_seen=False, limit=50))
                     msgs_encontradas.extend(msgs)
                     logger.info(f"User {self.user_id}: termo '{termo}' -> {len(msgs)} emails")
                 except Exception:
-                    # fallback sem filtro de texto
                     msgs = list(mb.fetch(AND(date_gte=date.today()), mark_seen=False, limit=100))
                     msgs_encontradas.extend(msgs)
                     break
-
             mb.logout()
 
-            # Remove duplicatas por uid
             vistos = set()
             for msg in msgs_encontradas:
                 uid = getattr(msg, 'uid', None) or id(msg)
                 if uid in vistos:
                     continue
                 vistos.add(uid)
-
                 content = f"{msg.subject or ''} {msg.text or ''} {msg.html or ''}"
                 content_norm = self._normalize(content)
-
-                if nome_norm in content_norm:
+                if self._match_nome(content_norm, partes):
                     ed = self._extract(content)
                     with self.lock:
                         self.emails[ed.hash_id] = ed
@@ -226,18 +219,6 @@ class OptimizedIMAPCache:
                     self.stats.cache_hits += 1
                     logger.info(f"User {self.user_id}: encontrado '{nome_norm}' - assunto: {msg.subject}")
                     return {"valor": ed.valor or "N/A", "banco": ed.banco}
-
-                if len(partes) >= 2:
-                    encontradas = sum(1 for p in partes if p in content_norm)
-                    if encontradas / len(partes) >= 0.6:
-                        ed = self._extract(content)
-                        with self.lock:
-                            self.emails[ed.hash_id] = ed
-                            self._build_indexes()
-                            self.stats.total_emails = len(self.emails)
-                        self.stats.cache_hits += 1
-                        logger.info(f"User {self.user_id}: encontrado fuzzy '{nome_norm}' - assunto: {msg.subject}")
-                        return {"valor": ed.valor or "N/A", "banco": ed.banco}
 
             logger.info(f"User {self.user_id}: '{nome_norm}' nao encontrado")
         except Exception as exc:
