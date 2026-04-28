@@ -103,7 +103,9 @@ class OptimizedIMAPCache:
     def update_full(self):
         start = time.time()
         try:
+            logger.info(f"User {self.user_id}: iniciando update_full...")
             msgs = self._fetch_emails(AND(date_gte=date.today()), 500)
+            logger.info(f"User {self.user_id}: {len(msgs)} emails baixados")
             with self.lock:
                 self.emails.clear()
                 for msg in msgs:
@@ -115,9 +117,9 @@ class OptimizedIMAPCache:
                 self.stats.last_update = datetime.now()
                 self.last_full_update = datetime.now()
             self.stats.update_duration = time.time() - start
-            logger.info(f"User {self.user_id}: {len(self.emails)} emails carregados em {self.stats.update_duration:.2f}s")
+            logger.info(f"User {self.user_id}: cache pronto - {len(self.emails)} emails em {self.stats.update_duration:.2f}s")
         except Exception as exc:
-            logger.error(f"User {self.user_id}: Erro update_full: {exc}")
+            logger.error(f"User {self.user_id}: Erro update_full [{type(exc).__name__}]: {exc}")
 
     def update_incremental(self):
         try:
