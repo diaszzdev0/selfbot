@@ -115,8 +115,13 @@ class OptimizedIMAPCache:
                 self._fetch_and_update()
 
     def _match_nome(self, content_norm: str, partes: list) -> bool:
+        """Verifica se todas as partes do nome estão no conteúdo."""
+        return bool(partes) and all(p in content_norm for p in partes)
+
+    def _match_nome_estrito(self, content_norm: str, partes: list) -> bool:
+        """Verifica com word boundary (para evitar falsos positivos)."""
         return bool(partes) and all(
-            re.search(rf"\b{re.escape(p)}\b", content_norm) for p in partes
+            re.search(rf"(?<![a-z]){re.escape(p)}(?![a-z])", content_norm) for p in partes
         )
 
     def search_payment(self, nome: str) -> Optional[dict]:
@@ -126,6 +131,11 @@ class OptimizedIMAPCache:
         # 1. Busca no cache
         with self.lock:
             for ed in reversed(self.emails):  # mais recentes primeiro
+                if self._match_nome_estrito(ed.content_norm, partes):
+                    self.stats.cache_hits += 1
+                    return {"valor": ed.valor or "N/A", "banco": ed.banco}
+            # fallback: busca simples
+            for ed in reversed(self.emails):
                 if self._match_nome(ed.content_norm, partes):
                     self.stats.cache_hits += 1
                     return {"valor": ed.valor or "N/A", "banco": ed.banco}
