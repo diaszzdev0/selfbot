@@ -399,7 +399,17 @@ def run_selfbot(config: dict, user_id: int):
             go_por_thread.pop(channel.id, None)
 
     async def _enviar_sala(channel, salaid: str = ""):
-        data = await _criar_sala_api(salaid or SALA_PADRAO)
+        # Detecta modo pelo nome da thread se salaid não foi passado
+        if not salaid:
+            nome_canal = getattr(channel, 'name', '') or ''
+            if '-inf' in nome_canal.lower():
+                salaid = SALA_INF
+                log_msg(user_id, f"🎮 Modo: Infinito ({nome_canal})")
+            else:
+                salaid = SALA_PADRAO
+                log_msg(user_id, f"🎮 Modo: Gel Normal ({nome_canal})")
+
+        data = await _criar_sala_api(salaid)
         if "_erro" in data:
             log_msg(user_id, f"🎮 Erro API sala: {data['_erro']}")
             await channel.send("Nao foi possivel criar a sala. Erro na API.")
@@ -415,18 +425,16 @@ def run_selfbot(config: dict, user_id: int):
             log_msg(user_id, f"🎮 Sala enviada: {msg_sala}")
             await channel.send(msg_sala)
             await channel.send("⚡ **IMPORTANTE:** Após ambos entrarem, digitem `go` aqui no chat para iniciar!")
-
             async def go_auto(ch=channel, pid=pedidoid):
                 await asyncio.sleep(300)
                 if salas_ativas.get(ch.id) == pid:
-                    log_msg(user_id, f"🎮 Go automatico...")
+                    log_msg(user_id, "🎮 Go automatico...")
                     await _dar_go(ch, pid)
             asyncio.ensure_future(go_auto())
             return True
-        else:
-            log_msg(user_id, f"🎮 Erro criar sala: {data}")
-            await channel.send("Nao foi possivel criar a sala.")
-            return False
+        log_msg(user_id, f"🎮 Erro criar sala: {data}")
+        await channel.send("Nao foi possivel criar a sala.")
+        return False
 
     async def _enviar_em_thread(thread: discord.Thread):
         """Ponto único de envio. Garante que nunca envia duas vezes na mesma thread."""
@@ -660,7 +668,7 @@ def run_selfbot(config: dict, user_id: int):
                     log_msg(user_id, f"⛔ Limite: {usadas}/{limite}")
                     return
                 msg_req = await channel.send("Solicitando Sala...")
-                await _enviar_sala(channel, SALA_PADRAO)
+                await _enviar_sala(channel)  # detecta modo automaticamente pelo nome da thread
                 await msg_req.delete()
         else:
             await message.reply(f"Pagamento nao confirmado para {nome_busca}.")
