@@ -357,8 +357,9 @@ def run_selfbot(config: dict, user_id: int):
     threads_em_processamento: set[int] = set()  # guard contra race condition
     log_msg(user_id, f"🧵 {len(threads_com_mensagem)} thread(s) carregada(s).")
     pagamentos_por_thread: dict[int, int] = {}
-    salas_ativas: dict[int, str] = {}
-    go_por_thread: dict[int, set] = {}
+    salas_ativas: dict[int, str] = {}       # channel_id -> pedidoid
+    go_por_thread: dict[int, set] = {}       # channel_id -> set de user_ids
+    go_auto_tasks: dict[int, asyncio.Task] = {}  # channel_id -> task do timer
     pg_em_processamento: set[str] = set()
     
     log_msg(user_id, "📝 Definindo eventos do Discord...")
@@ -382,6 +383,10 @@ def run_selfbot(config: dict, user_id: int):
         await canal.send(MENSAGEM_ENTRADA)
 
     async def _dar_go(channel, pedidoid: str):
+        # Cancela o timer automático se ainda estiver rodando
+        task = go_auto_tasks.pop(channel.id, None)
+        if task and not task.done():
+            task.cancel()
         try:
             url = API_INICIAR_URL.format(pedidoid=pedidoid)
             async with aiohttp.ClientSession() as sess:
@@ -397,6 +402,7 @@ def run_selfbot(config: dict, user_id: int):
         finally:
             salas_ativas.pop(channel.id, None)
             go_por_thread.pop(channel.id, None)
+            go_auto_tasks.pop(channel.id, None)
 
     async def _enviar_sala(channel, salaid: str = ""):
         # Detecta modo pelo nome da thread se salaid não foi passado
@@ -424,13 +430,17 @@ def run_selfbot(config: dict, user_id: int):
             go_por_thread[channel.id] = set()
             log_msg(user_id, f"🎮 Sala enviada: {msg_sala}")
             await channel.send(msg_sala)
-            await channel.send("⚡ **IMPORTANTE:** Após ambos entrarem, digitem `go` aqui no chat para iniciar!")
+            await channel.send("⚡ **IMPORTANTE:** Após ambos entrarem, digitem `go` aqui no chat para iniciar! A sala dá go automático em **5 minutos**.")
+
             async def go_auto(ch=channel, pid=pedidoid):
                 await asyncio.sleep(300)
                 if salas_ativas.get(ch.id) == pid:
-                    log_msg(user_id, "🎮 Go automatico...")
+                    log_msg(user_id, "🎮 Go automático (5 min)")
+                    await ch.send("⏰ Tempo esgotado! Iniciando sala automaticamente...")
                     await _dar_go(ch, pid)
-            asyncio.ensure_future(go_auto())
+
+            task = asyncio.ensure_future(go_auto())
+            go_auto_tasks[channel.id] = task
             return True
         log_msg(user_id, f"🎮 Erro criar sala: {data}")
         await channel.send("Nao foi possivel criar a sala.")
@@ -596,10 +606,11 @@ def run_selfbot(config: dict, user_id: int):
         if re.fullmatch(r"go+", cmd) and channel.id in salas_ativas:
             if message.author != client.user:
                 go_por_thread.setdefault(channel.id, set()).add(message.author.id)
-                log_msg(user_id, f"🎮 Go de {message.author} ({len(go_por_thread[channel.id])}/2)")
-                if len(go_por_thread[channel.id]) >= 2:
+                count = len(go_por_thread[channel.id])
+                log_msg(user_id, f"🎮 Go de {message.author} ({count}/2)")
+                if count >= 2:
                     log_msg(user_id, "🎮 Dois go - iniciando sala...")
-                    await message.reply("⚡ **Sala deu go!** Tentando iniciar a partida.")
+                    await message.reply("⚡ **Ambos deram go!** Iniciando a partida...")
                     await _dar_go(channel, salas_ativas[channel.id])
             return
 
