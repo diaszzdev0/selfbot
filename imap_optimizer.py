@@ -168,9 +168,10 @@ class OptimizedIMAPCache:
         try:
             mb = MailBox(self.config["imap_server"], timeout=15)
             mb.login(self.config["email_user"], self.config["email_pass"], initial_folder="INBOX")
-            # Busca pelo primeiro nome diretamente no servidor - muito mais rapido
-            msgs = list(mb.fetch(AND(date_gte=date.today(), text=partes[0]), mark_seen=False, limit=50))
+            # Busca pelo assunto - Gmail suporta bem e é rápido
+            msgs = list(mb.fetch(AND(date_gte=date.today(), subject=partes[0]), mark_seen=False, limit=50))
             mb.logout()
+            logger.info(f"User {self.user_id}: {len(msgs)} emails com assunto '{partes[0]}'")
             for msg in msgs:
                 content = f"{msg.subject or ''} {msg.text or ''} {msg.html or ''}"
                 if self._match_nome(self._normalize(content), partes):
