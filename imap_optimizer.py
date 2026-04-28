@@ -98,7 +98,8 @@ class OptimizedIMAPCache:
             mb.logout()
             return msgs
         except Exception as exc:
-            logger.error(f"User {self.user_id}: Erro IMAP: {exc}")
+            logger.error(f"User {self.user_id}: Erro IMAP [{type(exc).__name__}]: {exc}")
+            self._last_imap_error = str(exc)
             return []
 
     def update_full(self):

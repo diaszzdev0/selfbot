@@ -172,6 +172,12 @@ def _buscar_pagamento_otimizado(cfg: dict, nome: str, user_id: int):
     try:
         cache = imap_manager.get_cache(user_id, cfg)
         log_msg(user_id, f"Cache: {cache.stats.total_emails} emails")
+        if cache.stats.total_emails == 0:
+            erro_imap = getattr(cache, '_last_imap_error', None)
+            if erro_imap:
+                log_msg(user_id, f"❌ Erro IMAP: {erro_imap}")
+            else:
+                log_msg(user_id, "⚠️ Cache vazio - IMAP ainda carregando ou sem emails hoje")
         resultado = cache.search_payment_optimized(nome)
         if resultado:
             log_msg(user_id, f"✅ Encontrado: {nome} - {resultado['banco']}")
