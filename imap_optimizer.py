@@ -66,6 +66,8 @@ class OptimizedIMAPCache:
         self._thread.start()
 
     def _normalize(self, text: str) -> str:
+        text = re.sub(r'<[^>]+>', ' ', text)
+        text = re.sub(r'&[a-zA-Z0-9#]+;', ' ', text)
         return unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii").lower().strip()
 
     def _extract(self, content: str) -> EmailData:
