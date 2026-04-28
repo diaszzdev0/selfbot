@@ -317,14 +317,21 @@ def cliente_stream_logs(user_id: int):
             for linha in f.read().splitlines():
                 if linha.strip():
                     yield f"data: {linha}\n\n"
+            last_heartbeat = time.time()
             while True:
                 linha = f.readline()
                 if linha:
                     yield f"data: {linha.rstrip()}\n\n"
+                    last_heartbeat = time.time()
                 else:
                     time.sleep(0.3)
+                    # Envia heartbeat a cada 20s para manter conexão viva
+                    if time.time() - last_heartbeat > 20:
+                        yield ": heartbeat\n\n"
+                        last_heartbeat = time.time()
 
-    return Response(generate(), mimetype="text/event-stream")
+    return Response(generate(), mimetype="text/event-stream",
+                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 # ── Auth ──────────────────────────────────────────────────────────────────────

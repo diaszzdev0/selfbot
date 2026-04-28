@@ -475,12 +475,12 @@
           appendLog(e.data); 
         }
       };
-      es.onerror = function(e) { 
-        console.error('Erro no EventSource:', e);
-        appendLog('[stream] Conexão perdida. Reconectando...'); 
-      };
-      es.onopen = function() {
-        console.log('Conexão EventSource estabelecida');
+      es.onerror = function() {
+        // Reconexão automática silenciosa - não mostra erro no console
+        es.close();
+        setTimeout(function() {
+          es = new EventSource('/cliente/stream_logs/' + userId);
+        }, 3000);
       };
     }
   </script>
