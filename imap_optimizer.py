@@ -146,40 +146,34 @@ class OptimizedIMAPCache:
                     self.stats.cache_hits += 1
                     return {"valor": ed.valor or "N/A", "banco": ed.banco}
 
-        # 2. Busca direta no IMAP com filtro por nome
+        # 2. Busca direta no IMAP sem filtro - baixa todos do dia e compara local
         try:
             mb = MailBox(self.config["imap_server"])
             mb.login(self.config["email_user"], self.config["email_pass"], initial_folder="INBOX")
-
-            msgs_encontradas = []
-            for termo in partes[:2]:
-                try:
-                    msgs = list(mb.fetch(AND(date_gte=date.today(), text=termo), mark_seen=False, limit=30))
-                    msgs_encontradas.extend(msgs)
-                except Exception as exc:
-                    logger.warning(f"User {self.user_id}: erro filtro '{termo}': {exc}")
-                    msgs = list(mb.fetch(AND(date_gte=date.today()), mark_seen=False, limit=50))
-                    msgs_encontradas.extend(msgs)
-                    break
-
+            msgs = list(mb.fetch(AND(date_gte=date.today()), mark_seen=False, limit=200))
             mb.logout()
 
-            vistos = set()
-            for msg in msgs_encontradas:
-                uid = getattr(msg, 'uid', id(msg))
-                if uid in vistos:
-                    continue
-                vistos.add(uid)
+            # Atualiza cache com todos os emails novos
+            hashes_existentes = {e.hash_id for e in self.emails}
+            novos = []
+            for msg in msgs:
                 ed = self._extract(msg.subject or "", msg.text or "", msg.html or "")
+                if ed.hash_id not in hashes_existentes:
+                    novos.append(ed)
+                    hashes_existentes.add(ed.hash_id)
+
+            if novos:
+                with self.lock:
+                    self.emails.extend(novos)
+                    if len(self.emails) > MAX_EMAILS_CACHE:
+                        self.emails = self.emails[-MAX_EMAILS_CACHE:]
+                    self.stats.total_emails = len(self.emails)
+
+            # Busca em todos os emails (cache + novos)
+            todos = list(reversed(self.emails))
+            for ed in todos:
                 if self._match_qualquer(ed, partes):
-                    with self.lock:
-                        if ed.hash_id not in {e.hash_id for e in self.emails}:
-                            self.emails.append(ed)
-                            if len(self.emails) > MAX_EMAILS_CACHE:
-                                self.emails = self.emails[-MAX_EMAILS_CACHE:]
-                            self.stats.total_emails = len(self.emails)
                     self.stats.cache_hits += 1
-                    logger.warning(f"User {self.user_id}: encontrado '{nome_norm}' - assunto: {msg.subject}")
                     return {"valor": ed.valor or "N/A", "banco": ed.banco}
 
         except Exception as exc:
