@@ -156,27 +156,12 @@ class OptimizedIMAPCache:
                 self.update_incremental()
 
     def search_payment(self, nome: str) -> Optional[dict]:
-        """Busca pagamento - primeiro no cache, depois direto no IMAP."""
         nome_norm = self._normalize(nome)
         partes = nome_norm.split()
-
-        # Se cache ainda vazio, aguarda até 10s pelo carregamento inicial
-        if not self.emails:
-            for _ in range(20):
-                time.sleep(0.5)
-                if self.emails:
-                    break
-
-        # Tenta no cache primeiro
-        resultado = self._search_in_cache(nome_norm, partes)
-        if resultado:
-            return resultado
-
-        # Fallback: busca direta no IMAP
         resultado = self._search_direct_imap(nome_norm, partes)
         if resultado:
+            self.stats.cache_hits += 1
             return resultado
-
         self.stats.cache_misses += 1
         return None
 
