@@ -595,10 +595,10 @@ def run_selfbot(config: dict, user_id: int):
         conteudo = message.content.strip()
         cmd = conteudo.lower()
 
-        if cmd in ("!gn", "!inf") and message.author == client.user:
-            salaid = SALA_GN if cmd == "!gn" else SALA_INF
+        if cmd in ("!gn", "!inf", "!normal", "!infinito") and message.author == client.user:
+            salaid = SALA_INF if cmd in ("!inf", "!infinito") else SALA_GN
             log_msg(user_id, f"Comando {cmd} detectado")
-            msg_req = await channel.send("Criando sala manualmente...")
+            msg_req = await channel.send("Criando sala...")
             await _enviar_sala(channel, salaid)
             await msg_req.delete()
             return
