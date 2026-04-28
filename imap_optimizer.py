@@ -2,22 +2,22 @@ import threading
 import time
 from datetime import datetime, timedelta, date
 from typing import Optional
-from dataclasses import dataclass, field
-from collections import defaultdict
+from dataclasses import dataclass
 import hashlib
 import re
 import unicodedata
 from imap_tools import MailBox, AND
 import logging
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.WARNING, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+MAX_EMAILS_CACHE = 200  # limite máximo de emails em memória
 
 
 @dataclass
 class EmailData:
-    content: str
-    timestamp: datetime
+    content_norm: str  # já normalizado, economiza memória
     hash_id: str
     valor: Optional[str] = None
     banco: Optional[str] = None
@@ -29,203 +29,146 @@ class CacheStats:
     cache_hits: int = 0
     cache_misses: int = 0
     last_update: Optional[datetime] = None
-    update_duration: float = 0.0
 
 
 class OptimizedIMAPCache:
     def __init__(self, user_id: int, config: dict):
         self.user_id = user_id
         self.config = config
-        self.emails: dict[str, EmailData] = {}
-        self.nome_index: dict[str, set[str]] = defaultdict(set)
+        self.emails: list[EmailData] = []  # lista simples, sem índice extra
         self.stats = CacheStats()
         self.lock = threading.RLock()
-        self.last_full_update = datetime.now() - timedelta(hours=2)
+        self.last_update = datetime.now() - timedelta(hours=2)
         self._stop = False
 
         self.valor_pattern = re.compile(r"R\$\s?([\d.,]+)", re.IGNORECASE)
-        self.pix_nome_pattern = re.compile(
-            r'(?:transfer[eê]ncia|pix|pagamento|recebeu?|recebido|enviado|depositado)\s+(?:de|do|da|por)?\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)',
-            re.IGNORECASE
-        )
         self.bancos_patterns = {
-            b.lower(): re.compile(rf"\b{re.escape(b)}\b", re.IGNORECASE)
+            b: re.compile(rf"\b{re.escape(b)}\b", re.IGNORECASE)
             for b in [
                 "Nubank", "PicPay", "Itau", "Bradesco", "Caixa", "Santander",
                 "Inter", "C6 Bank", "Mercado Pago", "Next", "BTG", "Stone",
-                "Sicoob", "Sicredi", "Banrisul", "BRB", "Safra", "Votorantim",
-                "Neon", "Banco do Brasil", "BB", "Original", "Pan", "Agibank",
-                "Pagbank", "PagSeguro", "Ame", "99Pay", "RecargaPay", "Digio",
-                "Will Bank", "Banco Inter", "XP", "Modal", "Daycoval",
-                "Rendimento", "Sofisa", "Banese", "Banpara", "Banestes"
+                "Sicoob", "Sicredi", "Banrisul", "BRB", "Neon", "Banco do Brasil",
+                "Original", "Pan", "Agibank", "Pagbank", "PagSeguro", "Ame",
+                "Will Bank", "XP", "Daycoval", "Sofisa"
             ]
         }
 
-        # Inicia thread de atualização
         self._thread = threading.Thread(target=self._update_loop, daemon=True)
         self._thread.start()
 
     def _normalize(self, text: str) -> str:
         return unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii").lower().strip()
 
-    def _extract(self, content: str) -> EmailData:
+    def _extract(self, subject: str, text: str) -> EmailData:
+        # Usa apenas assunto + primeiros 500 chars do corpo para economizar RAM
+        content = f"{subject} {text[:500]}"
         content_lower = content.lower()
-        hash_id = hashlib.md5(content.encode()).hexdigest()
+        content_norm = self._normalize(content)
+        hash_id = hashlib.md5(content_norm.encode()).hexdigest()
+
         valor_match = self.valor_pattern.search(content)
         valor = valor_match.group(1) if valor_match else None
+
         banco = "Desconhecido"
         for nome_banco, pattern in self.bancos_patterns.items():
             if pattern.search(content_lower):
-                banco = nome_banco.title()
+                banco = nome_banco
                 break
-        return EmailData(content=content, timestamp=datetime.now(), hash_id=hash_id, valor=valor, banco=banco)
 
-    def _build_indexes(self):
-        self.nome_index.clear()
-        for hash_id, email_data in self.emails.items():
-            for word in self._normalize(email_data.content).split():
-                if len(word) >= 2:
-                    self.nome_index[word].add(hash_id)
+        return EmailData(content_norm=content_norm, hash_id=hash_id, valor=valor, banco=banco)
 
-    def _fetch_emails(self, criterio, limit: int) -> list:
+    def _fetch_and_update(self):
         try:
             mb = MailBox(self.config["imap_server"])
             mb.login(self.config["email_user"], self.config["email_pass"], initial_folder="INBOX")
-            msgs = list(mb.fetch(criterio, mark_seen=False, limit=limit))
+            # Busca apenas emails de hoje, limite 100
+            msgs = list(mb.fetch(AND(date_gte=date.today()), mark_seen=False, limit=100))
             mb.logout()
-            return msgs
-        except Exception as exc:
-            logger.error(f"User {self.user_id}: Erro IMAP: {exc}")
-            return []
 
-    def update_full(self):
-        start = time.time()
-        try:
-            msgs = self._fetch_emails(AND(date_gte=date.today()), 500)
+            novos = []
+            hashes_existentes = {e.hash_id for e in self.emails}
+            for msg in msgs:
+                ed = self._extract(msg.subject or "", msg.text or "")
+                if ed.hash_id not in hashes_existentes:
+                    novos.append(ed)
+
             with self.lock:
-                self.emails.clear()
-                for msg in msgs:
-                    content = f"{msg.subject or ''} {msg.text or ''} {msg.html or ''}"
-                    ed = self._extract(content)
-                    self.emails[ed.hash_id] = ed
-                self._build_indexes()
+                self.emails.extend(novos)
+                # Mantém apenas os últimos MAX_EMAILS_CACHE
+                if len(self.emails) > MAX_EMAILS_CACHE:
+                    self.emails = self.emails[-MAX_EMAILS_CACHE:]
                 self.stats.total_emails = len(self.emails)
                 self.stats.last_update = datetime.now()
-                self.last_full_update = datetime.now()
-            self.stats.update_duration = time.time() - start
-            logger.info(f"User {self.user_id}: {len(self.emails)} emails carregados em {self.stats.update_duration:.2f}s")
-        except Exception as exc:
-            logger.error(f"User {self.user_id}: Erro update_full: {exc}")
+                self.last_update = datetime.now()
 
-    def update_incremental(self):
-        try:
-            msgs = self._fetch_emails(AND(date_gte=date.today()), 100)
-            new_count = 0
-            with self.lock:
-                for msg in msgs:
-                    content = f"{msg.subject or ''} {msg.text or ''} {msg.html or ''}"
-                    ed = self._extract(content)
-                    if ed.hash_id not in self.emails:
-                        self.emails[ed.hash_id] = ed
-                        new_count += 1
-                if new_count > 0:
-                    self._build_indexes()
-                    self.stats.total_emails = len(self.emails)
-                    self.stats.last_update = datetime.now()
-                    logger.info(f"User {self.user_id}: +{new_count} novos emails")
+            if novos:
+                logger.warning(f"User {self.user_id}: +{len(novos)} emails ({len(self.emails)} total)")
+
         except Exception as exc:
-            logger.error(f"User {self.user_id}: Erro update_incremental: {exc}")
+            logger.warning(f"User {self.user_id}: Erro IMAP: {exc}")
 
     def _update_loop(self):
-        # Atualização completa inicial
-        self.update_full()
+        self._fetch_and_update()
         while not self._stop:
             time.sleep(30)
-            if self._stop:
-                break
-            # Atualização completa a cada 30 minutos
-            if (datetime.now() - self.last_full_update).total_seconds() > 1800:
-                self.update_full()
-            else:
-                self.update_incremental()
-
-    def search_payment(self, nome: str) -> Optional[dict]:
-        """Busca pagamento - primeiro no cache, depois direto no IMAP."""
-        nome_norm = self._normalize(nome)
-        partes = nome_norm.split()
-
-        # Tenta no cache primeiro
-        resultado = self._search_in_cache(nome_norm, partes)
-        if resultado:
-            return resultado
-
-        # Fallback: busca direta no IMAP
-        log_msg_fn = getattr(self, '_log', None)
-        resultado = self._search_direct_imap(nome_norm, partes)
-        if resultado:
-            return resultado
-
-        self.stats.cache_misses += 1
-        return None
-
-    def _search_in_cache(self, nome_norm: str, partes: list) -> Optional[dict]:
-        with self.lock:
-            if not self.emails:
-                return None
-            for ed in self.emails.values():
-                content_norm = self._normalize(ed.content)
-                if self._match_nome(content_norm, partes):
-                    self.stats.cache_hits += 1
-                    return {"valor": ed.valor or "N/A", "banco": ed.banco}
-        return None
+            if not self._stop:
+                self._fetch_and_update()
 
     def _match_nome(self, content_norm: str, partes: list) -> bool:
-        """Todas as partes do nome presentes como palavras completas."""
         return bool(partes) and all(
             re.search(rf"\b{re.escape(p)}\b", content_norm) for p in partes
         )
 
-    def _search_direct_imap(self, nome_norm: str, partes: list) -> Optional[dict]:
+    def search_payment(self, nome: str) -> Optional[dict]:
+        nome_norm = self._normalize(nome)
+        partes = [p for p in nome_norm.split() if len(p) >= 3]
+
+        # 1. Busca no cache
+        with self.lock:
+            for ed in reversed(self.emails):  # mais recentes primeiro
+                if self._match_nome(ed.content_norm, partes):
+                    self.stats.cache_hits += 1
+                    return {"valor": ed.valor or "N/A", "banco": ed.banco}
+
+        # 2. Busca direta no IMAP com filtro por nome
         try:
             mb = MailBox(self.config["imap_server"])
             mb.login(self.config["email_user"], self.config["email_pass"], initial_folder="INBOX")
-            termos = partes if len(partes) >= 2 else [nome_norm]
+
             msgs_encontradas = []
-            for termo in termos[:2]:
+            for termo in partes[:2]:
                 try:
-                    msgs = list(mb.fetch(AND(date_gte=date.today(), text=termo), mark_seen=False, limit=50))
+                    msgs = list(mb.fetch(AND(date_gte=date.today(), text=termo), mark_seen=False, limit=30))
                     msgs_encontradas.extend(msgs)
-                    logger.info(f"User {self.user_id}: termo '{termo}' -> {len(msgs)} emails")
                 except Exception:
-                    msgs = list(mb.fetch(AND(date_gte=date.today()), mark_seen=False, limit=100))
-                    msgs_encontradas.extend(msgs)
                     break
+
             mb.logout()
 
             vistos = set()
             for msg in msgs_encontradas:
-                uid = getattr(msg, 'uid', None) or id(msg)
+                uid = getattr(msg, 'uid', id(msg))
                 if uid in vistos:
                     continue
                 vistos.add(uid)
-                content = f"{msg.subject or ''} {msg.text or ''} {msg.html or ''}"
-                content_norm = self._normalize(content)
-                if self._match_nome(content_norm, partes):
-                    ed = self._extract(content)
+                ed = self._extract(msg.subject or "", msg.text or "")
+                if self._match_nome(ed.content_norm, partes):
                     with self.lock:
-                        self.emails[ed.hash_id] = ed
-                        self._build_indexes()
-                        self.stats.total_emails = len(self.emails)
+                        if ed.hash_id not in {e.hash_id for e in self.emails}:
+                            self.emails.append(ed)
+                            if len(self.emails) > MAX_EMAILS_CACHE:
+                                self.emails = self.emails[-MAX_EMAILS_CACHE:]
+                            self.stats.total_emails = len(self.emails)
                     self.stats.cache_hits += 1
-                    logger.info(f"User {self.user_id}: encontrado '{nome_norm}' - assunto: {msg.subject}")
+                    logger.warning(f"User {self.user_id}: encontrado '{nome_norm}' - assunto: {msg.subject}")
                     return {"valor": ed.valor or "N/A", "banco": ed.banco}
 
-            logger.info(f"User {self.user_id}: '{nome_norm}' nao encontrado")
         except Exception as exc:
-            logger.error(f"User {self.user_id}: Erro busca direta IMAP: {exc}")
+            logger.warning(f"User {self.user_id}: Erro busca direta: {exc}")
+
+        self.stats.cache_misses += 1
         return None
 
-    # Mantém compatibilidade com código existente
     def search_payment_optimized(self, nome: str) -> Optional[dict]:
         return self.search_payment(nome)
 
@@ -239,7 +182,6 @@ class OptimizedIMAPCache:
                 "cache_misses": self.stats.cache_misses,
                 "hit_rate": f"{hit_rate:.2%}",
                 "last_update": self.stats.last_update.isoformat() if self.stats.last_update else None,
-                "update_duration": f"{self.stats.update_duration:.2f}s",
             }
 
     def stop(self):
