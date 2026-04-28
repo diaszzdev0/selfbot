@@ -347,24 +347,22 @@ def run_selfbot(config: dict, user_id: int):
 
     async def _enviar_mensagem_entrada(canal):
         import io
+        import aiohttp as _aiohttp
         if IMAGEM_ENTRADA:
-            log_msg(user_id, f"Enviando imagem: {IMAGEM_ENTRADA[:50]}")
+            log_msg(user_id, f"Tentando enviar imagem...")
             try:
-                timeout = aiohttp.ClientTimeout(total=15, connect=5)
-                async with aiohttp.ClientSession(timeout=timeout) as sess:
-                    async with sess.get(IMAGEM_ENTRADA) as resp:
-                        log_msg(user_id, f"Imagem status: {resp.status}")
+                async with _aiohttp.ClientSession() as sess:
+                    async with sess.get(IMAGEM_ENTRADA, timeout=_aiohttp.ClientTimeout(total=15)) as resp:
+                        log_msg(user_id, f"Imagem status HTTP: {resp.status}")
                         if resp.status == 200:
                             dados = await resp.read()
-                            ct = resp.headers.get("Content-Type", "image/png")
-                            ext = ct.split("/")[-1].split(";")[0].strip() or "png"
-                            arquivo = discord.File(io.BytesIO(dados), filename=f"imagem.{ext}")
+                            log_msg(user_id, f"Imagem baixada: {len(dados)} bytes")
+                            arquivo = discord.File(io.BytesIO(dados), filename="imagem.png")
                             await canal.send(MENSAGEM_ENTRADA, file=arquivo)
                             log_msg(user_id, "Imagem enviada com sucesso")
                             return
-                        log_msg(user_id, f"Imagem HTTP {resp.status}, enviando sem imagem")
             except Exception as exc:
-                log_msg(user_id, f"Erro ao enviar imagem: {exc}")
+                log_msg(user_id, f"Erro ao enviar imagem: {type(exc).__name__}: {exc}")
         await canal.send(MENSAGEM_ENTRADA)
 
     async def _dar_go(channel, pedidoid: str):
