@@ -624,7 +624,10 @@ def run_selfbot(config: dict, user_id: int):
             log_msg(user_id, "Timeout na busca - IMAP demorou mais de 60s")
             resultado = None
 
-        await msg_fila.delete()
+        try:
+            await msg_fila.delete()
+        except Exception:
+            pass
         pg_em_processamento.discard(chave_pg)
 
         if resultado:
