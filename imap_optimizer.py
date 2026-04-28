@@ -94,7 +94,7 @@ class OptimizedIMAPCache:
         try:
             mb = MailBox(self.config["imap_server"])
             mb.login(self.config["email_user"], self.config["email_pass"], initial_folder="INBOX")
-            msgs = list(mb.fetch(criterio, mark_seen=False, limit=limit))
+            msgs = list(mb.fetch(criterio, mark_seen=False, limit=limit, bulk=True))
             mb.logout()
             return msgs
         except Exception as exc:
@@ -193,40 +193,19 @@ class OptimizedIMAPCache:
             mb = MailBox(self.config["imap_server"])
             mb.login(self.config["email_user"], self.config["email_pass"], initial_folder="INBOX")
             since = (datetime.now() - timedelta(days=3)).date()
-            termos = partes if len(partes) >= 2 else [nome_norm]
-            msgs_encontradas = []
-            for termo in termos[:2]:
-                try:
-                    msgs = list(mb.fetch(AND(date_gte=since, text=termo), mark_seen=False, limit=50))
-                    msgs_encontradas.extend(msgs)
-                    logger.info(f"User {self.user_id}: termo '{termo}' -> {len(msgs)} emails")
-                except Exception:
-                    msgs = list(mb.fetch(AND(date_gte=since), mark_seen=False, limit=200))
-                    msgs_encontradas.extend(msgs)
-                    break
+            msgs = list(mb.fetch(AND(date_gte=since), mark_seen=False, limit=300))
             mb.logout()
-
-            vistos = set()
-            for msg in msgs_encontradas:
-                uid = getattr(msg, 'uid', None) or id(msg)
-                if uid in vistos:
-                    continue
-                vistos.add(uid)
+            logger.info(f"User {self.user_id}: {len(msgs)} emails buscados para '{nome_norm}'")
+            for msg in msgs:
                 content = f"{msg.subject or ''} {msg.text or ''} {msg.html or ''}"
                 content_norm = self._normalize(content)
                 if self._match_nome(content_norm, partes):
                     ed = self._extract(content)
-                    with self.lock:
-                        self.emails[ed.hash_id] = ed
-                        self._build_indexes()
-                        self.stats.total_emails = len(self.emails)
-                    self.stats.cache_hits += 1
                     logger.info(f"User {self.user_id}: encontrado '{nome_norm}' - assunto: {msg.subject}")
                     return {"valor": ed.valor or "N/A", "banco": ed.banco}
-
             logger.info(f"User {self.user_id}: '{nome_norm}' nao encontrado")
         except Exception as exc:
-            logger.error(f"User {self.user_id}: Erro busca direta IMAP: {exc}")
+            logger.error(f"User {self.user_id}: Erro busca direta IMAP [{type(exc).__name__}]: {exc}")
         return None
 
     # Mantém compatibilidade com código existente
