@@ -29,7 +29,7 @@ def _normalize(text: str) -> str:
 
 def _match_nome(content_norm: str, partes: list) -> bool:
     partes_sig = [p for p in partes if len(p) >= 3] or partes
-    matches = sum(1 for p in partes_sig if re.search(rf"\b{re.escape(p)}\b", content_norm))
+    matches = sum(1 for p in partes_sig if p in content_norm)
     return matches >= min(2, len(partes_sig))
 
 
