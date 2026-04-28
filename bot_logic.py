@@ -328,6 +328,7 @@ def run_selfbot(config: dict, user_id: int):
     go_por_thread: dict[int, set] = {}       # channel_id -> set de user_ids
     go_auto_tasks: dict[int, asyncio.Task] = {}  # channel_id -> task do timer
     pg_em_processamento: set[str] = set()
+    fila_por_thread: dict[int, int] = {}  # channel_id -> quantidade na fila
     
     log_msg(user_id, "📝 Definindo eventos do Discord...")
 
@@ -626,7 +627,14 @@ def run_selfbot(config: dict, user_id: int):
         pg_em_processamento.add(chave_pg)
         log_msg(user_id, f"💰 pg detectado: {nome_busca} | {message.author}")
 
-        msg_fila = await message.reply("⏳ **Verificando Pagamento…** aguarde!")
+        posicao = fila_por_thread.get(channel.id, 0) + 1
+        fila_por_thread[channel.id] = posicao
+        espera = posicao * 10
+        msg_fila = await message.reply(
+            f"⏳ **Verificação na fila!**\n"
+            f"Sua posição: `{posicao}`\n"
+            f"Estimativa de espera: **{espera} segundos**."
+        )
 
         try:
             resultado = await asyncio.wait_for(
@@ -642,6 +650,7 @@ def run_selfbot(config: dict, user_id: int):
         except Exception:
             pass
         pg_em_processamento.discard(chave_pg)
+        fila_por_thread[channel.id] = max(fila_por_thread.get(channel.id, 1) - 1, 0)
 
         if resultado:
             # verifica se pagamento ja foi usado nos ultimos 2 minutos (otimizado)
