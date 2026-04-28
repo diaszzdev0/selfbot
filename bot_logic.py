@@ -10,7 +10,6 @@ from datetime import datetime, timedelta
 import discord
 from imap_optimizer import imap_manager
 
-# Limites para prevenir vazamento de memória
 MAX_THREADS_CACHE = 10000
 MAX_PAGAMENTOS_CACHE = 1000
 MAX_RATE_LIMITERS = 100
@@ -313,22 +312,9 @@ def run_selfbot(config: dict, user_id: int):
         # Configuração otimizada para estabilidade
         client = discord.Client(
             chunk_guilds_at_startup=False,
-            heartbeat_timeout=120.0,  # Aumentado para 2 minutos
-            max_messages=500,  # Reduzido para economizar memória
-            guild_ready_timeout=30.0  # Timeout para guilds
+            heartbeat_timeout=60.0,
+            max_messages=100,
         )
-        log_msg(user_id, "✅ Cliente Discord criado")
-        
-    except Exception as e:
-        log_msg(user_id, f"❌ Erro ao criar cliente: {e}")
-        # Fallback com configurações mínimas
-        try:
-            log_msg(user_id, "🔄 Tentando configuração mínima...")
-            client = discord.Client()
-            log_msg(user_id, "✅ Cliente Discord criado (modo básico)")
-        except Exception as e2:
-            log_msg(user_id, f"❌ Erro crítico ao criar cliente: {e2}")
-            return
 
     _clientes[user_id] = client
 

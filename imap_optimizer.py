@@ -98,7 +98,7 @@ class OptimizedIMAPCache:
     def _loop(self):
         self._fetch_all()
         while not self._stop:
-            time.sleep(20)  # atualiza a cada 20s
+            time.sleep(60)  # atualiza a cada 60s
             if not self._stop:
                 self._fetch_all()
 
