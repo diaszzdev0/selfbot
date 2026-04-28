@@ -466,11 +466,8 @@ def run_selfbot(config: dict, user_id: int):
         if not _monitor_iniciado:
             _monitor_iniciado = True
             await asyncio.sleep(3)
-            cache = imap_manager.get_cache(user_id, config)
-            log_msg(user_id, "📧 Carregando emails...")
             asyncio.ensure_future(verificar_threads_iniciais())
             asyncio.ensure_future(monitorar_threads())
-            asyncio.ensure_future(manter_cache_atualizado())
             asyncio.ensure_future(health_check())
 
     async def verificar_threads_iniciais():
@@ -490,36 +487,7 @@ def run_selfbot(config: dict, user_id: int):
         except Exception as exc:
             log_msg(user_id, f"❌ Erro na verificação inicial: {exc}")
     
-    async def manter_cache_atualizado():
-        cache = imap_manager.get_cache(user_id, config)
-        try:
-            await asyncio.wait_for(
-                asyncio.get_running_loop().run_in_executor(None, cache.update_full),
-                timeout=120
-            )
-            log_msg(user_id, f"📧 Cache pronto: {cache.stats.total_emails} emails")
-        except asyncio.TimeoutError:
-            log_msg(user_id, "⚠️ IMAP demorou mais de 2min, tentando com menos emails...")
-            try:
-                cache.stats.total_emails = 0
-                await asyncio.get_running_loop().run_in_executor(None, lambda: cache._fetch_emails_limitado(50))
-                log_msg(user_id, f"📧 Cache parcial: {cache.stats.total_emails} emails")
-            except Exception as e:
-                log_msg(user_id, f"❌ Erro IMAP: {type(e).__name__}: {str(e)[:150]}")
-        except Exception as e:
-            log_msg(user_id, f"❌ Erro IMAP: {type(e).__name__}: {str(e)[:150]}")
-        while not _stop_flags.get(user_id, False):
-            await asyncio.sleep(30)
-            try:
-                await asyncio.wait_for(
-                    asyncio.get_running_loop().run_in_executor(None, cache.update_incremental),
-                    timeout=60
-                )
-                log_msg(user_id, f"📧 Cache: {cache.stats.total_emails} emails")
-            except Exception:
-                pass
-
-    async def health_check():
+async def health_check():
         while not _stop_flags.get(user_id, False):
             try:
                 await asyncio.sleep(300)

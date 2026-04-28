@@ -163,9 +163,16 @@ class OptimizedIMAPCache:
     def search_payment(self, nome: str) -> Optional[dict]:
         nome_norm = self._normalize(nome)
         partes = nome_norm.split()
-        resultado = self._search_in_cache(nome_norm, partes)
-        if resultado:
-            return resultado
+        try:
+            msgs = self._fetch_emails(AND(date_gte=date.today()), 200)
+            for msg in msgs:
+                content = f"{msg.subject or ''} {msg.text or ''} {msg.html or ''}"
+                if self._match_nome(self._normalize(content), partes):
+                    ed = self._extract(content)
+                    self.stats.cache_hits += 1
+                    return {"valor": ed.valor or "N/A", "banco": ed.banco}
+        except Exception as exc:
+            logger.error(f"User {self.user_id}: Erro IMAP [{type(exc).__name__}]: {exc}")
         self.stats.cache_misses += 1
         return None
 
