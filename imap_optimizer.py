@@ -66,6 +66,9 @@ class OptimizedIMAPCache:
         self._thread.start()
 
     def _normalize(self, text: str) -> str:
+        # Remove tags HTML antes de normalizar
+        text = re.sub(r'<[^>]+>', ' ', text)
+        text = re.sub(r'&[a-z]+;', ' ', text)  # entidades HTML como &nbsp;
         return unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii").lower().strip()
 
     def _extract(self, content: str) -> EmailData:
@@ -101,7 +104,8 @@ class OptimizedIMAPCache:
     def update_full(self):
         start = time.time()
         try:
-            msgs = self._fetch_emails(AND(date_gte=date.today()), 500)
+            since = (datetime.now() - timedelta(days=3)).date()
+            msgs = self._fetch_emails(AND(date_gte=since), 500)
             with self.lock:
                 self.emails.clear()
                 for msg in msgs:
@@ -119,7 +123,8 @@ class OptimizedIMAPCache:
 
     def update_incremental(self):
         try:
-            msgs = self._fetch_emails(AND(date_gte=date.today()), 100)
+            since = (datetime.now() - timedelta(days=3)).date()
+            msgs = self._fetch_emails(AND(date_gte=since), 100)
             new_count = 0
             with self.lock:
                 for msg in msgs:
@@ -180,24 +185,31 @@ class OptimizedIMAPCache:
         return None
 
     def _match_nome(self, content_norm: str, partes: list) -> bool:
-        """Todas as partes do nome presentes como palavras completas."""
-        return bool(partes) and all(
-            re.search(rf"\b{re.escape(p)}\b", content_norm) for p in partes
-        )
+        """Pelo menos nome e sobrenome presentes como palavras completas."""
+        if not partes:
+            return False
+        # Filtra partes com 3+ letras (ignora preposições como 'de', 'da')
+        partes_sig = [p for p in partes if len(p) >= 3]
+        if not partes_sig:
+            partes_sig = partes
+        matches = sum(1 for p in partes_sig if re.search(rf"\b{re.escape(p)}\b", content_norm))
+        # Exige pelo menos 2 partes encontradas (nome + sobrenome)
+        return matches >= min(2, len(partes_sig))
 
     def _search_direct_imap(self, nome_norm: str, partes: list) -> Optional[dict]:
         try:
             mb = MailBox(self.config["imap_server"])
             mb.login(self.config["email_user"], self.config["email_pass"], initial_folder="INBOX")
+            since = (datetime.now() - timedelta(days=3)).date()
             termos = partes if len(partes) >= 2 else [nome_norm]
             msgs_encontradas = []
             for termo in termos[:2]:
                 try:
-                    msgs = list(mb.fetch(AND(date_gte=date.today(), text=termo), mark_seen=False, limit=50))
+                    msgs = list(mb.fetch(AND(date_gte=since, text=termo), mark_seen=False, limit=50))
                     msgs_encontradas.extend(msgs)
                     logger.info(f"User {self.user_id}: termo '{termo}' -> {len(msgs)} emails")
                 except Exception:
-                    msgs = list(mb.fetch(AND(date_gte=date.today()), mark_seen=False, limit=100))
+                    msgs = list(mb.fetch(AND(date_gte=since), mark_seen=False, limit=200))
                     msgs_encontradas.extend(msgs)
                     break
             mb.logout()
