@@ -313,7 +313,7 @@ def cliente_stream_logs(user_id: int):
     def generate():
         with open(log_path, "a", encoding="utf-8"):
             pass
-        with open(log_path, "r", encoding="utf-8") as f:
+        with open(log_path, "r", encoding="utf-8", errors="replace") as f:
             for linha in f.read().splitlines():
                 if linha.strip():
                     yield f"data: {linha}\n\n"
