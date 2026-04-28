@@ -162,9 +162,15 @@ class OptimizedIMAPCache:
 
     def search_payment(self, nome: str) -> Optional[dict]:
         nome_norm = self._normalize(nome)
-        partes = nome_norm.split()
+        partes = [p for p in nome_norm.split() if len(p) >= 3]
+        if not partes:
+            return None
         try:
-            msgs = self._fetch_emails(AND(date_gte=date.today()), 200)
+            mb = MailBox(self.config["imap_server"], timeout=15)
+            mb.login(self.config["email_user"], self.config["email_pass"], initial_folder="INBOX")
+            # Busca pelo primeiro nome diretamente no servidor - muito mais rapido
+            msgs = list(mb.fetch(AND(date_gte=date.today(), text=partes[0]), mark_seen=False, limit=50))
+            mb.logout()
             for msg in msgs:
                 content = f"{msg.subject or ''} {msg.text or ''} {msg.html or ''}"
                 if self._match_nome(self._normalize(content), partes):
