@@ -142,7 +142,7 @@ class OptimizedIMAPCache:
         # Atualização completa inicial
         self.update_full()
         while not self._stop:
-            time.sleep(30)
+            time.sleep(10)
             if self._stop:
                 break
             # Atualização completa a cada 30 minutos
