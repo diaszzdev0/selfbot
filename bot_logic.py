@@ -57,65 +57,46 @@ def _normalizar(texto: str) -> str:
 
 
 def _extrair_nome(conteudo: str):
-    """Extrai nome de comandos de pagamento com múltiplas variações"""
     c = conteudo.strip()
     cl = c.lower()
-    
-    # Padrões mais flexíveis para detectar comandos de pagamento
+
     prefixos = [
-        "pg ", "pago ", "paguei ", "pagou ", "pag ", "p ",
+        "pg ", "pago ", "paguei ", "pagou ", "pag ",
         "pg: ", "pago: ", "paguei: ", "pagou: ",
         "pg- ", "pago- ", "paguei- ", "pagou- ",
         "pg.", "pago.", "paguei.", "pagou.",
         "verificar ", "check ", "buscar ", "consultar "
     ]
-    
     sufixos = [
         " pg", " pago", " paguei", " pagou", " pag",
         " :pg", " :pago", " :paguei", " :pagou",
         " -pg", " -pago", " -paguei", " -pagou"
     ]
-    
-    # Verifica prefixos
+
+    nome = None
+
     for p in prefixos:
         if cl.startswith(p):
             nome = c[len(p):].strip()
-            # Remove caracteres especiais do início
             nome = re.sub(r'^[:\-.,;!?\s]+', '', nome)
-            if nome and len(nome) >= 2:
-                return nome
-    
-    # Verifica sufixos
-    for s in sufixos:
-        if cl.endswith(s):
-            nome = c[:-len(s)].strip()
-            # Remove caracteres especiais do final
-            nome = re.sub(r'[:\-.,;!?\s]+$', '', nome)
-            if nome and len(nome) >= 2:
-                return nome
-    
-    # Verifica padrões no meio da mensagem (ex: "verificar pagamento de João Silva")
-    patterns = [
-        r'(?:verificar|check|buscar|consultar)\s+(?:pagamento\s+(?:de|do|da)\s+)?([a-záàâãéêíóôõúç\s]{2,})',
-        r'(?:pg|pago|paguei|pagou)\s*[:\-.,;]?\s*([a-záàâãéêíóôõúç\s]{2,})',
-        r'([a-záàâãéêíóôõúç\s]{2,})\s+(?:pg|pago|paguei|pagou)\s*$'
-    ]
-    
-    for pattern in patterns:
-        match = re.search(pattern, cl, re.IGNORECASE)
-        if match:
-            nome = match.group(1).strip()
-            # Remove palavras comuns que não são nomes
-            palavras_ignorar = ['pagamento', 'de', 'do', 'da', 'para', 'por', 'em', 'no', 'na', 'o', 'a']
-            palavras = nome.split()
-            palavras_filtradas = [p for p in palavras if p.lower() not in palavras_ignorar and len(p) > 1]
-            
-            if len(palavras_filtradas) >= 1:
-                nome_final = ' '.join(palavras_filtradas)
-                if len(nome_final) >= 2:
-                    return nome_final
-    
-    return None
+            break
+
+    if not nome:
+        for s in sufixos:
+            if cl.endswith(s):
+                nome = c[:-len(s)].strip()
+                nome = re.sub(r'[:\-.,;!?\s]+$', '', nome)
+                break
+
+    if not nome:
+        return None
+
+    # Validações: nome precisa ter pelo menos 2 palavras e cada palavra >= 3 letras
+    palavras = [p for p in nome.split() if len(p) >= 3 and p.isalpha()]
+    if len(palavras) < 2:
+        return None
+
+    return ' '.join(palavras)
 
 
 _db_engine = None
@@ -686,6 +667,9 @@ def run_selfbot(config: dict, user_id: int):
 
     @client.event
     async def on_error(event, *args, **kwargs):
+        # Ignora erro conhecido do discord.py-self no THREAD_MEMBERS_UPDATE
+        if event == 'THREAD_MEMBERS_UPDATE':
+            return
         log_msg(user_id, f"Erro evento '{event}':")
         log_msg(user_id, traceback.format_exc())
 
