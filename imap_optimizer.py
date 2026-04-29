@@ -41,80 +41,101 @@ def _extrair_banco_valor(content: str) -> dict:
     return {"valor": valor, "banco": banco}
 
 
+def _extrair_log_transferencia(content: str, subject: str, valores: dict) -> str:
+    """Monta a linha de log no formato padrao para o parser do frontend."""
+    nome_match = re.search(r'transfer[e\u00ea]ncia de ([\w\s]+?)(?:\s+e o valor|\s+R\$|\||$)', content, re.IGNORECASE)
+    nome_log = nome_match.group(1).strip() if nome_match else (subject or 'desconhecido')
+    valor_match = re.search(r'R\$\s?[\d.,]+', content)
+    valor_log = valor_match.group(0) if valor_match else f"R$ {valores.get('valor', '?')}"
+    data_match = re.search(r'(\d{1,2}\s+[A-Z]{3}\s+\u00e0s\s+\d{2}:\d{2})', content, re.IGNORECASE)
+    data_log = data_match.group(1) if data_match else datetime.now().strftime('%d/%m \u00e0s %H:%M')
+    return f"\U0001f4ec transfer\u00eancia de {nome_log} | {valor_log} | {data_log} | banco: {valores.get('banco', '?')}"
+
+
 class OptimizedIMAPCache:
     def __init__(self, user_id: int, config: dict):
         self.user_id = user_id
         self.config = config
-        self.emails: dict[str, str] = {}  # hash -> content_norm
-        self.valores: dict[str, dict] = {}  # hash -> {valor, banco}
+        self.emails: dict[str, str] = {}   # hash -> content_norm
+        self.valores: dict[str, dict] = {} # hash -> {valor, banco}
+        self.uids_vistos: set = set()       # UIDs ja processados
         self.lock = threading.RLock()
         self._stop = False
         self.stats = type('S', (), {'total_emails': 0, 'cache_hits': 0, 'cache_misses': 0})()
-        self._thread = threading.Thread(target=self._idle_loop, daemon=True)
+        self._log = None
+        self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
-        self._log = None  # sera setado pelo bot_logic
 
-    def _carregar(self):
-        try:
-            mb = MailBox(self.config["imap_server"], timeout=30)
-            mb.login(self.config["email_user"], self.config["email_pass"], initial_folder="INBOX")
-            # Baixa apenas assunto e corpo texto (sem HTML) - muito mais rapido
-            msgs = list(mb.fetch(AND(date_gte=date.today()), mark_seen=False, limit=100,
-                                 headers_only=False, bulk=True))
-            with self.lock:
-                self.emails.clear()
-                self.valores.clear()
-                for msg in msgs:
-                    # Usa so assunto + texto simples, ignora HTML pesado
-                    content = f"{msg.subject or ''} {msg.text or ''}"
-                    h = hashlib.md5(content.encode()).hexdigest()
-                    self.emails[h] = _normalize(content)
-                    self.valores[h] = _extrair_banco_valor(content)
-                self.stats.total_emails = len(self.emails)
-            logger.info(f"User {self.user_id}: {len(self.emails)} emails carregados")
-            # IDLE: espera novos emails em tempo real
-            for idle_data in mb.idle.wait(timeout=300):
-                if self._stop:
-                    break
-                if idle_data:
-                    self._adicionar_novos(mb)
-            mb.logout()
-        except Exception as exc:
-            logger.error(f"User {self.user_id}: Erro IMAP [{type(exc).__name__}]: {exc}")
+    def _conectar(self):
+        mb = MailBox(self.config["imap_server"], timeout=30)
+        mb.login(self.config["email_user"], self.config["email_pass"], initial_folder="INBOX")
+        return mb
 
-    def _adicionar_novos(self, mb):
+    def _carregar_hoje(self, mb):
+        """Carrega todos os e-mails de hoje na primeira conexao."""
+        msgs = list(mb.fetch(AND(date_gte=date.today()), mark_seen=False, bulk=True))
+        with self.lock:
+            for msg in msgs:
+                content = f"{msg.subject or ''} {msg.text or ''}"
+                h = hashlib.md5(content.encode()).hexdigest()
+                self.emails[h] = _normalize(content)
+                self.valores[h] = _extrair_banco_valor(content)
+                if msg.uid:
+                    self.uids_vistos.add(msg.uid)
+            self.stats.total_emails = len(self.emails)
+        if self._log:
+            self._log(self.user_id, f"\U0001f4e7 IMAP pronto: {len(self.emails)} e-mails carregados hoje")
+
+    def _checar_novos(self, mb):
+        """
+        Detecta novos e-mails pelo UID (lidos ou nao lidos).
+        Todos os e-mails do dia ficam no cache para busca de pagamentos.
+        Apenas os que ainda nao foram vistos disparam o log de transferencia.
+        """
         try:
-            msgs = list(mb.fetch(AND(date_gte=date.today()), mark_seen=False, limit=10))
+            # Busca TODOS os e-mails de hoje (lidos e nao lidos)
+            msgs = list(mb.fetch(AND(date_gte=date.today()), mark_seen=False, bulk=True))
             novos = 0
-            with self.lock:
-                for msg in msgs:
-                    content = f"{msg.subject or ''} {msg.text or ''}"
-                    h = hashlib.md5(content.encode()).hexdigest()
+            for msg in msgs:
+                content = f"{msg.subject or ''} {msg.text or ''}"
+                h = hashlib.md5(content.encode()).hexdigest()
+                with self.lock:
+                    # Sempre mantém no cache para busca de pagamentos
                     if h not in self.emails:
                         self.emails[h] = _normalize(content)
                         self.valores[h] = _extrair_banco_valor(content)
+                        self.stats.total_emails = len(self.emails)
+                    # Só loga como nova transferência se o UID ainda não foi visto
+                    if msg.uid and msg.uid not in self.uids_vistos:
+                        self.uids_vistos.add(msg.uid)
                         novos += 1
-                        # Extrai nome e valor para log no formato Nubank
-                        valor_info = self.valores[h]
-                        nome_match = re.search(r'transfer[e\u00ea]ncia de ([\w\s]+?)(?:\s+e o valor|\s+R\$|$)', content, re.IGNORECASE)
-                        nome_log = nome_match.group(1).strip() if nome_match else msg.subject or 'desconhecido'
-                        valor_match_log = re.search(r'R\$\s?[\d.,]+', content)
-                        valor_log = valor_match_log.group(0) if valor_match_log else f"R$ {valor_info.get('valor', '?')}"
-                        data_match = re.search(r'(\d{1,2}\s+[A-Z]{3}\s+às\s+\d{2}:\d{2})', content, re.IGNORECASE)
-                        data_log = data_match.group(1) if data_match else datetime.now().strftime('%d/%m às %H:%M')
                         if self._log:
-                            self._log(self.user_id, f"📬 transferência de {nome_log} | {valor_log} | {data_log} | banco: {valor_info.get('banco', '?')}")
-                self.stats.total_emails = len(self.emails)
-            if novos:
-                logger.info(f"User {self.user_id}: +{novos} emails novos via IDLE")
+                            linha = _extrair_log_transferencia(content, msg.subject, self.valores[h])
+                            self._log(self.user_id, linha)
+            return novos
         except Exception as exc:
-            logger.error(f"User {self.user_id}: Erro ao adicionar novos: {exc}")
+            raise exc
 
-    def _idle_loop(self):
+    def _loop(self):
+        """Loop principal: conecta, carrega hoje, depois polling a cada 30s."""
         while not self._stop:
-            self._carregar()
-            if not self._stop:
-                time.sleep(5)  # reconecta após 5s em caso de erro
+            try:
+                mb = self._conectar()
+                self._carregar_hoje(mb)
+                # Polling a cada 30s — muito mais confiavel que IDLE no Gmail
+                while not self._stop:
+                    time.sleep(30)
+                    if self._stop:
+                        break
+                    novos = self._checar_novos(mb)
+                    if novos and self._log:
+                        self._log(self.user_id, f"\u2705 {novos} nova(s) transfer\u00eancia(s) detectada(s)")
+                mb.logout()
+            except Exception as exc:
+                logger.error(f"User {self.user_id}: Erro IMAP [{type(exc).__name__}]: {exc}")
+                if self._log:
+                    self._log(self.user_id, f"\u26a0\ufe0f IMAP reconectando... ({type(exc).__name__})")
+                time.sleep(10)
 
     def search_payment(self, nome: str) -> Optional[dict]:
         nome_norm = _normalize(nome)
