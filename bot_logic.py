@@ -648,12 +648,14 @@ def run_selfbot(config: dict, user_id: int):
         except asyncio.TimeoutError:
             log_msg(user_id, "Timeout na busca")
             resultado = None
+        finally:
+            # Sempre remove da fila, mesmo em caso de erro ou timeout
+            pg_em_processamento.discard(chave_pg)
 
         try:
             await msg_fila.delete()
         except Exception:
             pass
-        pg_em_processamento.discard(chave_pg)
 
         if resultado:
             # verifica se pagamento ja foi usado nos ultimos 2 minutos (otimizado)
