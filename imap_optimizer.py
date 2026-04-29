@@ -153,6 +153,12 @@ class OptimizedIMAPCache:
         partes = nome_norm.split()
         with self.lock:
             for h, content_norm in self.emails.items():
+                # Log debug: mostra se alguma parte do nome aparece
+                for p in partes:
+                    if p in content_norm:
+                        if self._log:
+                            idx = content_norm.find(p)
+                            self._log(self.user_id, f"🔎 '{p}' encontrado em: ...{content_norm[max(0,idx-15):idx+30]}...")
                 if _match_nome(content_norm, partes):
                     self.stats.cache_hits += 1
                     return self.valores[h]

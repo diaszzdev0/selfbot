@@ -1120,6 +1120,23 @@ def start_bot(user_id: int):
     return redirect(url_for("admin"))
 
 
+@app.route("/admin/testar_imap/<int:user_id>")
+@admin_required
+def testar_imap(user_id: int):
+    user = db.session.get(User, user_id)
+    if not user or not user.config:
+        return jsonify({"erro": "Usuário sem configuração"})
+    cfg = user.config
+    try:
+        from imap_tools import MailBox
+        mb = MailBox(cfg.imap_server.strip(), timeout=15)
+        mb.login(cfg.email_user.strip(), cfg.email_pass.strip(), initial_folder="INBOX")
+        mb.logout()
+        return jsonify({"status": "ok", "email": cfg.email_user, "servidor": cfg.imap_server})
+    except Exception as e:
+        return jsonify({"status": "erro", "email": cfg.email_user, "servidor": cfg.imap_server, "erro": str(e)})
+
+
 @app.route("/admin/restart_bot/<int:user_id>")
 @admin_required
 def restart_bot(user_id: int):
