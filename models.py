@@ -59,4 +59,4 @@ class BotStatus(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), unique=True)
     ativo = db.Column(db.Boolean, default=False)
     salas_usadas = db.Column(db.Integer, default=0)
-    limite_salas = db.Column(db.Integer, default=10)
+    limite_salas = db.Column(db.Integer, default=0)

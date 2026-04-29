@@ -123,7 +123,7 @@ def _get_salas_info(user_id: int):
             row = con.execute(text("SELECT salas_usadas, limite_salas FROM bot_status WHERE user_id=:uid"), {"uid": user_id}).fetchone()
         return (row[0], row[1]) if row else (0, 10)
     except Exception:
-        return (0, 10)
+        return (0, 0)
 
 
 def _incrementar_sala(user_id: int):
