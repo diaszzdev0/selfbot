@@ -82,7 +82,12 @@ class OptimizedIMAPCache:
             try:
                 mb.folder.set(pasta)
                 from datetime import timedelta
-                msgs = list(mb.fetch(AND(date_gte=(date.today() - timedelta(days=1))), mark_seen=False, limit=200))
+                from imap_tools import OR
+                criterio = AND(
+                    date_gte=(date.today() - timedelta(days=1)),
+                    subject="transfer"
+                )
+                msgs = list(mb.fetch(criterio, mark_seen=False, limit=200))
                 todos.extend(msgs)
                 pasta_usada = pasta
                 if self._log:
@@ -107,7 +112,12 @@ class OptimizedIMAPCache:
     def _checar_novos(self, mb):
         try:
             from datetime import timedelta
-            msgs = list(mb.fetch(AND(date_gte=(date.today() - timedelta(days=1))), mark_seen=False, limit=200))
+            from imap_tools import OR
+            criterio = AND(
+                date_gte=(date.today() - timedelta(days=1)),
+                subject="transfer"
+            )
+            msgs = list(mb.fetch(criterio, mark_seen=False, limit=200))
             novos = 0
             for msg in msgs:
                 if msg.uid and msg.uid not in self.uids_vistos:
