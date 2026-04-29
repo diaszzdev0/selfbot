@@ -81,7 +81,8 @@ class OptimizedIMAPCache:
         for pasta in pastas:
             try:
                 mb.folder.set(pasta)
-                msgs = list(mb.fetch("ALL", mark_seen=False, limit=100))
+                from datetime import timedelta
+                msgs = list(mb.fetch(AND(date_gte=(date.today() - timedelta(days=1))), mark_seen=False, limit=200))
                 todos.extend(msgs)
                 pasta_usada = pasta
                 if self._log:
@@ -105,7 +106,8 @@ class OptimizedIMAPCache:
 
     def _checar_novos(self, mb):
         try:
-            msgs = list(mb.fetch("ALL", mark_seen=False, limit=100))
+            from datetime import timedelta
+            msgs = list(mb.fetch(AND(date_gte=(date.today() - timedelta(days=1))), mark_seen=False, limit=200))
             novos = 0
             for msg in msgs:
                 if msg.uid and msg.uid not in self.uids_vistos:
