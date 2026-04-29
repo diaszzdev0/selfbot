@@ -6,89 +6,188 @@
   <title>VolueTech SelfBot</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" integrity="sha384-tViUnnbYAV00FLIhhi3v/dWt3Jxw4gZQcNoSCxCIFNJVCx7/D55/wXsrNIRANwdD" crossorigin="anonymous">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <style>
-    :root { --sidebar-w: 230px; }
+    :root { --sidebar-w: 240px; --accent: #7c3aed; --accent2: #6d28d9; }
     * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
-    body { background: #0d1117; margin: 0; overflow-x: hidden; }
+    body {
+      font-family: 'Inter', sans-serif;
+      background: #0a0a0f;
+      background-image: radial-gradient(ellipse at 20% 50%, rgba(124,58,237,.07) 0%, transparent 60%),
+                        radial-gradient(ellipse at 80% 20%, rgba(59,130,246,.05) 0%, transparent 50%);
+      margin: 0; overflow-x: hidden; color: #e2e8f0;
+    }
 
     /* Sidebar */
     .sidebar {
       position: fixed; top: 0; left: 0;
       width: var(--sidebar-w); height: 100vh;
-      background: #161b22; border-right: 1px solid #30363d;
+      background: rgba(15,15,25,.95);
+      backdrop-filter: blur(20px);
+      border-right: 1px solid rgba(255,255,255,.06);
       display: flex; flex-direction: column;
       z-index: 100; transition: transform .25s;
     }
     .sidebar-brand {
-      padding: 20px 18px 14px;
-      font-size: 1.1rem; font-weight: 700; color: #58a6ff;
-      border-bottom: 1px solid #30363d;
+      padding: 22px 20px 16px;
+      border-bottom: 1px solid rgba(255,255,255,.06);
+    }
+    .sidebar-brand .brand-name {
+      font-size: 1rem; font-weight: 700;
+      background: linear-gradient(135deg, #a78bfa, #60a5fa);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
       letter-spacing: .3px;
     }
-    .sidebar-brand small { display: block; font-size: .72rem; color: #6e7681; font-weight: 400; margin-top: 2px; }
+    .sidebar-brand small { display: block; font-size: .72rem; color: #4b5563; font-weight: 400; margin-top: 3px; }
+    .nav-section-label {
+      font-size: .65rem; font-weight: 600; color: #374151;
+      text-transform: uppercase; letter-spacing: .08em;
+      padding: 16px 20px 6px;
+    }
     .nav-link-side {
       display: flex; align-items: center; gap: 10px;
-      padding: 10px 18px; color: #8b949e;
-      font-size: .88rem; border-radius: 0;
+      padding: 9px 20px; color: #6b7280;
+      font-size: .83rem; font-weight: 500;
       cursor: pointer; border: none; background: none; width: 100%;
-      text-align: left; transition: background .15s, color .15s;
-      text-decoration: none;
+      text-align: left; transition: all .15s;
+      text-decoration: none; border-radius: 0;
+      position: relative;
     }
-    .nav-link-side:hover { background: #21262d; color: #c9d1d9; }
-    .nav-link-side.active { background: #1f2937; color: #58a6ff; border-left: 3px solid #58a6ff; }
-    .nav-link-side i { font-size: 1rem; width: 18px; text-align: center; }
-    .sidebar-footer {
-      margin-top: auto; padding: 14px 18px;
-      border-top: 1px solid #30363d;
+    .nav-link-side:hover { color: #e2e8f0; background: rgba(255,255,255,.04); }
+    .nav-link-side.active {
+      color: #a78bfa;
+      background: rgba(124,58,237,.1);
+      border-left: 2px solid #7c3aed;
     }
+    .nav-link-side i { font-size: .95rem; width: 18px; text-align: center; }
+    .sidebar-footer { margin-top: auto; padding: 16px 20px; border-top: 1px solid rgba(255,255,255,.06); }
 
     /* Main */
     .main { margin-left: var(--sidebar-w); min-height: 100vh; }
     .topbar {
-      background: #161b22; border-bottom: 1px solid #30363d;
-      padding: 12px 24px; display: flex; align-items: center; justify-content: space-between;
+      background: rgba(10,10,15,.8);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid rgba(255,255,255,.05);
+      padding: 14px 28px; display: flex; align-items: center; justify-content: space-between;
+      position: sticky; top: 0; z-index: 50;
     }
-    .content { padding: 24px; }
+    .topbar-title { font-size: .95rem; font-weight: 600; color: #f1f5f9; }
+    .content { padding: 28px; }
 
-    /* Cards */
-    .card { background: #161b22; border: 1px solid #30363d; }
+    /* Cards glass */
+    .card {
+      background: rgba(255,255,255,.03);
+      border: 1px solid rgba(255,255,255,.07);
+      border-radius: 14px;
+      backdrop-filter: blur(10px);
+      transition: border-color .2s;
+    }
+    .card:hover { border-color: rgba(124,58,237,.25); }
     .page { display: none; }
     .page.active { display: block; }
 
-    /* Status */
-    .status-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
-    .dot-on { background: #3fb950; box-shadow: 0 0 6px #3fb950; }
-    .dot-off { background: #f85149; }
+    /* Status dot */
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+    .dot-on { background: #10b981; box-shadow: 0 0 8px rgba(16,185,129,.6); animation: pulse-dot 2s infinite; }
+    .dot-off { background: #ef4444; }
+    @keyframes pulse-dot {
+      0%,100% { box-shadow: 0 0 4px rgba(16,185,129,.4); }
+      50% { box-shadow: 0 0 12px rgba(16,185,129,.8); }
+    }
 
-    /* Botões bot */
-    .btn-ligar    { background: #238636; border-color: #2ea043; color: #fff; }
-    .btn-ligar:hover { background: #2ea043; color: #fff; }
-    .btn-desligar { background: #b62324; border-color: #f85149; color: #fff; }
-    .btn-desligar:hover { background: #f85149; color: #fff; }
-    .btn-reiniciar { background: #9e6a03; border-color: #d29922; color: #fff; }
-    .btn-reiniciar:hover { background: #d29922; color: #fff; }
+    /* Stat cards */
+    .stat-card {
+      background: rgba(255,255,255,.03);
+      border: 1px solid rgba(255,255,255,.07);
+      border-radius: 14px; padding: 18px 20px;
+      transition: all .2s;
+    }
+    .stat-card:hover { border-color: rgba(124,58,237,.3); transform: translateY(-1px); }
+    .stat-card .stat-label { font-size: .72rem; color: #6b7280; font-weight: 500; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 8px; }
+    .stat-card .stat-value { font-size: 1.4rem; font-weight: 700; line-height: 1; }
+    .stat-card .stat-icon {
+      width: 36px; height: 36px; border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: .95rem; margin-bottom: 12px;
+    }
+
+    /* Bot control card */
+    .bot-control {
+      background: rgba(255,255,255,.03);
+      border: 1px solid rgba(255,255,255,.07);
+      border-radius: 14px; padding: 20px 24px;
+      display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px;
+    }
+    .bot-status-text { font-size: .95rem; font-weight: 600; }
+
+    /* Botões */
+    .btn-ligar {
+      background: linear-gradient(135deg, #059669, #10b981);
+      border: none; color: #fff; font-weight: 500; font-size: .82rem;
+      padding: 8px 18px; border-radius: 8px; transition: all .2s;
+    }
+    .btn-ligar:hover { opacity: .85; transform: translateY(-1px); color: #fff; }
+    .btn-desligar {
+      background: rgba(239,68,68,.15); border: 1px solid rgba(239,68,68,.3);
+      color: #f87171; font-weight: 500; font-size: .82rem;
+      padding: 8px 18px; border-radius: 8px; transition: all .2s;
+    }
+    .btn-desligar:hover { background: rgba(239,68,68,.25); color: #fca5a5; }
+    .btn-reiniciar {
+      background: rgba(245,158,11,.12); border: 1px solid rgba(245,158,11,.25);
+      color: #fbbf24; font-weight: 500; font-size: .82rem;
+      padding: 8px 18px; border-radius: 8px; transition: all .2s;
+    }
+    .btn-reiniciar:hover { background: rgba(245,158,11,.22); color: #fde68a; }
 
     /* Form */
     .form-control, .form-select, textarea {
-      background: #0d1117 !important; border-color: #30363d !important; color: #c9d1d9 !important;
+      background: rgba(255,255,255,.04) !important;
+      border: 1px solid rgba(255,255,255,.08) !important;
+      color: #e2e8f0 !important; border-radius: 8px !important;
+      font-size: .85rem !important;
     }
-    .form-control:focus, textarea:focus {
-      border-color: #58a6ff !important; box-shadow: 0 0 0 2px rgba(88,166,255,.2) !important;
+    .form-control:focus, textarea:focus, .form-select:focus {
+      border-color: rgba(124,58,237,.5) !important;
+      box-shadow: 0 0 0 3px rgba(124,58,237,.1) !important;
+      background: rgba(255,255,255,.06) !important;
     }
-    label { color: #8b949e; font-size: .82rem; }
+    label { color: #9ca3af; font-size: .78rem; font-weight: 500; margin-bottom: 5px; display: block; }
+    .form-text { color: #4b5563 !important; font-size: .72rem !important; }
 
     /* Console */
     .console {
-      background: #010409; color: #58a6ff;
-      font-family: 'Courier New', monospace; font-size: .8rem;
-      height: 400px; overflow-y: auto; padding: 12px;
-      border-radius: 6px; border: 1px solid #21262d;
+      background: rgba(0,0,0,.4);
+      color: #7dd3fc;
+      font-family: 'JetBrains Mono', 'Courier New', monospace; font-size: .78rem;
+      height: 420px; overflow-y: auto; padding: 16px;
+      border-radius: 10px; border: 1px solid rgba(255,255,255,.06);
       white-space: pre-wrap; word-break: break-all;
     }
+    .console::-webkit-scrollbar { width: 4px; }
+    .console::-webkit-scrollbar-track { background: transparent; }
+    .console::-webkit-scrollbar-thumb { background: rgba(255,255,255,.1); border-radius: 4px; }
+
+    /* Alert */
+    .alert { border-radius: 10px; font-size: .85rem; border: none; }
+    .alert-success { background: rgba(16,185,129,.1); color: #6ee7b7; border: 1px solid rgba(16,185,129,.2) !important; }
+    .alert-danger  { background: rgba(239,68,68,.1);  color: #fca5a5; border: 1px solid rgba(239,68,68,.2)  !important; }
+    .alert-warning { background: rgba(245,158,11,.1); color: #fde68a; border: 1px solid rgba(245,158,11,.2) !important; }
+    .alert-info    { background: rgba(59,130,246,.1);  color: #93c5fd; border: 1px solid rgba(59,130,246,.2)  !important; }
+
+    /* Section title */
+    .section-title { font-size: .82rem; font-weight: 600; color: #9ca3af; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+    .section-title i { color: #7c3aed; }
+
+    /* Table IMAP */
+    .imap-table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+    .imap-table th { color: #4b5563; font-weight: 500; font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; padding: 10px 14px; border-bottom: 1px solid rgba(255,255,255,.06); }
+    .imap-table td { padding: 12px 14px; border-bottom: 1px solid rgba(255,255,255,.04); color: #d1d5db; vertical-align: middle; }
+    .imap-table tr:hover td { background: rgba(255,255,255,.02); }
 
     /* Mobile */
     .sidebar-toggle { display: none; }
-    .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 99; }
+    .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 99; backdrop-filter: blur(4px); }
     .overlay.show { display: block; }
     @media (max-width: 768px) {
       :root { --sidebar-w: 0px; }
@@ -96,20 +195,14 @@
       .sidebar.open { transform: translateX(0); }
       .main { margin-left: 0; }
       .sidebar-toggle { display: inline-flex; }
-      .content { padding: 10px; }
-      .topbar { padding: 10px 12px; }
-      .console { height: 220px; font-size: .73rem; }
+      .content { padding: 14px; }
+      .topbar { padding: 12px 16px; }
+      .console { height: 240px; }
       .col-sm-3 { width: 50% !important; }
-      .btn-ligar, .btn-desligar, .btn-reiniciar { font-size: .8rem; padding: 8px 12px; min-height: 40px; }
-      .card { border-radius: 10px; }
-      h6 { font-size: .9rem; }
-      .card.p-4 { padding: 14px !important; }
-      .card.p-3 { padding: 10px !important; }
       input, textarea, select { font-size: 16px !important; }
     }
     @media (max-width: 400px) {
       .col-sm-3 { width: 100% !important; }
-      .d-flex.gap-2.flex-wrap { gap: 6px !important; }
     }
   </style>
 </head>
@@ -120,32 +213,33 @@
   <!-- Sidebar -->
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-brand">
-      ⚡ VolueTech SelfBot
+      <div class="brand-name">⚡ VolueTech SelfBot</div>
       <small>{{ user.username }}</small>
     </div>
 
-    <nav class="mt-2 d-flex flex-column">
+    <div class="nav-section-label">Menu</div>
+    <nav class="d-flex flex-column">
       <button class="nav-link-side active" onclick="showPage('dashboard', this)">
         <i class="bi bi-speedometer2"></i> Dashboard
       </button>
-      <button class="nav-link-side" onclick="showPage('configuracoes', this)">
-        <i class="bi bi-gear"></i> Configurações
+      <button class="nav-link-side" onclick="showPage('imap', this)">
+        <i class="bi bi-envelope-check"></i> IMAP
       </button>
       <button class="nav-link-side" onclick="showPage('logs', this)">
         <i class="bi bi-terminal"></i> Logs
       </button>
-      <button class="nav-link-side" onclick="showPage('imap', this)">
-        <i class="bi bi-envelope-check"></i> IMAP
+      <button class="nav-link-side" onclick="showPage('configuracoes', this)">
+        <i class="bi bi-gear"></i> Configurações
       </button>
     </nav>
 
     <div class="sidebar-footer">
       {% if user.is_admin %}
-      <a href="/admin" class="btn btn-outline-warning btn-sm w-100 mb-2">
+      <a href="/admin" class="btn btn-sm w-100 mb-2" style="background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.2);color:#fbbf24;border-radius:8px;font-size:.8rem">
         <i class="bi bi-shield-lock"></i> Painel Admin
       </a>
       {% endif %}
-      <a href="/cliente/logout" class="btn btn-outline-danger btn-sm w-100">
+      <a href="/cliente/logout" class="btn btn-sm w-100" style="background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.15);color:#f87171;border-radius:8px;font-size:.8rem">
         <i class="bi bi-box-arrow-left"></i> Sair
       </a>
     </div>
@@ -157,14 +251,14 @@
     <!-- Topbar -->
     <div class="topbar">
       <div class="d-flex align-items-center gap-3">
-        <button class="btn btn-sm btn-outline-secondary sidebar-toggle" onclick="toggleSidebar()">
+        <button class="btn btn-sm sidebar-toggle" style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);color:#9ca3af;border-radius:8px" onclick="toggleSidebar()">
           <i class="bi bi-list"></i>
         </button>
-        <span class="text-white fw-semibold" id="page-title">Dashboard</span>
+        <span class="topbar-title" id="page-title">Dashboard</span>
       </div>
       <div class="d-flex align-items-center gap-2">
         <span class="status-dot {{ 'dot-on' if ativo else 'dot-off' }}"></span>
-        <span class="small {{ 'text-success' if ativo else 'text-danger' }}">
+        <span style="font-size:.8rem;font-weight:500;color:{{ '#10b981' if ativo else '#ef4444' }}">
           {{ 'Online' if ativo else 'Offline' }}
         </span>
       </div>
@@ -174,89 +268,95 @@
 
       <!-- ── DASHBOARD ── -->
       <div class="page active" id="page-dashboard">
-        <div class="row g-4">
+        <div class="row g-3">
           {% if msg %}
           <div class="col-12">
-            <div class="alert alert-{{ msg_tipo }} fw-bold text-center">⚠️ {{ msg }}</div>
+            <div class="alert alert-{{ msg_tipo }}"><i class="bi bi-info-circle me-2"></i>{{ msg }}</div>
           </div>
           {% endif %}
 
-          <!-- Status card -->
+          <!-- Bot control -->
           <div class="col-12">
-            <div class="card p-3 d-flex flex-row align-items-center justify-content-between flex-wrap gap-3">
-              <div class="d-flex align-items-center gap-2">
+            <div class="bot-control">
+              <div class="d-flex align-items-center gap-3">
                 <span class="status-dot {{ 'dot-on' if ativo else 'dot-off' }}"></span>
-                <span class="fw-semibold text-white">
-                  Bot está <strong>{{ 'ONLINE' if ativo else 'OFFLINE' }}</strong>
-                </span>
+                <div>
+                  <div class="bot-status-text" style="color:{{ '#10b981' if ativo else '#ef4444' }}">Bot {{ 'ONLINE' if ativo else 'OFFLINE' }}</div>
+                  <div style="font-size:.72rem;color:#4b5563">{{ user.username }}</div>
+                </div>
               </div>
               <div class="d-flex gap-2 flex-wrap">
-                <a href="/cliente/start_bot/{{ user.id }}" class="btn btn-ligar btn-sm px-3">▶ Ligar</a>
-                <a href="/cliente/stop_bot/{{ user.id }}" class="btn btn-desligar btn-sm px-3">■ Desligar</a>
-                <a href="/cliente/restart_bot/{{ user.id }}" class="btn btn-reiniciar btn-sm px-3">↺ Reiniciar</a>
+                <a href="/cliente/start_bot/{{ user.id }}" class="btn btn-ligar"><i class="bi bi-play-fill me-1"></i>Ligar</a>
+                <a href="/cliente/stop_bot/{{ user.id }}" class="btn btn-desligar"><i class="bi bi-stop-fill me-1"></i>Desligar</a>
+                <a href="/cliente/restart_bot/{{ user.id }}" class="btn btn-reiniciar"><i class="bi bi-arrow-clockwise me-1"></i>Reiniciar</a>
               </div>
             </div>
           </div>
 
-          <!-- Info cards -->
-          <div class="col-sm-3">
-            <div class="card p-3 text-center">
-              <div class="text-secondary small mb-1">Usuário</div>
-              <div class="fw-bold text-info">{{ user.username }}</div>
+          <!-- Stat cards -->
+          <div class="col-6 col-md-3">
+            <div class="stat-card">
+              <div class="stat-icon" style="background:rgba(167,139,250,.1);color:#a78bfa"><i class="bi bi-person"></i></div>
+              <div class="stat-label">Usuário</div>
+              <div class="stat-value" style="font-size:1rem;color:#a78bfa">{{ user.username }}</div>
             </div>
           </div>
-          <div class="col-sm-3">
-            <div class="card p-3 text-center">
-              <div class="text-secondary small mb-1">Plano</div>
-              <div class="fw-bold text-warning">
+          <div class="col-6 col-md-3">
+            <div class="stat-card">
+              <div class="stat-icon" style="background:rgba(251,191,36,.1);color:#fbbf24"><i class="bi bi-award"></i></div>
+              <div class="stat-label">Plano</div>
+              <div class="stat-value" style="color:#fbbf24">
                 {% if user.license %}{{ user.license.tipo.capitalize() }}{% else %}—{% endif %}
               </div>
             </div>
           </div>
-          <div class="col-sm-3">
-            <div class="card p-3 text-center">
-              <div class="text-secondary small mb-1">Dias Restantes</div>
-              <div class="fw-bold {% if dias_restantes is not none and dias_restantes <= 3 %}text-danger{% else %}text-success{% endif %}">
-                {% if dias_restantes is none %}∞{% else %}{{ dias_restantes }} dias{% endif %}
+          <div class="col-6 col-md-3">
+            <div class="stat-card">
+              <div class="stat-icon" style="background:rgba(16,185,129,.1);color:#10b981"><i class="bi bi-calendar-check"></i></div>
+              <div class="stat-label">Dias Restantes</div>
+              <div class="stat-value" style="color:{% if dias_restantes is not none and dias_restantes <= 3 %}#ef4444{% else %}#10b981{% endif %}">
+                {% if dias_restantes is none %}∞{% else %}{{ dias_restantes }}d{% endif %}
               </div>
             </div>
           </div>
-          <div class="col-sm-3">
-            <div class="card p-3 text-center" id="api-salas-card">
-              <div class="text-secondary small mb-1">Salas na API</div>
-              <div class="fw-bold text-info" id="api-salas-num">—</div>
+          <div class="col-6 col-md-3">
+            <div class="stat-card">
+              <div class="stat-icon" style="background:rgba(96,165,250,.1);color:#60a5fa"><i class="bi bi-controller"></i></div>
+              <div class="stat-label">Salas API</div>
+              <div class="stat-value" style="color:#60a5fa" id="api-salas-num">—</div>
             </div>
           </div>
-          <div class="col-sm-3">
-            <div class="card p-3 text-center">
-              <div class="text-secondary small mb-1">API Total / Disponíveis</div>
-              <div class="fw-bold text-warning" id="user-salas-display">
-                {% if bot_status %}{{ bot_status.limite_salas - bot_status.salas_usadas }} / <span id="api-total-display">{{ api_total if api_total else '...' }}</span>{% else %}0 / 0{% endif %}
+          <div class="col-6 col-md-3">
+            <div class="stat-card">
+              <div class="stat-icon" style="background:rgba(251,191,36,.1);color:#fbbf24"><i class="bi bi-grid"></i></div>
+              <div class="stat-label">Disponíveis / Total</div>
+              <div class="stat-value" style="color:#fbbf24;font-size:1rem" id="user-salas-display">
+                {% if bot_status %}{{ bot_status.limite_salas - bot_status.salas_usadas }} / {{ bot_status.limite_salas }}{% else %}0 / 0{% endif %}
               </div>
             </div>
           </div>
-          <div class="col-sm-3">
-            <div class="card p-3 text-center">
-              <div class="text-secondary small mb-1">Limite Total</div>
-              <div class="fw-bold text-success">
+          <div class="col-6 col-md-3">
+            <div class="stat-card">
+              <div class="stat-icon" style="background:rgba(16,185,129,.1);color:#10b981"><i class="bi bi-stack"></i></div>
+              <div class="stat-label">Limite Total</div>
+              <div class="stat-value" style="color:#10b981">
                 {% if bot_status %}{{ bot_status.limite_salas }}{% else %}0{% endif %}
               </div>
             </div>
           </div>
 
-          <!-- Mini console preview -->
+          <!-- Console preview -->
           <div class="col-12">
             <div class="card p-4">
               <div class="d-flex justify-content-between align-items-center mb-3">
-                <h6 class="text-white mb-0"><i class="bi bi-terminal me-2"></i>Logs Recentes</h6>
-                <button onclick="showPage('logs', document.querySelector('[onclick*=logs]'))" class="btn btn-sm btn-outline-secondary">
+                <div class="section-title mb-0"><i class="bi bi-terminal"></i> Logs Recentes</div>
+                <button onclick="showPage('logs', document.querySelector('[onclick*=logs]'))" class="btn btn-sm" style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);color:#9ca3af;border-radius:8px;font-size:.78rem">
                   Ver tudo
                 </button>
               </div>
               <div class="console" id="console-mini">Aguardando logs...</div>
             </div>
           </div>
-
         </div>
       </div>
 
@@ -265,7 +365,7 @@
         <div class="row justify-content-center">
           <div class="col-lg-7">
             <div class="card p-4">
-              <h6 class="text-white mb-4"><i class="bi bi-gear me-2"></i>Configurações do Bot</h6>
+              <div class="section-title"><i class="bi bi-gear"></i> Configurações do Bot</div>
               <form method="POST" action="/cliente/salvar_config" autocomplete="off">
 
                 <div class="mb-3">
@@ -342,7 +442,7 @@
                   </div>
                 </div>
 
-                <button class="btn btn-primary w-100">
+                <button class="btn w-100" style="background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border:none;border-radius:8px;font-weight:500;padding:10px">
                   <i class="bi bi-floppy me-1"></i> Salvar Configurações
                 </button>
               </form>
@@ -354,69 +454,52 @@
       <!-- ── IMAP ── -->
       <div class="page" id="page-imap">
         <div class="row g-3 mb-3">
-          <!-- Widget: Status IMAP -->
           <div class="col-sm-4">
-            <div class="card p-3">
-              <div class="d-flex align-items-center gap-2 mb-1">
-                <i class="bi bi-server" style="color:#58a6ff"></i>
-                <span class="text-secondary small">Servidor IMAP</span>
-              </div>
-              <div class="fw-bold" id="imap-server-display" style="font-size:.95rem;color:#c9d1d9">
-                {{ cfg.imap_server if cfg else '—' }}
-              </div>
-              <div class="mt-1">
-                <span id="imap-status-badge" class="badge" style="background:#21262d;color:#8b949e;font-size:.72rem">aguardando...</span>
-              </div>
+            <div class="stat-card">
+              <div class="stat-icon" style="background:rgba(96,165,250,.1);color:#60a5fa"><i class="bi bi-server"></i></div>
+              <div class="stat-label">Servidor IMAP</div>
+              <div style="font-size:.85rem;color:#e2e8f0;font-weight:500">{{ cfg.imap_server if cfg else '—' }}</div>
+              <div class="mt-2"><span id="imap-status-badge" style="font-size:.7rem;padding:3px 10px;border-radius:20px;background:rgba(255,255,255,.05);color:#4b5563">aguardando...</span></div>
             </div>
           </div>
-          <!-- Widget: E-mail monitorado -->
           <div class="col-sm-4">
-            <div class="card p-3">
-              <div class="d-flex align-items-center gap-2 mb-1">
-                <i class="bi bi-at" style="color:#58a6ff"></i>
-                <span class="text-secondary small">E-mail Monitorado</span>
-              </div>
-              <div class="fw-bold" style="font-size:.9rem;color:#c9d1d9;word-break:break-all">
-                {{ cfg.email_user if cfg else '—' }}
-              </div>
+            <div class="stat-card">
+              <div class="stat-icon" style="background:rgba(167,139,250,.1);color:#a78bfa"><i class="bi bi-at"></i></div>
+              <div class="stat-label">E-mail Monitorado</div>
+              <div style="font-size:.82rem;color:#e2e8f0;font-weight:500;word-break:break-all">{{ cfg.email_user if cfg else '—' }}</div>
             </div>
           </div>
-          <!-- Widget: Pagamentos encontrados -->
           <div class="col-sm-4">
-            <div class="card p-3">
-              <div class="d-flex align-items-center gap-2 mb-1">
-                <i class="bi bi-cash-coin" style="color:#3fb950"></i>
-                <span class="text-secondary small">Pagamentos Encontrados</span>
-              </div>
-              <div class="fw-bold" id="imap-total-pagamentos" style="font-size:1.6rem;color:#3fb950;line-height:1">0</div>
-              <div class="text-secondary" style="font-size:.72rem">nesta sessão</div>
+            <div class="stat-card">
+              <div class="stat-icon" style="background:rgba(16,185,129,.1);color:#10b981"><i class="bi bi-cash-coin"></i></div>
+              <div class="stat-label">Pagamentos Detectados</div>
+              <div class="stat-value" style="color:#10b981" id="imap-total-pagamentos">0</div>
+              <div style="font-size:.7rem;color:#4b5563">nesta sessão</div>
             </div>
           </div>
         </div>
-
-        <!-- Tabela de transferências -->
-        <div class="card p-3">
+        <div class="card p-4">
           <div class="d-flex justify-content-between align-items-center mb-3">
-            <h6 class="text-white mb-0"><i class="bi bi-envelope-open me-2"></i>Transferências Detectadas</h6>
-            <button onclick="limparImap()" class="btn btn-sm btn-outline-secondary">
+            <div class="section-title mb-0"><i class="bi bi-envelope-open"></i> Transferências Detectadas</div>
+            <button onclick="limparImap()" class="btn btn-sm" style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);color:#9ca3af;border-radius:8px;font-size:.78rem">
               <i class="bi bi-trash"></i> Limpar
             </button>
           </div>
-
           <div style="overflow-x:auto">
-            <table class="table table-dark table-hover mb-0" style="font-size:.82rem">
+            <table class="imap-table">
               <thead>
-                <tr style="color:#6e7681;border-color:#30363d">
-                  <th style="border-color:#30363d;font-weight:500">Hora</th>
-                  <th style="border-color:#30363d;font-weight:500">Remetente / Nome</th>
-                  <th style="border-color:#30363d;font-weight:500">Valor</th>
-                  <th style="border-color:#30363d;font-weight:500">Status</th>
+                <tr>
+                  <th>Hora</th>
+                  <th>Remetente</th>
+                  <th>Valor</th>
+                  <th>Status</th>
                 </tr>
               </thead>
-              <tbody id="imap-tbody" style="border-color:#30363d">
+              <tbody id="imap-tbody">
                 <tr id="imap-empty-row">
-                  <td colspan="4" class="text-center text-secondary py-4" style="border-color:#30363d">
-                    <i class="bi bi-inbox me-2"></i>Nenhuma transferência detectada ainda
+                  <td colspan="4" class="text-center py-5" style="color:#374151">
+                    <i class="bi bi-inbox" style="font-size:1.5rem;display:block;margin-bottom:8px"></i>
+                    Nenhuma transferência detectada ainda
                   </td>
                 </tr>
               </tbody>
@@ -429,8 +512,8 @@
       <div class="page" id="page-logs">
         <div class="card p-4">
           <div class="d-flex justify-content-between align-items-center mb-3">
-            <h6 class="text-white mb-0"><i class="bi bi-terminal me-2"></i>Console de Logs</h6>
-            <button onclick="limparConsole()" class="btn btn-sm btn-outline-secondary">
+            <div class="section-title mb-0"><i class="bi bi-terminal"></i> Console de Logs</div>
+            <button onclick="limparConsole()" class="btn btn-sm" style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);color:#9ca3af;border-radius:8px;font-size:.78rem">
               <i class="bi bi-trash"></i> Limpar
             </button>
           </div>
@@ -509,8 +592,8 @@
 
       const isOk = status === 'confirmado';
       const badgeStyle = isOk
-        ? 'background:rgba(63,185,80,.15);color:#3fb950;border:1px solid rgba(63,185,80,.3)'
-        : 'background:rgba(210,153,34,.15);color:#d29922;border:1px solid rgba(210,153,34,.3)';
+        ? 'background:rgba(16,185,129,.12);color:#10b981;border:1px solid rgba(16,185,129,.25)'
+        : 'background:rgba(245,158,11,.12);color:#fbbf24;border:1px solid rgba(245,158,11,.25)';
       const badgeText = isOk ? '✅ Confirmado' : '⏳ Processando';
 
       const tbody = document.getElementById('imap-tbody');
