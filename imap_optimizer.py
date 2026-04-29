@@ -126,8 +126,10 @@ class OptimizedIMAPCache:
         """Loop principal: conecta, carrega hoje, depois polling a cada 30s."""
         while not self._stop:
             try:
+                email = self.config.get('email_user', '')
+                servidor = self.config.get('imap_server', '')
                 if self._log:
-                    self._log(self.user_id, f"📧 Conectando IMAP: {self.config.get('imap_server')} | {self.config.get('email_user')}")
+                    self._log(self.user_id, f"📧 Conectando: {email} -> {servidor}")
                 mb = self._conectar()
                 if self._log:
                     self._log(self.user_id, "✅ Login IMAP OK")
