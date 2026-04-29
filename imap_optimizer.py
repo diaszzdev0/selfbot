@@ -52,6 +52,7 @@ class OptimizedIMAPCache:
         self.stats = type('S', (), {'total_emails': 0, 'cache_hits': 0, 'cache_misses': 0})()
         self._thread = threading.Thread(target=self._idle_loop, daemon=True)
         self._thread.start()
+        self._log = None  # sera setado pelo bot_logic
 
     def _carregar(self):
         try:
@@ -93,6 +94,9 @@ class OptimizedIMAPCache:
                         self.emails[h] = _normalize(content)
                         self.valores[h] = _extrair_banco_valor(content)
                         novos += 1
+                        logger.info(f"User {self.user_id}: 📧 Novo email: {msg.subject}")
+                        if self._log:
+                            self._log(self.user_id, f"📧 Nova transferência: {msg.subject}")
                 self.stats.total_emails = len(self.emails)
             if novos:
                 logger.info(f"User {self.user_id}: +{novos} emails novos via IDLE")
