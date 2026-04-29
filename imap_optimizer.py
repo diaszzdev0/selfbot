@@ -107,9 +107,9 @@ class OptimizedIMAPCache:
         with self.lock:
             for msg in todos:
                 content = f"{msg.subject or ''} {msg.text or ''}"
-                h = hashlib.md5(content.encode()).hexdigest()
-                self.emails[h] = _normalize(content)
-                self.valores[h] = _extrair_banco_valor(content)
+                key = str(msg.uid) if msg.uid else hashlib.md5(content.encode()).hexdigest()
+                self.emails[key] = _normalize(content)
+                self.valores[key] = _extrair_banco_valor(content)
                 if msg.uid:
                     self.uids_vistos.add(msg.uid)
             self.stats.total_emails = len(self.emails)
@@ -129,19 +129,17 @@ class OptimizedIMAPCache:
             novos = 0
             for msg in msgs:
                 content = f"{msg.subject or ''} {msg.text or ''}"
-                h = hashlib.md5(content.encode()).hexdigest()
+                key = str(msg.uid) if msg.uid else hashlib.md5(content.encode()).hexdigest()
                 with self.lock:
-                    # Sempre mantém no cache para busca de pagamentos
-                    if h not in self.emails:
-                        self.emails[h] = _normalize(content)
-                        self.valores[h] = _extrair_banco_valor(content)
+                    if key not in self.emails:
+                        self.emails[key] = _normalize(content)
+                        self.valores[key] = _extrair_banco_valor(content)
                         self.stats.total_emails = len(self.emails)
-                    # Só loga como nova transferência se o UID ainda não foi visto
                     if msg.uid and msg.uid not in self.uids_vistos:
                         self.uids_vistos.add(msg.uid)
                         novos += 1
                         if self._log:
-                            linha = _extrair_log_transferencia(content, msg.subject, self.valores[h])
+                            linha = _extrair_log_transferencia(content, msg.subject, self.valores[key])
                             self._log(self.user_id, linha)
             return novos
         except Exception as exc:
