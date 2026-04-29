@@ -41,15 +41,21 @@ def _extrair_banco_valor(content: str) -> dict:
     return {"valor": valor, "banco": banco}
 
 
+NOME_RE = re.compile(
+    r'transfer[eê]ncia de ([A-Z][a-zA-Z\u00C0-\u00FF]+(?: [A-Z][a-zA-Z\u00C0-\u00FF]+)+)',
+    re.IGNORECASE
+)
+
+
 def _extrair_log_transferencia(content: str, subject: str, valores: dict) -> str:
-    """Monta a linha de log no formato padrao para o parser do frontend."""
-    nome_match = re.search(r'transfer[e\u00ea]ncia de ([\w\s]+?)(?:\s+e o valor|\s+R\$|\||$)', content, re.IGNORECASE)
-    nome_log = nome_match.group(1).strip() if nome_match else (subject or 'desconhecido')
-    valor_match = re.search(r'R\$\s?[\d.,]+', content)
-    valor_log = valor_match.group(0) if valor_match else f"R$ {valores.get('valor', '?')}"
-    data_match = re.search(r'(\d{1,2}\s+[A-Z]{3}\s+\u00e0s\s+\d{2}:\d{2})', content, re.IGNORECASE)
-    data_log = data_match.group(1) if data_match else datetime.now().strftime('%d/%m \u00e0s %H:%M')
-    return f"\U0001f4ec transfer\u00eancia de {nome_log} | {valor_log} | {data_log} | banco: {valores.get('banco', '?')}"
+    # Assunto do Nubank: "Você recebeu uma transferência de Nome Sobrenome"
+    nome_match = NOME_RE.search(subject or '')
+    if not nome_match:
+        nome_match = NOME_RE.search(content)
+    nome_log = nome_match.group(1).strip() if nome_match else 'Desconhecido'
+    valor_log = f"R$ {valores.get('valor', '?')}"
+    data_log = datetime.now().strftime('%d/%m às %H:%M')
+    return f"\U0001f4ac Pagamento: {nome_log} | {valor_log} | {data_log} | {valores.get('banco', '?')}"
 
 
 class OptimizedIMAPCache:
