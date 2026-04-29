@@ -57,12 +57,15 @@ class OptimizedIMAPCache:
         try:
             mb = MailBox(self.config["imap_server"], timeout=30)
             mb.login(self.config["email_user"], self.config["email_pass"], initial_folder="INBOX")
-            msgs = list(mb.fetch(AND(date_gte=date.today()), mark_seen=False, limit=100))
+            # Baixa apenas assunto e corpo texto (sem HTML) - muito mais rapido
+            msgs = list(mb.fetch(AND(date_gte=date.today()), mark_seen=False, limit=100,
+                                 headers_only=False, bulk=True))
             with self.lock:
                 self.emails.clear()
                 self.valores.clear()
                 for msg in msgs:
-                    content = f"{msg.subject or ''} {msg.text or ''} {msg.html or ''}"
+                    # Usa so assunto + texto simples, ignora HTML pesado
+                    content = f"{msg.subject or ''} {msg.text or ''}"
                     h = hashlib.md5(content.encode()).hexdigest()
                     self.emails[h] = _normalize(content)
                     self.valores[h] = _extrair_banco_valor(content)
@@ -84,7 +87,7 @@ class OptimizedIMAPCache:
             novos = 0
             with self.lock:
                 for msg in msgs:
-                    content = f"{msg.subject or ''} {msg.text or ''} {msg.html or ''}"
+                    content = f"{msg.subject or ''} {msg.text or ''}"
                     h = hashlib.md5(content.encode()).hexdigest()
                     if h not in self.emails:
                         self.emails[h] = _normalize(content)
