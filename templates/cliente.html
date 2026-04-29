@@ -534,28 +534,23 @@
     }
 
     // Parseia linhas de log no formato Nubank:
-    // "transferência de Nome Sobrenome | R$ X,XX | DD MMM às HH:MM"
+    // "📬 transferência de Nome | R$ X,XX | DD MMM às HH:MM | banco: Nubank"
     function parseLogForImap(text) {
-      // Detecta e-mail de transferência Nubank
-      const isNubank = (
-        text.includes('transferência de') ||
-        text.includes('Você recebeu') ||
-        (text.includes('R$') && text.includes('Nubank'))
-      );
-      if (!isNubank && !text.includes('transferência de')) return;
+      if (!text.includes('transferência de')) return;
 
-      // Extrai nome: "transferência de NOME"
-      const nomeMatch = text.match(/transfer[eê]ncia de ([A-Za-zÀ-ÿ\s]+?)(?:\s+e o valor|\s+R\$|\s+\||$)/i);
+      // Extrai nome
+      const nomeMatch = text.match(/transfer[eê]ncia de ([^|]+)/);
       const remetente = nomeMatch ? nomeMatch[1].trim() : '—';
 
-      // Extrai valor: "R$ X,XX"
+      // Extrai valor
       const valorMatch = text.match(/R\$\s?[\d.,]+/);
       const valor = valorMatch ? valorMatch[0].trim() : 'R$ —';
 
-      // Extrai hora do log: "DD MMM às HH:MM" ou usa hora atual
-      const horaLogMatch = text.match(/(\d{1,2}\s+[A-Z]{3}\s+às\s+\d{2}:\d{2})/i);
-      const hora = horaLogMatch
-        ? horaLogMatch[1]
+      // Extrai hora do e-mail ou usa hora atual
+      const horaMatch = text.match(/(\d{1,2}\s+[A-Z]{3}\s+às\s+\d{2}:\d{2})/i)
+                     || text.match(/(\d{2}\/\d{2}\s+às\s+\d{2}:\d{2})/i);
+      const hora = horaMatch
+        ? horaMatch[1]
         : new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
       addImapRow(hora, remetente, valor, 'confirmado');

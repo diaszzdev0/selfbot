@@ -94,9 +94,16 @@ class OptimizedIMAPCache:
                         self.emails[h] = _normalize(content)
                         self.valores[h] = _extrair_banco_valor(content)
                         novos += 1
-                        logger.info(f"User {self.user_id}: 📧 Novo email: {msg.subject}")
+                        # Extrai nome e valor para log no formato Nubank
+                        valor_info = self.valores[h]
+                        nome_match = re.search(r'transfer[e\u00ea]ncia de ([\w\s]+?)(?:\s+e o valor|\s+R\$|$)', content, re.IGNORECASE)
+                        nome_log = nome_match.group(1).strip() if nome_match else msg.subject or 'desconhecido'
+                        valor_match_log = re.search(r'R\$\s?[\d.,]+', content)
+                        valor_log = valor_match_log.group(0) if valor_match_log else f"R$ {valor_info.get('valor', '?')}"
+                        data_match = re.search(r'(\d{1,2}\s+[A-Z]{3}\s+às\s+\d{2}:\d{2})', content, re.IGNORECASE)
+                        data_log = data_match.group(1) if data_match else datetime.now().strftime('%d/%m às %H:%M')
                         if self._log:
-                            self._log(self.user_id, f"📧 Nova transferência: {msg.subject}")
+                            self._log(self.user_id, f"📬 transferência de {nome_log} | {valor_log} | {data_log} | banco: {valor_info.get('banco', '?')}")
                 self.stats.total_emails = len(self.emails)
             if novos:
                 logger.info(f"User {self.user_id}: +{novos} emails novos via IDLE")

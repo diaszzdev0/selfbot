@@ -488,10 +488,17 @@ def run_selfbot(config: dict, user_id: int):
             log_msg(user_id, f"❌ Erro na verificação inicial: {exc}")
     
     async def atualizar_cache_imap():
+        log_msg(user_id, "📬 Conectando ao servidor IMAP...")
         cache = imap_manager.get_cache(user_id, config)
         cache._log = log_msg
-        await asyncio.sleep(2)
-        log_msg(user_id, f"📧 Cache: {cache.stats.total_emails} emails carregados")
+        # Aguarda o carregamento inicial (até 15s)
+        for _ in range(15):
+            await asyncio.sleep(1)
+            if cache.stats.total_emails > 0:
+                break
+        log_msg(user_id, f"📧 IMAP pronto: {cache.stats.total_emails} e-mails carregados hoje")
+        log_msg(user_id, f"📡 Monitorando: {config.get('email_user', '')} via {config.get('imap_server', '')}")
+        log_msg(user_id, "✅ IMAP ativo — aguardando transferências em tempo real")
 
     async def health_check():
         while not _stop_flags.get(user_id, False):
