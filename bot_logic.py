@@ -123,7 +123,7 @@ def _get_salas_info(user_id: int):
             row = con.execute(text("SELECT salas_usadas, limite_salas FROM bot_status WHERE user_id=:uid"), {"uid": user_id}).fetchone()
         return (row[0], row[1]) if row else (0, 10)
     except Exception:
-        return (0, 0)
+        return (0, 10)
 
 
 def _incrementar_sala(user_id: int):
@@ -131,18 +131,9 @@ def _incrementar_sala(user_id: int):
         from sqlalchemy import text
         engine = _get_db_engine()
         with engine.begin() as con:
-            # Garante que a linha existe antes de incrementar
-            con.execute(text(
-                "INSERT INTO bot_status (user_id, ativo, salas_usadas, limite_salas) "
-                "VALUES (:uid, 0, 0, 0) "
-                "ON CONFLICT (user_id) DO NOTHING"
-            ), {"uid": user_id})
-            con.execute(text(
-                "UPDATE bot_status SET salas_usadas = salas_usadas + 1 WHERE user_id = :uid"
-            ), {"uid": user_id})
-        log_msg(user_id, f"\U0001f3ae +1 sala contabilizada no banco")
-    except Exception as e:
-        log_msg(user_id, f"\u26a0\ufe0f Erro ao incrementar sala: {type(e).__name__}: {str(e)[:80]}")
+            con.execute(text("UPDATE bot_status SET salas_usadas = salas_usadas + 1 WHERE user_id=:uid"), {"uid": user_id})
+    except Exception:
+        pass
 
 
 def _carregar_threads(user_id: int) -> set:
@@ -648,14 +639,12 @@ def run_selfbot(config: dict, user_id: int):
         except asyncio.TimeoutError:
             log_msg(user_id, "Timeout na busca")
             resultado = None
-        finally:
-            # Sempre remove da fila, mesmo em caso de erro ou timeout
-            pg_em_processamento.discard(chave_pg)
 
         try:
             await msg_fila.delete()
         except Exception:
             pass
+        pg_em_processamento.discard(chave_pg)
 
         if resultado:
             # verifica se pagamento ja foi usado nos ultimos 2 minutos (otimizado)
