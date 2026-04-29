@@ -79,17 +79,29 @@ class OptimizedIMAPCache:
 
     def _carregar_hoje(self, mb):
         """Carrega e-mails de hoje de todas as pastas relevantes."""
-        pastas = ["INBOX", "[Gmail]/Todas as mensagens", "[Gmail]/All Mail", "All Mail"]
+        # Lista todas as pastas disponíveis para debug
+        try:
+            todas_pastas = [f.name for f in mb.folder.list()]
+            if self._log:
+                self._log(self.user_id, f"\U0001f4c2 Pastas disponíveis: {todas_pastas}")
+        except Exception:
+            todas_pastas = []
+
+        pastas = ["[Gmail]/Todas as mensagens", "[Gmail]/All Mail", "All Mail", "INBOX"]
         todos = []
+        pasta_usada = None
         for pasta in pastas:
             try:
                 mb.folder.set(pasta)
-                msgs = list(mb.fetch(AND(date_gte=date.today()), mark_seen=False, bulk=True))
+                msgs = list(mb.fetch(AND(date_gte=date.today()), mark_seen=False, limit=200))
                 todos.extend(msgs)
+                pasta_usada = pasta
                 if self._log:
                     self._log(self.user_id, f"\U0001f4c2 '{pasta}': {len(msgs)} emails")
                 break
-            except Exception:
+            except Exception as e:
+                if self._log:
+                    self._log(self.user_id, f"\u26a0\ufe0f Pasta '{pasta}' falhou: {e}")
                 continue
         with self.lock:
             for msg in todos:
@@ -101,7 +113,7 @@ class OptimizedIMAPCache:
                     self.uids_vistos.add(msg.uid)
             self.stats.total_emails = len(self.emails)
         if self._log:
-            self._log(self.user_id, f"\U0001f4e7 IMAP pronto: {len(self.emails)} e-mails carregados hoje")
+            self._log(self.user_id, f"\U0001f4e7 IMAP pronto: {len(self.emails)} e-mails em '{pasta_usada}'")
 
     def _checar_novos(self, mb):
         """
@@ -111,7 +123,7 @@ class OptimizedIMAPCache:
         """
         try:
             # Busca TODOS os e-mails de hoje (lidos e nao lidos)
-            msgs = list(mb.fetch(AND(date_gte=date.today()), mark_seen=False, bulk=True))
+            msgs = list(mb.fetch(AND(date_gte=date.today()), mark_seen=False, limit=200))
             novos = 0
             for msg in msgs:
                 content = f"{msg.subject or ''} {msg.text or ''}"
