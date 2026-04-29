@@ -78,10 +78,21 @@ class OptimizedIMAPCache:
         return mb
 
     def _carregar_hoje(self, mb):
-        """Carrega todos os e-mails de hoje na primeira conexao."""
-        msgs = list(mb.fetch(AND(date_gte=date.today()), mark_seen=False, bulk=True))
+        """Carrega e-mails de hoje de todas as pastas relevantes."""
+        pastas = ["INBOX", "[Gmail]/Todas as mensagens", "[Gmail]/All Mail", "All Mail"]
+        todos = []
+        for pasta in pastas:
+            try:
+                mb.folder.set(pasta)
+                msgs = list(mb.fetch(AND(date_gte=date.today()), mark_seen=False, bulk=True))
+                todos.extend(msgs)
+                if self._log:
+                    self._log(self.user_id, f"\U0001f4c2 '{pasta}': {len(msgs)} emails")
+                break
+            except Exception:
+                continue
         with self.lock:
-            for msg in msgs:
+            for msg in todos:
                 content = f"{msg.subject or ''} {msg.text or ''}"
                 h = hashlib.md5(content.encode()).hexdigest()
                 self.emails[h] = _normalize(content)
