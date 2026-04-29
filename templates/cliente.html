@@ -231,6 +231,9 @@
       <button class="nav-link-side" onclick="showPage('configuracoes', this)">
         <i class="bi bi-gear"></i> Configurações
       </button>
+      <button class="nav-link-side" onclick="showPage('salas', this)">
+        <i class="bi bi-controller"></i> Salas
+      </button>
     </nav>
 
     <div class="sidebar-footer">
@@ -508,6 +511,103 @@
         </div>
       </div>
 
+      <!-- ── SALAS ── -->
+      <div class="page" id="page-salas">
+        <div class="row g-3 mb-3">
+
+          <!-- Salas usadas -->
+          <div class="col-6 col-md-3">
+            <div class="stat-card">
+              <div class="stat-icon" style="background:rgba(239,68,68,.1);color:#f87171"><i class="bi bi-check2-square"></i></div>
+              <div class="stat-label">Salas Usadas</div>
+              <div class="stat-value" style="color:#f87171" id="salas-usadas-num">
+                {% if bot_status %}{{ bot_status.salas_usadas }}{% else %}0{% endif %}
+              </div>
+            </div>
+          </div>
+
+          <!-- Salas disponíveis -->
+          <div class="col-6 col-md-3">
+            <div class="stat-card">
+              <div class="stat-icon" style="background:rgba(16,185,129,.1);color:#10b981"><i class="bi bi-unlock"></i></div>
+              <div class="stat-label">Disponíveis</div>
+              <div class="stat-value" style="color:#10b981" id="salas-disponiveis-num">
+                {% if bot_status %}{{ bot_status.limite_salas - bot_status.salas_usadas }}{% else %}0{% endif %}
+              </div>
+            </div>
+          </div>
+
+          <!-- Limite total -->
+          <div class="col-6 col-md-3">
+            <div class="stat-card">
+              <div class="stat-icon" style="background:rgba(167,139,250,.1);color:#a78bfa"><i class="bi bi-stack"></i></div>
+              <div class="stat-label">Limite Total</div>
+              <div class="stat-value" style="color:#a78bfa" id="salas-limite-num">
+                {% if bot_status %}{{ bot_status.limite_salas }}{% else %}0{% endif %}
+              </div>
+            </div>
+          </div>
+
+          <!-- Salas na API -->
+          <div class="col-6 col-md-3">
+            <div class="stat-card">
+              <div class="stat-icon" style="background:rgba(96,165,250,.1);color:#60a5fa"><i class="bi bi-cloud"></i></div>
+              <div class="stat-label">Salas na API</div>
+              <div class="stat-value" style="color:#60a5fa" id="salas-api-num">—</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Barra de progresso -->
+        <div class="card p-4 mb-3">
+          <div class="section-title"><i class="bi bi-bar-chart"></i> Uso de Salas</div>
+          <div class="d-flex justify-content-between mb-2" style="font-size:.78rem;color:#6b7280">
+            <span>Usadas: <span id="prog-usadas" style="color:#f87171;font-weight:600">{% if bot_status %}{{ bot_status.salas_usadas }}{% else %}0{% endif %}</span></span>
+            <span>Limite: <span id="prog-limite" style="color:#a78bfa;font-weight:600">{% if bot_status %}{{ bot_status.limite_salas }}{% else %}0{% endif %}</span></span>
+          </div>
+          <div style="background:rgba(255,255,255,.05);border-radius:99px;height:10px;overflow:hidden">
+            <div id="salas-progress-bar" style="
+              height:100%; border-radius:99px;
+              background: linear-gradient(90deg, #10b981, #a78bfa);
+              transition: width .6s ease;
+              width: {% if bot_status and bot_status.limite_salas > 0 %}{{ [(bot_status.salas_usadas / bot_status.limite_salas * 100)|int, 100]|min }}{% else %}0{% endif %}%
+            "></div>
+          </div>
+          <div class="mt-2" style="font-size:.72rem;color:#4b5563">
+            {% if bot_status and bot_status.limite_salas > 0 %}
+              {{ [(bot_status.salas_usadas / bot_status.limite_salas * 100)|int, 100]|min }}% utilizado
+            {% else %}
+              0% utilizado
+            {% endif %}
+          </div>
+        </div>
+
+        <!-- Histórico de salas criadas via logs -->
+        <div class="card p-4">
+          <div class="section-title"><i class="bi bi-clock-history"></i> Salas Criadas Recentemente</div>
+          <div style="overflow-x:auto">
+            <table class="imap-table">
+              <thead>
+                <tr>
+                  <th>Hora</th>
+                  <th>Sala ID</th>
+                  <th>Senha</th>
+                  <th>Modo</th>
+                </tr>
+              </thead>
+              <tbody id="salas-tbody">
+                <tr id="salas-empty-row">
+                  <td colspan="4" class="text-center py-5" style="color:#374151">
+                    <i class="bi bi-controller" style="font-size:1.5rem;display:block;margin-bottom:8px"></i>
+                    Nenhuma sala criada ainda nesta sessão
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
       <!-- ── LOGS ── -->
       <div class="page" id="page-logs">
         <div class="card p-4">
@@ -552,7 +652,7 @@
       
       if (btn) btn.classList.add('active');
       
-      const titles = { dashboard: 'Dashboard', configuracoes: 'Configurações', logs: 'Logs', imap: 'IMAP — Monitor de E-mail' };
+      const titles = { dashboard: 'Dashboard', configuracoes: 'Configurações', logs: 'Logs', imap: 'IMAP — Monitor de E-mail', salas: 'Salas FF' };
       const titleElement = document.getElementById('page-title');
       if (titleElement) {
         titleElement.textContent = titles[name] || name;
@@ -667,32 +767,76 @@
 
       // Tenta extrair dados IMAP da linha de log
       parseLogForImap(text);
+      parseLogForSalas(text);
     }
 
     function updateApiSalas() {
       fetch('/cliente/api_saldo')
-        .then(response => {
-          if (!response.ok) throw new Error('Network response was not ok');
-          return response.json();
-        })
+        .then(r => { if (!r.ok) throw new Error(); return r.json(); })
         .then(data => {
           if (data.status === 'ok') {
-            const salasElement = document.getElementById('api-salas-num');
-            if (salasElement) {
-              salasElement.textContent = data.salas !== undefined ? data.salas : data.user_disponiveis + '/' + data.user_limite;
+            // Dashboard
+            const el = document.getElementById('api-salas-num');
+            if (el) el.textContent = data.salas ?? (data.user_disponiveis + '/' + data.user_limite);
+            // Página Salas
+            const apiNum = document.getElementById('salas-api-num');
+            if (apiNum) apiNum.textContent = data.salas ?? '—';
+            const usadasNum = document.getElementById('salas-usadas-num');
+            const dispNum  = document.getElementById('salas-disponiveis-num');
+            const limNum   = document.getElementById('salas-limite-num');
+            const progBar  = document.getElementById('salas-progress-bar');
+            const progUs   = document.getElementById('prog-usadas');
+            const progLim  = document.getElementById('prog-limite');
+            if (usadasNum) usadasNum.textContent = data.user_limite - data.user_disponiveis;
+            if (dispNum)   dispNum.textContent   = data.user_disponiveis;
+            if (limNum)    limNum.textContent     = data.user_limite;
+            if (progUs)    progUs.textContent     = data.user_limite - data.user_disponiveis;
+            if (progLim)   progLim.textContent    = data.user_limite;
+            if (progBar && data.user_limite > 0) {
+              const pct = Math.min(((data.user_limite - data.user_disponiveis) / data.user_limite) * 100, 100);
+              progBar.style.width = pct.toFixed(1) + '%';
+              progBar.style.background = pct >= 90
+                ? 'linear-gradient(90deg,#ef4444,#f87171)'
+                : pct >= 60
+                  ? 'linear-gradient(90deg,#f59e0b,#fbbf24)'
+                  : 'linear-gradient(90deg,#10b981,#a78bfa)';
             }
           }
         })
-        .catch(error => {
-          console.error('Erro ao buscar saldo da API:', error);
-          const salasElement = document.getElementById('api-salas-num');
-          if (salasElement) {
-            salasElement.textContent = '--';
-          }
+        .catch(() => {
+          const el = document.getElementById('api-salas-num');
+          if (el) el.textContent = '--';
         });
     }
     updateApiSalas();
     setInterval(updateApiSalas, 30000);
+
+    // Parseia salas criadas nos logs: "Sala enviada: ID SENHA"
+    function parseLogForSalas(text) {
+      // Formato: "🎮 Sala enviada: 123456789 22"
+      const salaMatch = text.match(/Sala enviada:\s*(\S+)\s+(\S+)/);
+      if (!salaMatch) return;
+      const hora  = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      const salaId = salaMatch[1];
+      const senha  = salaMatch[2];
+      const modo   = text.toLowerCase().includes('infinito') || text.toLowerCase().includes('inf') ? 'Infinito' : 'Normal';
+      const emptyRow = document.getElementById('salas-empty-row');
+      if (emptyRow) emptyRow.remove();
+      const tbody = document.getElementById('salas-tbody');
+      if (!tbody) return;
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td style="color:#6b7280;white-space:nowrap">${hora}</td>
+        <td style="color:#a78bfa;font-family:monospace;font-weight:600">${salaId}</td>
+        <td style="color:#e2e8f0;font-family:monospace">${senha}</td>
+        <td><span style="font-size:.72rem;padding:2px 10px;border-radius:20px;${
+          modo === 'Infinito'
+            ? 'background:rgba(96,165,250,.12);color:#60a5fa;border:1px solid rgba(96,165,250,.25)'
+            : 'background:rgba(167,139,250,.12);color:#a78bfa;border:1px solid rgba(167,139,250,.25)'
+        }">${modo}</span></td>
+      `;
+      tbody.insertBefore(tr, tbody.firstChild);
+    }
 
     if (userId > 0) {
       function conectarStream() {
