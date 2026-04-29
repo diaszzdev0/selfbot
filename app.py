@@ -144,6 +144,7 @@ def _get_bot_status_cliente(user_id: int):
     from models import BotStatus
     s = BotStatus.query.filter_by(user_id=user_id).first()
     if not s:
+        # Nunca zera salas_usadas — cria apenas se nao existir
         s = BotStatus(user_id=user_id, ativo=False, salas_usadas=0, limite_salas=0)
         db.session.add(s)
         db.session.commit()
