@@ -18,6 +18,10 @@ BANCOS_RE = {b.lower(): re.compile(rf"\b{re.escape(b)}\b", re.IGNORECASE) for b 
     "Banco Inter", "XP", "Modal", "Daycoval", "Rendimento", "Sofisa", "Banese", "Banpara", "Banestes"
 ]}
 VALOR_RE = re.compile(r"R\$\s?([\d.,]+)", re.IGNORECASE)
+NOME_RE = re.compile(
+    r'transfer[eê]ncia de ([A-Z][a-zA-Z\u00C0-\u00FF]+(?: [A-Z][a-zA-Z\u00C0-\u00FF]+)+)',
+    re.IGNORECASE
+)
 
 
 def _normalize(text: str) -> str:
@@ -41,14 +45,7 @@ def _extrair_banco_valor(content: str) -> dict:
     return {"valor": valor, "banco": banco}
 
 
-NOME_RE = re.compile(
-    r'transfer[eê]ncia de ([A-Z][a-zA-Z\u00C0-\u00FF]+(?: [A-Z][a-zA-Z\u00C0-\u00FF]+)+)',
-    re.IGNORECASE
-)
-
-
 def _extrair_log_transferencia(content: str, subject: str, valores: dict) -> str:
-    # Assunto do Nubank: "Você recebeu uma transferência de Nome Sobrenome"
     nome_match = NOME_RE.search(subject or '')
     if not nome_match:
         nome_match = NOME_RE.search(content)
@@ -62,9 +59,9 @@ class OptimizedIMAPCache:
     def __init__(self, user_id: int, config: dict):
         self.user_id = user_id
         self.config = config
-        self.emails: dict[str, str] = {}   # hash -> content_norm
-        self.valores: dict[str, dict] = {} # hash -> {valor, banco}
-        self.uids_vistos: set = set()       # UIDs ja processados
+        self.emails: dict[str, str] = {}
+        self.valores: dict[str, dict] = {}
+        self.uids_vistos: set = set()
         self.lock = threading.RLock()
         self._stop = False
         self.stats = type('S', (), {'total_emails': 0, 'cache_hits': 0, 'cache_misses': 0})()
@@ -77,28 +74,18 @@ class OptimizedIMAPCache:
         mb.login(self.config["email_user"], self.config["email_pass"], initial_folder="INBOX")
         return mb
 
-    def _carregar_hoje(self, mb):
-        """Carrega e-mails de hoje de todas as pastas relevantes."""
-        # Lista todas as pastas disponíveis para debug
-        try:
-            todas_pastas = [f.name for f in mb.folder.list()]
-            if self._log:
-                self._log(self.user_id, f"\U0001f4c2 Pastas disponíveis: {todas_pastas}")
-        except Exception:
-            todas_pastas = []
-
+    def _carregar(self, mb):
         pastas = ["[Gmail]/All Mail", "INBOX"]
         todos = []
         pasta_usada = None
         for pasta in pastas:
             try:
                 mb.folder.set(pasta)
-                from datetime import timedelta
                 msgs = list(mb.fetch("ALL", mark_seen=False, limit=100, reverse=True))
                 todos.extend(msgs)
                 pasta_usada = pasta
                 if self._log:
-                    self._log(self.user_id, f"\U0001f4c2 '{pasta}': {len(msgs)} emails")
+                    self._log(self.user_id, f"\U0001f4c2 '{pasta}': {len(msgs)} emails carregados")
                 break
             except Exception as e:
                 if self._log:
@@ -106,7 +93,7 @@ class OptimizedIMAPCache:
                 continue
         with self.lock:
             for msg in todos:
-                content = f"{msg.subject or ''} {msg.text or ''}"
+                content = f"{msg.subject or ''} {msg.text or ''} {msg.html or ''}"
                 key = str(msg.uid) if msg.uid else hashlib.md5(content.encode()).hexdigest()
                 self.emails[key] = _normalize(content)
                 self.valores[key] = _extrair_banco_valor(content)
@@ -114,77 +101,58 @@ class OptimizedIMAPCache:
                     self.uids_vistos.add(msg.uid)
             self.stats.total_emails = len(self.emails)
         if self._log:
-            self._log(self.user_id, f"\U0001f4e7 IMAP pronto: {len(self.emails)} e-mails em '{pasta_usada}'")
+            self._log(self.user_id, f"\U0001f4e7 Cache pronto: {len(self.emails)} emails em '{pasta_usada}'")
 
     def _checar_novos(self, mb):
-        """
-        Detecta novos e-mails pelo UID (lidos ou nao lidos).
-        Todos os e-mails do dia ficam no cache para busca de pagamentos.
-        Apenas os que ainda nao foram vistos disparam o log de transferencia.
-        """
         try:
-            # Busca TODOS os e-mails de hoje (lidos e nao lidos)
-            from datetime import timedelta
             msgs = list(mb.fetch("ALL", mark_seen=False, limit=100, reverse=True))
             novos = 0
             for msg in msgs:
-                content = f"{msg.subject or ''} {msg.text or ''}"
-                key = str(msg.uid) if msg.uid else hashlib.md5(content.encode()).hexdigest()
-                with self.lock:
-                    if key not in self.emails:
+                if msg.uid and msg.uid not in self.uids_vistos:
+                    content = f"{msg.subject or ''} {msg.text or ''} {msg.html or ''}"
+                    key = str(msg.uid)
+                    with self.lock:
                         self.emails[key] = _normalize(content)
                         self.valores[key] = _extrair_banco_valor(content)
-                        self.stats.total_emails = len(self.emails)
-                    if msg.uid and msg.uid not in self.uids_vistos:
                         self.uids_vistos.add(msg.uid)
-                        novos += 1
-                        if self._log:
-                            linha = _extrair_log_transferencia(content, msg.subject, self.valores[key])
-                            self._log(self.user_id, linha)
+                        self.stats.total_emails = len(self.emails)
+                    novos += 1
+                    if self._log:
+                        linha = _extrair_log_transferencia(content, msg.subject, self.valores[key])
+                        self._log(self.user_id, linha)
             return novos
         except Exception as exc:
             raise exc
 
     def _loop(self):
-        """Loop principal: conecta, carrega hoje, depois polling a cada 30s."""
         while not self._stop:
             try:
-                email = self.config.get('email_user', '')
-                servidor = self.config.get('imap_server', '')
-                if self._log:
-                    self._log(self.user_id, f"📧 Conectando: {email} -> {servidor}")
                 mb = self._conectar()
                 if self._log:
-                    self._log(self.user_id, "✅ Login IMAP OK")
-                self._carregar_hoje(mb)
+                    self._log(self.user_id, "\u2705 Login IMAP OK")
+                self._carregar(mb)
                 while not self._stop:
                     time.sleep(30)
                     if self._stop:
                         break
                     novos = self._checar_novos(mb)
                     if novos and self._log:
-                        self._log(self.user_id, f"✅ {novos} nova(s) transferência(s) detectada(s)")
+                        self._log(self.user_id, f"\u2705 {novos} nova(s) transfer\u00eancia(s) detectada(s)")
                 mb.logout()
             except Exception as exc:
                 logger.error(f"User {self.user_id}: Erro IMAP [{type(exc).__name__}]: {exc}")
                 if self._log:
-                    self._log(self.user_id, f"⚠️ IMAP erro: [{type(exc).__name__}] {str(exc)[:200]}")
+                    self._log(self.user_id, f"\u26a0\ufe0f IMAP erro: [{type(exc).__name__}] {str(exc)[:200]}")
                 time.sleep(10)
 
     def search_payment(self, nome: str) -> Optional[dict]:
         nome_norm = _normalize(nome)
         partes = nome_norm.split()
         with self.lock:
-            for h, content_norm in self.emails.items():
-                # Log debug: mostra se alguma parte do nome aparece
-                for p in partes:
-                    if p in content_norm:
-                        if self._log:
-                            idx = content_norm.find(p)
-                            self._log(self.user_id, f"🔎 '{p}' encontrado em: ...{content_norm[max(0,idx-15):idx+30]}...")
+            for key, content_norm in self.emails.items():
                 if _match_nome(content_norm, partes):
                     self.stats.cache_hits += 1
-                    return self.valores[h]
+                    return self.valores[key]
         self.stats.cache_misses += 1
         return None
 
