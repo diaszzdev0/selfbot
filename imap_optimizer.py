@@ -120,21 +120,24 @@ class OptimizedIMAPCache:
         """Loop principal: conecta, carrega hoje, depois polling a cada 30s."""
         while not self._stop:
             try:
+                if self._log:
+                    self._log(self.user_id, f"📧 Conectando IMAP: {self.config.get('imap_server')} | {self.config.get('email_user')}")
                 mb = self._conectar()
+                if self._log:
+                    self._log(self.user_id, "✅ Login IMAP OK")
                 self._carregar_hoje(mb)
-                # Polling a cada 30s — muito mais confiavel que IDLE no Gmail
                 while not self._stop:
                     time.sleep(30)
                     if self._stop:
                         break
                     novos = self._checar_novos(mb)
                     if novos and self._log:
-                        self._log(self.user_id, f"\u2705 {novos} nova(s) transfer\u00eancia(s) detectada(s)")
+                        self._log(self.user_id, f"✅ {novos} nova(s) transferência(s) detectada(s)")
                 mb.logout()
             except Exception as exc:
                 logger.error(f"User {self.user_id}: Erro IMAP [{type(exc).__name__}]: {exc}")
                 if self._log:
-                    self._log(self.user_id, f"\u26a0\ufe0f IMAP reconectando... ({type(exc).__name__})")
+                    self._log(self.user_id, f"⚠️ IMAP erro: [{type(exc).__name__}] {str(exc)[:200]}")
                 time.sleep(10)
 
     def search_payment(self, nome: str) -> Optional[dict]:
