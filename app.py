@@ -277,6 +277,8 @@ def cliente_restart_bot(user_id: int):
     log_path = os.path.join(os.path.dirname(__file__), "logs", f"user_{user_id}.log")
     with open(log_path, "w", encoding="utf-8"):
         pass
+    # Força refresh do banco para pegar credenciais atualizadas
+    db.session.expire_all()
     user = db.session.get(User, user_id)
     if not user or not user.config:
         return _render_cliente(user, None, False, "SELFBOT NÃO CONFIGURADO", "danger")
