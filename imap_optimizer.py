@@ -87,7 +87,7 @@ class OptimizedIMAPCache:
         except Exception:
             todas_pastas = []
 
-        pastas = ["[Gmail]/Todas as mensagens", "[Gmail]/All Mail", "All Mail", "INBOX"]
+        pastas = ["[Gmail]/All Mail", "INBOX"]
         todos = []
         pasta_usada = None
         for pasta in pastas:
