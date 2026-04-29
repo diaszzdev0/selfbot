@@ -93,7 +93,8 @@ class OptimizedIMAPCache:
         for pasta in pastas:
             try:
                 mb.folder.set(pasta)
-                msgs = list(mb.fetch(AND(date_gte=date.today()), mark_seen=False, limit=200))
+                from datetime import timedelta
+                msgs = list(mb.fetch(AND(date_gte=date.today() - timedelta(days=1)), mark_seen=False, limit=200))
                 todos.extend(msgs)
                 pasta_usada = pasta
                 if self._log:
@@ -123,7 +124,8 @@ class OptimizedIMAPCache:
         """
         try:
             # Busca TODOS os e-mails de hoje (lidos e nao lidos)
-            msgs = list(mb.fetch(AND(date_gte=date.today()), mark_seen=False, limit=200))
+            from datetime import timedelta
+            msgs = list(mb.fetch(AND(date_gte=date.today() - timedelta(days=1)), mark_seen=False, limit=200))
             novos = 0
             for msg in msgs:
                 content = f"{msg.subject or ''} {msg.text or ''}"
