@@ -103,7 +103,7 @@ class OptimizedIMAPCache:
     def update_full(self):
         start = time.time()
         try:
-            msgs = self._fetch_emails(AND(date_gte=date.today()), 500)
+            msgs = self._fetch_emails(AND(date_gte=date.today()), 50)
             with self.lock:
                 self.emails.clear()
                 for msg in msgs:
