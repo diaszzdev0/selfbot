@@ -121,23 +121,29 @@ SOBRENOMES_COMUNS = {
     'silva', 'santos', 'oliveira', 'souza', 'sousa', 'pereira', 'costa',
     'ferreira', 'alves', 'lima', 'gomes', 'ribeiro', 'carvalho', 'martins',
     'rodrigues', 'almeida', 'nascimento', 'araujo', 'melo', 'barbosa',
-    'rocha', 'dias', 'moura', 'nunes', 'lopes', 'cardoso', 'mendes'
+    'rocha', 'dias', 'moura', 'nunes', 'lopes', 'cardoso', 'mendes',
+    'maria', 'jose', 'joao', 'ana', 'da', 'de', 'do', 'dos', 'das'
 }
 
 
 def _match_nome(content_norm: str, partes: list) -> bool:
-    partes_sig = [p for p in partes if len(p) >= 3] or partes
-    # Partes que sozinhas nao confirmam (sobrenomes muito comuns)
-    partes_fortes = [p for p in partes_sig if p not in SOBRENOMES_COMUNS]
-    partes_fracas  = [p for p in partes_sig if p in SOBRENOMES_COMUNS]
+    # Filtra partes significativas (>= 4 chars e nao sao palavras comuns)
+    partes_sig = [p for p in partes if len(p) >= 4 and p not in SOBRENOMES_COMUNS]
+    partes_todas = [p for p in partes if len(p) >= 3]
 
-    matches_fortes = sum(1 for p in partes_fortes if re.search(rf"\b{re.escape(p)}\b", content_norm))
-    matches_fracas  = sum(1 for p in partes_fracas  if re.search(rf"\b{re.escape(p)}\b", content_norm))
+    if not partes_sig:
+        # Se nao tem partes fortes, exige 2 partes quaisquer
+        matches = sum(1 for p in partes_todas if re.search(rf"\b{re.escape(p)}\b", content_norm))
+        return matches >= 2
 
-    # Precisa de pelo menos 1 parte forte OU 2 partes fracas
-    if partes_fortes:
-        return matches_fortes >= 1 and (matches_fortes + matches_fracas) >= 2
-    return matches_fracas >= 2
+    # Precisa achar pelo menos 1 parte forte
+    matches_sig = sum(1 for p in partes_sig if re.search(rf"\b{re.escape(p)}\b", content_norm))
+    if matches_sig == 0:
+        return False
+
+    # E pelo menos 2 partes no total
+    matches_total = sum(1 for p in partes_todas if re.search(rf"\b{re.escape(p)}\b", content_norm))
+    return matches_total >= 2
 
 
 class IMAPCache:
@@ -212,19 +218,21 @@ class IMAPCache:
             return {"valor": entry["valor"], "banco": entry["banco"]}
         return None
 
-    def search_debug(self, nome: str) -> str:
-        """Retorna trecho dos emails que contem qualquer parte do nome, para debug."""
+    def search_debug(self, nome: str) -> list:
         nome_norm = _normalize(nome)
         partes = [p for p in nome_norm.split() if len(p) >= 3]
+        cutoff = (datetime.now() - timedelta(minutes=15)).isoformat()
         trechos = []
-        for uid, entry in list(self.data.items())[:50]:
+        for uid, entry in list(self.data.items()):
+            if entry.get("ts", "") < cutoff:
+                continue
             for parte in partes:
                 idx = entry["norm"].find(parte)
                 if idx != -1:
-                    trecho = entry["norm"][max(0, idx-30):idx+50]
-                    trechos.append(f"[{entry['banco']}] ...{trecho}...")
+                    trecho = entry["norm"][max(0, idx-30):idx+60]
+                    trechos.append(f"[{entry['banco']}|{entry['ts'][:16]}] ...{trecho}...")
                     break
-        return trechos[:3] if trechos else []
+        return trechos[:5]
 
     @property
     def total(self) -> int:
