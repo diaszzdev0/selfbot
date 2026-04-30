@@ -177,6 +177,20 @@ class IMAPCache:
                 return {"valor": entry["valor"], "banco": entry["banco"]}
         return None
 
+    def search_debug(self, nome: str) -> str:
+        """Retorna trecho dos emails que contem qualquer parte do nome, para debug."""
+        nome_norm = _normalize(nome)
+        partes = [p for p in nome_norm.split() if len(p) >= 3]
+        trechos = []
+        for uid, entry in list(self.data.items())[:50]:
+            for parte in partes:
+                idx = entry["norm"].find(parte)
+                if idx != -1:
+                    trecho = entry["norm"][max(0, idx-30):idx+50]
+                    trechos.append(f"[{entry['banco']}] ...{trecho}...")
+                    break
+        return trechos[:3] if trechos else []
+
     @property
     def total(self) -> int:
         return len(self.data)
@@ -291,6 +305,14 @@ class OptimizedIMAPCache:
             self.stats.cache_hits += 1
         else:
             self.stats.cache_misses += 1
+            # Debug: mostra trechos dos emails que contem partes do nome
+            with self._lock:
+                trechos = self.cache.search_debug(nome)
+            if trechos:
+                for t in trechos:
+                    self._log_msg(f"\U0001f50d Debug match: {t}")
+            else:
+                self._log_msg(f"\U0001f50d Debug: nenhuma parte de '{nome}' encontrada nos emails")
         return resultado
 
     def search_payment_optimized(self, nome: str) -> Optional[dict]:
