@@ -188,22 +188,38 @@ class OptimizedIMAPCache:
 
     def _sincronizar(self, mb) -> int:
         since = date.today() - timedelta(days=1)
-        pastas = ["[Gmail]/All Mail", "INBOX"]
-        msgs = []
-        for pasta in pastas:
+        # Lista todas as pastas e tenta cada uma
+        pastas_tentar = ["[Gmail]/All Mail", "INBOX", "[Gmail]/Caixa de entrada", "Caixa de entrada", "All Mail"]
+        try:
+            todas = [f.name for f in mb.folder.list()]
+            self._log_msg(f"\U0001f4c2 Pastas disponíveis: {todas}")
+            # Adiciona pastas encontradas que não estão na lista padrão
+            for p in todas:
+                if p not in pastas_tentar:
+                    pastas_tentar.append(p)
+        except Exception:
+            pass
+
+        uids_novos_global = set()
+        msgs_novas = []
+
+        for pasta in pastas_tentar:
             try:
                 mb.folder.set(pasta)
                 msgs = list(mb.fetch(AND(date_gte=since), mark_seen=False, limit=500))
-                break
+                for msg in msgs:
+                    uid = str(msg.uid) if msg.uid else None
+                    if uid and uid not in self.cache.uids and uid not in uids_novos_global:
+                        uids_novos_global.add(uid)
+                        msgs_novas.append(msg)
+                break  # usa a primeira pasta que funcionar com All Mail
             except Exception as e:
-                self._log_msg(f"\u26a0\ufe0f '{pasta}' falhou: {type(e).__name__}: {str(e)[:80]}")
+                self._log_msg(f"\u26a0\ufe0f '{pasta}' falhou: {type(e).__name__}: {str(e)[:60]}")
                 continue
 
         novos = 0
-        for msg in msgs:
-            uid = str(msg.uid) if msg.uid else None
-            if not uid or uid in self.cache.uids:
-                continue
+        for msg in msgs_novas:
+            uid = str(msg.uid)
             content = f"{msg.subject or ''} {msg.text or ''} {msg.html or ''}"
             if self.cache.add(uid, content, msg.subject):
                 novos += 1
