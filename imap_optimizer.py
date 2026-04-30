@@ -178,7 +178,7 @@ class IMAPCache:
         nome_norm = _normalize(nome)
         partes = nome_norm.split()
         # Janela de 2 horas — so aceita pagamentos recentes
-        cutoff = (datetime.now() - timedelta(hours=2)).isoformat()
+        cutoff = (datetime.now() - timedelta(minutes=5)).isoformat()
         matches = []
         for uid, entry in self.data.items():
             if entry.get("usado"):
