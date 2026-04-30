@@ -264,7 +264,7 @@ class OptimizedIMAPCache:
                 self._log_msg(f"\U0001f4e7 Cache pronto: {self.cache.total} emails ({novos} novos)")
 
                 while not self._stop:
-                    time.sleep(60)
+                    time.sleep(10)
                     if self._stop:
                         break
                     try:
