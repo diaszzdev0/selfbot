@@ -117,10 +117,27 @@ def _extrair_pagador(content: str) -> str:
     return "Desconhecido"
 
 
+SOBRENOMES_COMUNS = {
+    'silva', 'santos', 'oliveira', 'souza', 'sousa', 'pereira', 'costa',
+    'ferreira', 'alves', 'lima', 'gomes', 'ribeiro', 'carvalho', 'martins',
+    'rodrigues', 'almeida', 'nascimento', 'araujo', 'melo', 'barbosa',
+    'rocha', 'dias', 'moura', 'nunes', 'lopes', 'cardoso', 'mendes'
+}
+
+
 def _match_nome(content_norm: str, partes: list) -> bool:
     partes_sig = [p for p in partes if len(p) >= 3] or partes
-    matches = sum(1 for p in partes_sig if re.search(rf"\b{re.escape(p)}\b", content_norm))
-    return matches >= min(2, len(partes_sig))
+    # Partes que sozinhas nao confirmam (sobrenomes muito comuns)
+    partes_fortes = [p for p in partes_sig if p not in SOBRENOMES_COMUNS]
+    partes_fracas  = [p for p in partes_sig if p in SOBRENOMES_COMUNS]
+
+    matches_fortes = sum(1 for p in partes_fortes if re.search(rf"\b{re.escape(p)}\b", content_norm))
+    matches_fracas  = sum(1 for p in partes_fracas  if re.search(rf"\b{re.escape(p)}\b", content_norm))
+
+    # Precisa de pelo menos 1 parte forte OU 2 partes fracas
+    if partes_fortes:
+        return matches_fortes >= 1 and (matches_fortes + matches_fracas) >= 2
+    return matches_fracas >= 2
 
 
 class IMAPCache:
