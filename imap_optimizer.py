@@ -2,47 +2,46 @@ import re
 import threading
 import time
 import unicodedata
-import hashlib
-import email
+import json
+import os
+import logging
 from datetime import datetime, timedelta, date
 from typing import Optional
 from imap_tools import MailBox, AND
-import logging
 
 logger = logging.getLogger(__name__)
 
-# Padrões específicos por banco
+CACHE_DIR = os.path.join(os.path.dirname(__file__), "imap_cache")
+os.makedirs(CACHE_DIR, exist_ok=True)
+
 BANCOS_PATTERNS = {
-    "Nubank": [
-        r"nubank", r"nu\.com\.br", r"transferencia.*nubank", r"nubank.*transferencia"
-    ],
-    "PicPay": [r"picpay", r"pic\s*pay"],
-    "Itau": [r"ita[uú]", r"itau\.com\.br"],
-    "Bradesco": [r"bradesco", r"bradesco\.com\.br"],
-    "Santander": [r"santander"],
-    "Caixa": [r"caixa", r"cef\.gov\.br"],
-    "Inter": [r"\bbanco\s*inter\b", r"\binter\b.*banco", r"bancointer"],
-    "Mercado Pago": [r"mercado\s*pago", r"mercadopago"],
-    "PagSeguro": [r"pagseguro", r"pagbank"],
-    "C6 Bank": [r"c6\s*bank", r"c6bank"],
-    "Next": [r"\bnext\b"],
-    "Neon": [r"\bneon\b"],
-    "BTG": [r"\bbtg\b"],
-    "Stone": [r"\bstone\b"],
-    "Sicoob": [r"sicoob"],
-    "Sicredi": [r"sicredi"],
-    "Banco do Brasil": [r"banco\s*do\s*brasil", r"\bbb\b"],
-    "Original": [r"banco\s*original"],
-    "Pan": [r"\bpan\b.*banco", r"banco\s*pan"],
-    "Agibank": [r"agibank"],
-    "Pagbank": [r"pagbank"],
-    "Will Bank": [r"will\s*bank"],
-    "XP": [r"\bxp\b.*investimentos"],
+    "Nubank":        [r"nubank"],
+    "PicPay":        [r"picpay"],
+    "Itau":          [r"ita[uú]"],
+    "Bradesco":      [r"bradesco"],
+    "Santander":     [r"santander"],
+    "Caixa":         [r"caixa"],
+    "Inter":         [r"banco\s*inter|bancointer"],
+    "Mercado Pago":  [r"mercado\s*pago"],
+    "PagSeguro":     [r"pagseguro|pagbank"],
+    "C6 Bank":       [r"c6\s*bank"],
+    "Next":          [r"\bnext\b"],
+    "Neon":          [r"\bneon\b"],
+    "BTG":           [r"\bbtg\b"],
+    "Stone":         [r"\bstone\b"],
+    "Sicoob":        [r"sicoob"],
+    "Sicredi":       [r"sicredi"],
+    "Banco do Brasil": [r"banco\s*do\s*brasil"],
+    "Original":      [r"banco\s*original"],
+    "Pan":           [r"banco\s*pan"],
+    "Agibank":       [r"agibank"],
+    "Will Bank":     [r"will\s*bank"],
+    "XP":            [r"\bxp\b.*invest"],
 }
 
 VALOR_RE = re.compile(
     r"R\$\s*(\d{1,3}(?:\.\d{3})*(?:,\d{2})?|\d+(?:,\d{2})?)"
-    r"|(\d{1,3}(?:\.\d{3})*(?:,\d{2})?|\d+(?:,\d{2})?)\s*reais",
+    r"|(\d{1,3}(?:\.\d{3})*,\d{2})\s*reais",
     re.IGNORECASE
 )
 
@@ -61,53 +60,103 @@ def _normalize(text: str) -> str:
 
 
 def _detectar_banco(content: str) -> str:
-    content_lower = content.lower()
+    cl = content.lower()
     for banco, patterns in BANCOS_PATTERNS.items():
         for p in patterns:
-            if re.search(p, content_lower):
+            if re.search(p, cl):
                 return banco
     return "Desconhecido"
 
 
 def _extrair_valor(content: str) -> str:
-    match = VALOR_RE.search(content)
-    if match:
-        return match.group(1) or match.group(2) or "N/A"
-    return "N/A"
+    m = VALOR_RE.search(content)
+    return (m.group(1) or m.group(2)) if m else "N/A"
 
 
 def _match_nome(content_norm: str, partes: list) -> bool:
-    """Busca flexível: aceita nome parcial (só nome ou nome+sobrenome)."""
-    if not partes:
-        return False
-    partes_sig = [p for p in partes if len(p) >= 3]
-    if not partes_sig:
-        partes_sig = partes
+    partes_sig = [p for p in partes if len(p) >= 3] or partes
     matches = sum(1 for p in partes_sig if re.search(rf"\b{re.escape(p)}\b", content_norm))
-    # Aceita se encontrar pelo menos 2 partes ou todas se tiver só 1
     return matches >= min(2, len(partes_sig))
 
 
-def _log_transferencia(content: str, subject: str, valores: dict) -> str:
-    nome_match = NOME_RE.search(subject or '') or NOME_RE.search(content[:500])
-    nome = nome_match.group(1).strip() if nome_match else 'Desconhecido'
-    return (f"\U0001f4ac Pagamento: {nome} | "
-            f"R$ {valores.get('valor','?')} | "
-            f"{datetime.now().strftime('%d/%m as %H:%M')} | "
-            f"{valores.get('banco','?')}")
+class IMAPCache:
+    """Cache persistente em disco + memória, incremental por UID."""
+
+    def __init__(self, user_id: int):
+        self.user_id = user_id
+        self.path = os.path.join(CACHE_DIR, f"user_{user_id}.json")
+        self.data: dict = {}   # uid -> {norm, valor, banco, ts}
+        self._load()
+
+    def _load(self):
+        try:
+            if os.path.exists(self.path):
+                with open(self.path, "r", encoding="utf-8") as f:
+                    self.data = json.load(f)
+                logger.info(f"User {self.user_id}: cache carregado ({len(self.data)} entradas)")
+        except Exception:
+            logger.warning(f"User {self.user_id}: cache corrompido, recriando")
+            self.data = {}
+
+    def _save(self):
+        try:
+            with open(self.path, "w", encoding="utf-8") as f:
+                json.dump(self.data, f, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"User {self.user_id}: erro ao salvar cache: {e}")
+
+    def add(self, uid: str, content: str, subject: str) -> bool:
+        """Adiciona email ao cache. Retorna True se era novo."""
+        if uid in self.data:
+            return False
+        self.data[uid] = {
+            "norm": _normalize(content),
+            "valor": _extrair_valor(content),
+            "banco": _detectar_banco(content),
+            "subject": (subject or "")[:100],
+            "ts": datetime.now().isoformat()
+        }
+        return True
+
+    def cleanup(self):
+        """Remove entradas com mais de 3 dias."""
+        cutoff = (datetime.now() - timedelta(days=3)).isoformat()
+        antes = len(self.data)
+        self.data = {k: v for k, v in self.data.items() if v.get("ts", "") >= cutoff}
+        removidos = antes - len(self.data)
+        if removidos:
+            logger.info(f"User {self.user_id}: {removidos} entradas antigas removidas do cache")
+
+    def search(self, nome: str) -> Optional[dict]:
+        nome_norm = _normalize(nome)
+        partes = nome_norm.split()
+        for entry in self.data.values():
+            if _match_nome(entry["norm"], partes):
+                return {"valor": entry["valor"], "banco": entry["banco"]}
+        return None
+
+    @property
+    def total(self) -> int:
+        return len(self.data)
+
+    @property
+    def uids(self) -> set:
+        return set(self.data.keys())
 
 
 class OptimizedIMAPCache:
     def __init__(self, user_id: int, config: dict):
         self.user_id = user_id
         self.config = config
-        self.emails: dict[str, str] = {}
-        self.valores: dict[str, dict] = {}
-        self.uids_vistos: set = set()
-        self.lock = threading.RLock()
+        self.cache = IMAPCache(user_id)
         self._stop = False
         self._log = None
-        self.stats = type('S', (), {'total_emails': 0, 'cache_hits': 0, 'cache_misses': 0})()
+        self._lock = threading.Lock()
+        self.stats = type('S', (), {
+            'total_emails': self.cache.total,
+            'cache_hits': 0,
+            'cache_misses': 0
+        })()
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
 
@@ -116,39 +165,42 @@ class OptimizedIMAPCache:
             self._log(self.user_id, msg)
         logger.info(f"User {self.user_id}: {msg}")
 
-    def _fetch_emails(self, mb) -> list:
-        """Busca emails dos últimos 2 dias em todas as pastas relevantes."""
-        pastas = ["[Gmail]/All Mail", "INBOX"]
+    def _sincronizar(self, mb) -> int:
+        """Busca apenas emails novos comparando UIDs."""
         since = date.today() - timedelta(days=1)
+        pastas = ["[Gmail]/All Mail", "INBOX"]
+        msgs = []
         for pasta in pastas:
             try:
                 mb.folder.set(pasta)
-                msgs = list(mb.fetch(AND(date_gte=since), mark_seen=False, limit=300))
-                self._log_msg(f"\U0001f4c2 '{pasta}': {len(msgs)} emails")
-                return msgs
+                msgs = list(mb.fetch(AND(date_gte=since), mark_seen=False, limit=500))
+                break
             except Exception as e:
                 self._log_msg(f"\u26a0\ufe0f '{pasta}' falhou: {type(e).__name__}: {str(e)[:80]}")
                 continue
-        return []
 
-    def _adicionar_email(self, msg, apenas_novo: bool = False) -> bool:
-        uid = str(msg.uid) if msg.uid else None
-        if apenas_novo and uid and uid in self.uids_vistos:
-            return False
-        content = f"{msg.subject or ''} {msg.text or ''} {msg.html or ''}"
-        key = uid or hashlib.md5(content.encode()).hexdigest()
-        norm = _normalize(content)
-        valores = {
-            "valor": _extrair_valor(content),
-            "banco": _detectar_banco(content)
-        }
-        with self.lock:
-            self.emails[key] = norm
-            self.valores[key] = valores
-            if uid:
-                self.uids_vistos.add(uid)
-            self.stats.total_emails = len(self.emails)
-        return True
+        novos = 0
+        for msg in msgs:
+            uid = str(msg.uid) if msg.uid else None
+            if not uid or uid in self.cache.uids:
+                continue
+            content = f"{msg.subject or ''} {msg.text or ''} {msg.html or ''}"
+            if self.cache.add(uid, content, msg.subject):
+                novos += 1
+                entry = self.cache.data[uid]
+                nome_match = NOME_RE.search(msg.subject or '') or NOME_RE.search(content[:500])
+                nome = nome_match.group(1).strip() if nome_match else 'Desconhecido'
+                self._log_msg(
+                    f"\U0001f4e9 Novo e-mail: {msg.subject or 'sem assunto'} | "
+                    f"{nome} | R$ {entry['valor']} | {entry['banco']}"
+                )
+
+        if novos:
+            self.cache.cleanup()
+            self.cache._save()
+            self.stats.total_emails = self.cache.total
+
+        return novos
 
     def _loop(self):
         while not self._stop:
@@ -157,52 +209,42 @@ class OptimizedIMAPCache:
                 mb.login(self.config["email_user"], self.config["email_pass"], initial_folder="INBOX")
                 self._log_msg("\u2705 Login IMAP OK")
 
-                msgs = self._fetch_emails(mb)
-                for msg in msgs:
-                    self._adicionar_email(msg)
-                self._log_msg(f"\U0001f4e7 Cache pronto: {self.stats.total_emails} emails")
+                # Sincronização inicial
+                novos = self._sincronizar(mb)
+                self._log_msg(f"\U0001f4e7 Cache pronto: {self.cache.total} emails ({novos} novos)")
 
+                # Loop incremental
                 while not self._stop:
-                    time.sleep(30)
+                    time.sleep(60)
                     if self._stop:
                         break
                     try:
-                        novos_msgs = self._fetch_emails(mb)
-                        novos = 0
-                        for msg in novos_msgs:
-                            if self._adicionar_email(msg, apenas_novo=True):
-                                novos += 1
-                                content = f"{msg.subject or ''} {msg.text or ''} {msg.html or ''}"
-                                uid = str(msg.uid) if msg.uid else None
-                                key = uid or hashlib.md5(content.encode()).hexdigest()
-                                self._log_msg(_log_transferencia(content, msg.subject, self.valores.get(key, {})))
+                        novos = self._sincronizar(mb)
                         if novos:
-                            self._log_msg(f"\u2705 {novos} nova(s) transferencia(s) no cache")
+                            self._log_msg(f"\u2705 {novos} nova(s) transferencia(s) adicionada(s)")
                     except Exception:
-                        break
+                        break  # reconecta
 
                 mb.logout()
             except Exception as e:
-                self._log_msg(f"\u26a0\ufe0f IMAP erro: {type(e).__name__}: {str(e)[:150]}")
+                self._log_msg(f"\u26a0\ufe0f ERRO IMAP: {type(e).__name__}: {str(e)[:150]} — reconectando em 10s...")
                 time.sleep(10)
 
     def search_payment(self, nome: str) -> Optional[dict]:
-        nome_norm = _normalize(nome)
-        partes = nome_norm.split()
-        with self.lock:
-            for key, content_norm in self.emails.items():
-                if _match_nome(content_norm, partes):
-                    self.stats.cache_hits += 1
-                    return self.valores[key]
-        self.stats.cache_misses += 1
-        return None
+        with self._lock:
+            resultado = self.cache.search(nome)
+        if resultado:
+            self.stats.cache_hits += 1
+        else:
+            self.stats.cache_misses += 1
+        return resultado
 
     def search_payment_optimized(self, nome: str) -> Optional[dict]:
         return self.search_payment(nome)
 
     def get_stats(self) -> dict:
         return {
-            "total_emails": self.stats.total_emails,
+            "total_emails": self.cache.total,
             "hit_rate": "N/A",
             "last_update": None,
             "update_duration": "0s"
