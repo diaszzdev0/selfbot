@@ -15,63 +15,49 @@ CACHE_DIR = os.path.join(os.path.dirname(__file__), "imap_cache")
 os.makedirs(CACHE_DIR, exist_ok=True)
 
 BANCOS_PATTERNS = {
-    "Nubank":        [r"nubank"],
-    "PicPay":        [r"picpay"],
-    "Itau":          [r"ita[uú]"],
-    "Bradesco":      [r"bradesco"],
-    "Santander":     [r"santander"],
-    "Caixa":         [r"caixa"],
-    "Inter":         [r"banco\s*inter|bancointer"],
-    "Mercado Pago":  [r"mercado\s*pago"],
-    "PagSeguro":     [r"pagseguro|pagbank"],
-    "C6 Bank":       [r"c6\s*bank"],
-    "Next":          [r"\bnext\b"],
-    "Neon":          [r"\bneon\b"],
-    "BTG":           [r"\bbtg\b"],
-    "Stone":         [r"\bstone\b"],
-    "Sicoob":        [r"sicoob"],
-    "Sicredi":       [r"sicredi"],
+    "Nubank":          [r"nubank"],
+    "PicPay":          [r"picpay"],
+    "Itau":            [r"ita[u\u00fa]"],
+    "Bradesco":        [r"bradesco"],
+    "Santander":       [r"santander"],
+    "Caixa":           [r"caixa", r"caixa\s*econ\u00f4mica", r"cef\.gov\.br",
+                        r"cr\u00e9dito\s*recebido", r"pix\s*recebido",
+                        r"transfer\u00eancia\s*realizada\s*via\s*pix"],
+    "Inter":           [r"banco\s*inter|bancointer"],
+    "Mercado Pago":    [r"mercado\s*pago"],
+    "PagSeguro":       [r"pagseguro|pagbank"],
+    "C6 Bank":         [r"c6\s*bank"],
+    "Next":            [r"\bnext\b"],
+    "Neon":            [r"\bneon\b"],
+    "BTG":             [r"\bbtg\b"],
+    "Stone":           [r"\bstone\b"],
+    "Sicoob":          [r"sicoob"],
+    "Sicredi":         [r"sicredi"],
     "Banco do Brasil": [r"banco\s*do\s*brasil"],
-    "Original":      [r"banco\s*original"],
-    "Pan":           [r"banco\s*pan"],
-    "Agibank":       [r"agibank"],
-    "Will Bank":     [r"will\s*bank"],
-    "XP":            [r"\bxp\b.*invest"],
+    "Original":        [r"banco\s*original"],
+    "Pan":             [r"banco\s*pan"],
+    "Agibank":         [r"agibank"],
+    "Will Bank":       [r"will\s*bank"],
+    "XP":              [r"\bxp\b.*invest"],
 }
 
 VALOR_RE = re.compile(
-    r"R\$\s*(\d{1,3}(?:\.\d{3})*(?:,\d{2})?|\d+(?:,\d{2})?)"
+    r"valor\s*creditado\s*[:\s]*R\$\s*([\d.,]+)"
+    r"|valor\s*[:\-]\s*R\$\s*([\d.,]+)"
+    r"|R\$\s*(\d{1,3}(?:\.\d{3})*(?:,\d{2})?|\d+(?:,\d{2})?)"
     r"|(\d{1,3}(?:\.\d{3})*,\d{2})\s*reais",
     re.IGNORECASE
 )
 
-NOME_RE = re.compile(
-    r'(?:transfer[e\u00ea]ncia\s+(?:de|do|da)|recebeu?\s+de|pix\s+de|de)\s+'
-    r'([A-Z][a-zA-Z\u00C0-\u00FF]{1,}(?:\s+[A-Za-z\u00C0-\u00FF]{2,})+)',
-    re.IGNORECASE
-)
-
-
-def _extrair_pagador(content: str) -> str:
-    corpo = re.sub(r'<[^>]+>', ' ', content)
-    corpo = re.sub(r'&[a-zA-Z0-9#]+;', ' ', corpo)
-    corpo = re.sub(r'\s+', ' ', corpo)
-    padroes = [
-        r'transfer[i\u00ea]ncia\s+de\s+([A-Z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\-\'\s]{2,60})',
-        r'recebido\s+de\s+([A-Z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\-\'\s]{2,60})',
-        r'Pix\s+de\s+([A-Z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\-\'\s]{2,60})',
-        r'\bde\s+([A-Z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\-\'\s]{2,60})',
-        r'por\s+([A-Z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\-\'\s]{2,60})',
-    ]
-    for padrao in padroes:
-        m = re.search(padrao, corpo, flags=re.IGNORECASE)
-        if m:
-            nome = m.group(1).strip()
-            palavras = nome.split()
-            if 2 <= len(palavras) <= 5:
-                nome = re.sub(r'[^A-Za-z\u00C0-\u00FF\s\-]', '', nome)
-                return nome.title()
-    return 'Desconhecido'
+NOME_PADROES = [
+    r"transfer[i\u00ea]ncia\s+de\s+([A-Z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\-\'\s]{2,60})",
+    r"recebido\s+de\s+([A-Z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\-\'\s]{2,60})",
+    r"pix\s+de\s+([A-Z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\-\'\s]{2,60})",
+    r"origem\s*[:\s]+([A-Z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\-\'\s]{2,60})",
+    r"favorecido\s*[:\s]+([A-Z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\-\'\s]{2,60})",
+    r"\bde\s+([A-Z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\-\'\s]{2,60})",
+    r"por\s+([A-Z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\-\'\s]{2,60})",
+]
 
 
 def _normalize(text: str) -> str:
@@ -85,14 +71,31 @@ def _detectar_banco(content: str) -> str:
     cl = content.lower()
     for banco, patterns in BANCOS_PATTERNS.items():
         for p in patterns:
-            if re.search(p, cl):
+            if re.search(p, cl, re.IGNORECASE):
                 return banco
     return "Desconhecido"
 
 
 def _extrair_valor(content: str) -> str:
     m = VALOR_RE.search(content)
-    return (m.group(1) or m.group(2)) if m else "N/A"
+    if m:
+        return next((g for g in m.groups() if g), "N/A")
+    return "N/A"
+
+
+def _extrair_pagador(content: str) -> str:
+    corpo = re.sub(r'<[^>]+>', ' ', content)
+    corpo = re.sub(r'&[a-zA-Z0-9#]+;', ' ', corpo)
+    corpo = re.sub(r'\s+', ' ', corpo)
+    for padrao in NOME_PADROES:
+        m = re.search(padrao, corpo, flags=re.IGNORECASE)
+        if m:
+            nome = m.group(1).strip()
+            palavras = nome.split()
+            if 2 <= len(palavras) <= 5:
+                nome = re.sub(r'[^A-Za-z\u00C0-\u00FF\s\-]', '', nome)
+                return nome.title()
+    return "Desconhecido"
 
 
 def _match_nome(content_norm: str, partes: list) -> bool:
@@ -102,12 +105,10 @@ def _match_nome(content_norm: str, partes: list) -> bool:
 
 
 class IMAPCache:
-    """Cache persistente em disco + memória, incremental por UID."""
-
     def __init__(self, user_id: int):
         self.user_id = user_id
         self.path = os.path.join(CACHE_DIR, f"user_{user_id}.json")
-        self.data: dict = {}   # uid -> {norm, valor, banco, ts}
+        self.data: dict = {}
         self._load()
 
     def _load(self):
@@ -128,7 +129,6 @@ class IMAPCache:
             logger.error(f"User {self.user_id}: erro ao salvar cache: {e}")
 
     def add(self, uid: str, content: str, subject: str) -> bool:
-        """Adiciona email ao cache. Retorna True se era novo."""
         if uid in self.data:
             return False
         self.data[uid] = {
@@ -141,13 +141,12 @@ class IMAPCache:
         return True
 
     def cleanup(self):
-        """Remove entradas com mais de 3 dias."""
         cutoff = (datetime.now() - timedelta(days=3)).isoformat()
         antes = len(self.data)
         self.data = {k: v for k, v in self.data.items() if v.get("ts", "") >= cutoff}
         removidos = antes - len(self.data)
         if removidos:
-            logger.info(f"User {self.user_id}: {removidos} entradas antigas removidas do cache")
+            logger.info(f"User {self.user_id}: {removidos} entradas antigas removidas")
 
     def search(self, nome: str) -> Optional[dict]:
         nome_norm = _normalize(nome)
@@ -188,7 +187,6 @@ class OptimizedIMAPCache:
         logger.info(f"User {self.user_id}: {msg}")
 
     def _sincronizar(self, mb) -> int:
-        """Busca apenas emails novos comparando UIDs."""
         since = date.today() - timedelta(days=1)
         pastas = ["[Gmail]/All Mail", "INBOX"]
         msgs = []
@@ -209,7 +207,8 @@ class OptimizedIMAPCache:
             content = f"{msg.subject or ''} {msg.text or ''} {msg.html or ''}"
             if self.cache.add(uid, content, msg.subject):
                 novos += 1
-                nome = _extrair_pagador(f"{msg.subject or ''} {msg.text or ''} {msg.html or ''}")
+                entry = self.cache.data[uid]
+                nome = _extrair_pagador(content)
                 self._log_msg(
                     f"\U0001f4e9 Novo e-mail: {msg.subject or 'sem assunto'} | "
                     f"{nome} | R$ {entry['valor']} | {entry['banco']}"
@@ -229,11 +228,9 @@ class OptimizedIMAPCache:
                 mb.login(self.config["email_user"], self.config["email_pass"], initial_folder="INBOX")
                 self._log_msg("\u2705 Login IMAP OK")
 
-                # Sincronização inicial
                 novos = self._sincronizar(mb)
                 self._log_msg(f"\U0001f4e7 Cache pronto: {self.cache.total} emails ({novos} novos)")
 
-                # Loop incremental
                 while not self._stop:
                     time.sleep(60)
                     if self._stop:
@@ -243,11 +240,11 @@ class OptimizedIMAPCache:
                         if novos:
                             self._log_msg(f"\u2705 {novos} nova(s) transferencia(s) adicionada(s)")
                     except Exception:
-                        break  # reconecta
+                        break
 
                 mb.logout()
             except Exception as e:
-                self._log_msg(f"\u26a0\ufe0f ERRO IMAP: {type(e).__name__}: {str(e)[:150]} — reconectando em 10s...")
+                self._log_msg(f"\u26a0\ufe0f ERRO IMAP: {type(e).__name__}: {str(e)[:150]} \u2014 reconectando em 10s...")
                 time.sleep(10)
 
     def search_payment(self, nome: str) -> Optional[dict]:
