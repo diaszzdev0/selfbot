@@ -130,9 +130,11 @@ class IMAPCache:
             if os.path.exists(self.path):
                 with open(self.path, "r", encoding="utf-8") as f:
                     self.data = json.load(f)
+                # Limpa entradas antigas ao carregar
+                self.cleanup()
                 logger.info(f"User {self.user_id}: cache carregado ({len(self.data)} entradas)")
         except Exception:
-            logger.warning(f"User {self.user_id}: cache corrompido, recriando")
+            logger.warning(f"User {self.user_id}: ⚠️ Cache corrompido, recriando")
             self.data = {}
 
     def _save(self):

@@ -1139,6 +1139,20 @@ def testar_imap(user_id: int):
         return jsonify({"status": "erro", "email": cfg.email_user, "servidor": cfg.imap_server, "erro": str(e)})
 
 
+@app.route("/admin/limpar_cache_imap/<int:user_id>")
+@admin_required
+def limpar_cache_imap(user_id: int):
+    import glob
+    cache_dir = os.path.join(os.path.dirname(__file__), "imap_cache")
+    for f in glob.glob(os.path.join(cache_dir, f"user_{user_id}.json")):
+        os.remove(f)
+    from imap_optimizer import imap_manager
+    imap_manager.stop_cache(user_id)
+    session["msg"] = f"Cache IMAP do user {user_id} limpo!"
+    session["msg_tipo"] = "success"
+    return redirect(url_for("admin"))
+
+
 @app.route("/admin/restart_bot/<int:user_id>")
 @admin_required
 def restart_bot(user_id: int):
