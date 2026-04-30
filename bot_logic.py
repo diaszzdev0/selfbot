@@ -657,7 +657,7 @@ def run_selfbot(config: dict, user_id: int):
             await message.reply(
                 f"**Pagamento confirmado** ({resultado['banco']}) para {nome_busca}!\n"
                 f"Valor: {resultado['valor']} (BRL)\n"
-                f"ID: {random.randint(100000, 999999)}"
+                f"ID: {random.randint(1000, 9999)}"
             )
             pagamentos_por_thread[channel.id] = pagamentos_por_thread.get(channel.id, 0) + 1
             log_msg(user_id, f"💰 Pagamentos: {pagamentos_por_thread[channel.id]}/2")
