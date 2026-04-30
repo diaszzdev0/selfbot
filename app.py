@@ -290,7 +290,27 @@ def cliente_restart_bot(user_id: int):
     return _render_cliente(user, cfg, ativo, "Bot reiniciado com sucesso!", "success")
 
 
-@app.route("/cliente/api_saldo")
+@app.route("/cliente/debug_imap")
+@login_required
+def cliente_debug_imap():
+    from imap_optimizer import imap_manager
+    user_id = session["cliente_id"]
+    if user_id not in imap_manager.caches:
+        return jsonify({"erro": "Cache nao iniciado"})
+    cache = imap_manager.caches[user_id].cache
+    # Retorna os primeiros 5 emails do cache (trecho do texto normalizado)
+    resultado = []
+    for uid, entry in list(cache.data.items())[:5]:
+        resultado.append({
+            "uid": uid,
+            "banco": entry.get("banco"),
+            "valor": entry.get("valor"),
+            "subject": entry.get("subject"),
+            "norm_trecho": entry.get("norm", "")[:300]
+        })
+    return jsonify({"total": cache.total, "emails": resultado})
+
+
 @login_required
 def cliente_api_saldo():
     bs = _get_bot_status_cliente(session["cliente_id"])
