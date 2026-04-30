@@ -206,12 +206,11 @@ class IMAPCache:
     def search(self, nome: str) -> Optional[dict]:
         nome_norm = _normalize(nome)
         partes = nome_norm.split()
-        cutoff = (datetime.utcnow() - timedelta(hours=1)).isoformat()
+        # Busca em todos os emails nao usados (sem restricao de janela)
+        # ordenado do mais recente pro mais antigo
         matches = []
         for uid, entry in self.data.items():
             if entry.get("usado"):
-                continue
-            if entry.get("ts", "") < cutoff:
                 continue
             if _match_nome(entry["norm"], partes):
                 matches.append((entry.get("ts", ""), uid, entry))
@@ -226,16 +225,13 @@ class IMAPCache:
     def search_debug(self, nome: str) -> list:
         nome_norm = _normalize(nome)
         partes = [p for p in nome_norm.split() if len(p) >= 3]
-        cutoff = (datetime.utcnow() - timedelta(hours=1)).isoformat()
         trechos = []
         for uid, entry in list(self.data.items()):
-            if entry.get("ts", "") < cutoff:
-                continue
             for parte in partes:
                 idx = entry["norm"].find(parte)
                 if idx != -1:
                     trecho = entry["norm"][max(0, idx-30):idx+60]
-                    trechos.append(f"[{entry['banco']}|{entry['ts'][:16]}] ...{trecho}...")
+                    trechos.append(f"[{entry['banco']}|usado={entry.get('usado')}|ts={entry['ts'][:16]}] ...{trecho}...")
                     break
         return trechos[:5]
 
