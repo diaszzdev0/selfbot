@@ -135,11 +135,13 @@ class IMAPCache:
             if os.path.exists(self.path):
                 with open(self.path, "r", encoding="utf-8") as f:
                     self.data = json.load(f)
-                # Limpa entradas antigas ao carregar
+                for uid in self.data:
+                    self.data[uid].setdefault("usado", False)
+                    self.data[uid].setdefault("ts", "")
                 self.cleanup()
                 logger.info(f"User {self.user_id}: cache carregado ({len(self.data)} entradas)")
         except Exception:
-            logger.warning(f"User {self.user_id}: ⚠️ Cache corrompido, recriando")
+            logger.warning(f"User {self.user_id}: cache corrompido, recriando")
             self.data = {}
 
     def _save(self):
@@ -149,20 +151,23 @@ class IMAPCache:
         except Exception as e:
             logger.error(f"User {self.user_id}: erro ao salvar cache: {e}")
 
-    def add(self, uid: str, content: str, subject: str) -> bool:
+    def add(self, uid: str, content: str, subject: str, date_obj=None) -> bool:
         if uid in self.data:
             return False
+        # Usa a data real do email, nao a data de entrada no cache
+        ts = date_obj.isoformat() if date_obj else datetime.now().isoformat()
         self.data[uid] = {
             "norm": _normalize(content),
             "valor": _extrair_valor(content),
             "banco": _detectar_banco(content),
             "subject": (subject or "")[:100],
-            "ts": datetime.now().isoformat()
+            "ts": ts,
+            "usado": False
         }
         return True
 
     def cleanup(self):
-        cutoff = (datetime.now() - timedelta(days=3)).isoformat()
+        cutoff = (datetime.now() - timedelta(days=1)).isoformat()
         antes = len(self.data)
         self.data = {k: v for k, v in self.data.items() if v.get("ts", "") >= cutoff}
         removidos = antes - len(self.data)
@@ -266,7 +271,8 @@ class OptimizedIMAPCache:
         for msg in msgs_novas:
             uid = str(msg.uid)
             content = f"{msg.subject or ''} {msg.text or ''} {msg.html or ''}"
-            if self.cache.add(uid, content, msg.subject):
+            date_obj = msg.date if hasattr(msg, 'date') and msg.date else None
+            if self.cache.add(uid, content, msg.subject, date_obj):
                 novos += 1
                 entry = self.cache.data[uid]
                 nome = _extrair_pagador(content)
