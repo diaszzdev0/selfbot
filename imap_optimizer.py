@@ -46,10 +46,32 @@ VALOR_RE = re.compile(
 )
 
 NOME_RE = re.compile(
-    r'(?:transfer[eê]ncia\s+(?:de|do|da)|recebeu?\s+de|pix\s+de|de)\s+'
+    r'(?:transfer[e\u00ea]ncia\s+(?:de|do|da)|recebeu?\s+de|pix\s+de|de)\s+'
     r'([A-Z][a-zA-Z\u00C0-\u00FF]{1,}(?:\s+[A-Za-z\u00C0-\u00FF]{2,})+)',
     re.IGNORECASE
 )
+
+
+def _extrair_pagador(content: str) -> str:
+    corpo = re.sub(r'<[^>]+>', ' ', content)
+    corpo = re.sub(r'&[a-zA-Z0-9#]+;', ' ', corpo)
+    corpo = re.sub(r'\s+', ' ', corpo)
+    padroes = [
+        r'transfer[i\u00ea]ncia\s+de\s+([A-Z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\-\'\s]{2,60})',
+        r'recebido\s+de\s+([A-Z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\-\'\s]{2,60})',
+        r'Pix\s+de\s+([A-Z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\-\'\s]{2,60})',
+        r'\bde\s+([A-Z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\-\'\s]{2,60})',
+        r'por\s+([A-Z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\-\'\s]{2,60})',
+    ]
+    for padrao in padroes:
+        m = re.search(padrao, corpo, flags=re.IGNORECASE)
+        if m:
+            nome = m.group(1).strip()
+            palavras = nome.split()
+            if 2 <= len(palavras) <= 5:
+                nome = re.sub(r'[^A-Za-z\u00C0-\u00FF\s\-]', '', nome)
+                return nome.title()
+    return 'Desconhecido'
 
 
 def _normalize(text: str) -> str:
@@ -187,9 +209,7 @@ class OptimizedIMAPCache:
             content = f"{msg.subject or ''} {msg.text or ''} {msg.html or ''}"
             if self.cache.add(uid, content, msg.subject):
                 novos += 1
-                entry = self.cache.data[uid]
-                nome_match = NOME_RE.search(msg.subject or '') or NOME_RE.search(content[:500])
-                nome = nome_match.group(1).strip() if nome_match else 'Desconhecido'
+                nome = _extrair_pagador(f"{msg.subject or ''} {msg.text or ''} {msg.html or ''}")
                 self._log_msg(
                     f"\U0001f4e9 Novo e-mail: {msg.subject or 'sem assunto'} | "
                     f"{nome} | R$ {entry['valor']} | {entry['banco']}"
