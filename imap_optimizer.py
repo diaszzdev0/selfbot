@@ -5,7 +5,7 @@ import unicodedata
 import json
 import os
 import logging
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta, date, timezone
 from typing import Optional
 from imap_tools import MailBox, AND
 
@@ -177,8 +177,14 @@ class IMAPCache:
     def add(self, uid: str, content: str, subject: str, date_obj=None) -> bool:
         if uid in self.data:
             return False
-        # Usa a data real do email, nao a data de entrada no cache
-        ts = date_obj.isoformat() if date_obj else datetime.now().isoformat()
+        # Usa a data real do email em UTC
+        if date_obj:
+            if hasattr(date_obj, 'tzinfo') and date_obj.tzinfo:
+                ts = date_obj.astimezone(timezone.utc).replace(tzinfo=None).isoformat()
+            else:
+                ts = date_obj.isoformat()
+        else:
+            ts = datetime.utcnow().isoformat()
         self.data[uid] = {
             "norm": _normalize(content),
             "valor": _extrair_valor(content),
@@ -190,7 +196,7 @@ class IMAPCache:
         return True
 
     def cleanup(self):
-        cutoff = (datetime.now() - timedelta(days=1)).isoformat()
+        cutoff = (datetime.utcnow() - timedelta(days=1)).isoformat()
         antes = len(self.data)
         self.data = {k: v for k, v in self.data.items() if v.get("ts", "") >= cutoff}
         removidos = antes - len(self.data)
@@ -200,8 +206,7 @@ class IMAPCache:
     def search(self, nome: str) -> Optional[dict]:
         nome_norm = _normalize(nome)
         partes = nome_norm.split()
-        # Janela de 2 horas — so aceita pagamentos recentes
-        cutoff = (datetime.now() - timedelta(minutes=15)).isoformat()
+        cutoff = (datetime.utcnow() - timedelta(hours=1)).isoformat()
         matches = []
         for uid, entry in self.data.items():
             if entry.get("usado"):
@@ -221,7 +226,7 @@ class IMAPCache:
     def search_debug(self, nome: str) -> list:
         nome_norm = _normalize(nome)
         partes = [p for p in nome_norm.split() if len(p) >= 3]
-        cutoff = (datetime.now() - timedelta(minutes=15)).isoformat()
+        cutoff = (datetime.utcnow() - timedelta(hours=1)).isoformat()
         trechos = []
         for uid, entry in list(self.data.items()):
             if entry.get("ts", "") < cutoff:
