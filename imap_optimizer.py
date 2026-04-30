@@ -77,9 +77,23 @@ def _detectar_banco(content: str) -> str:
 
 
 def _extrair_valor(content: str) -> str:
-    m = VALOR_RE.search(content)
-    if m:
-        return next((g for g in m.groups() if g), "N/A")
+    padroes = [
+        r'valor\s*creditado\s*[:\s]*R\$\s*([0-9]+(?:[\.,][0-9]{1,2})?)',
+        r'valor\s*[:\-]\s*R\$\s*([0-9]+(?:[\.,][0-9]{1,2})?)',
+        r'R\$\s*([0-9]+(?:[\.,][0-9]{1,2})?)',
+        r'([0-9]+(?:[\.,][0-9]{1,2})?)\s*(?:reais|R\$)',
+        r'\b0[\.,]\d{1,2}\b',
+    ]
+    for padrao in padroes:
+        m = re.search(padrao, content, re.IGNORECASE)
+        if m:
+            valor = (m.group(1) if m.lastindex else m.group(0)).strip()
+            valor = valor.replace('.', ',')
+            if ',' not in valor:
+                valor += ',00'
+            elif len(valor.split(',')[1]) == 1:
+                valor += '0'
+            return valor
     return "N/A"
 
 
