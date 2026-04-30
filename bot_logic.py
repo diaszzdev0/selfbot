@@ -654,28 +654,10 @@ def run_selfbot(config: dict, user_id: int):
         pg_em_processamento.discard(chave_pg)
 
         if resultado:
-            # verifica se pagamento ja foi usado nos ultimos 2 minutos (otimizado)
-            usados = _pagamentos_usados.setdefault(user_id, {})
-            chave_pag = _normalizar(nome_busca)
-            agora = datetime.now()
-            if chave_pag in usados:
-                segundos = (agora - usados[chave_pag]).total_seconds()
-                if segundos < 120:  # 2 minutos
-                    await message.reply("⚠️ Atenção esse pagamento já foi utilizado em outro tópico, faça um pagamento e tente novamente!")
-                    log_msg(user_id, f"⚠️ Pagamento duplicado bloqueado: {nome_busca} ({int(segundos)}s atras)")
-                    return
-            # registra uso
-            usados[chave_pag] = agora
-            
-            # Limpa pagamentos antigos (otimização de memória)
-            cutoff = agora - timedelta(minutes=10)
-            usados_limpos = {k: v for k, v in usados.items() if v > cutoff}
-            _pagamentos_usados[user_id] = usados_limpos
-
             await message.reply(
                 f"**Pagamento confirmado** ({resultado['banco']}) para {nome_busca}!\n"
                 f"Valor: {resultado['valor']} (BRL)\n"
-                f"ID: {random.randint(100, 999)}"
+                f"ID: {random.randint(100000, 999999)}"
             )
             pagamentos_por_thread[channel.id] = pagamentos_por_thread.get(channel.id, 0) + 1
             log_msg(user_id, f"💰 Pagamentos: {pagamentos_por_thread[channel.id]}/2")
