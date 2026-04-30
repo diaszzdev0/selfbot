@@ -50,13 +50,14 @@ VALOR_RE = re.compile(
 )
 
 NOME_PADROES = [
-    r"transfer[i\u00ea]ncia\s+de\s+([A-Z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\-\'\s]{2,60})",
-    r"recebido\s+de\s+([A-Z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\-\'\s]{2,60})",
-    r"pix\s+de\s+([A-Z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\-\'\s]{2,60})",
-    r"origem\s*[:\s]+([A-Z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\-\'\s]{2,60})",
-    r"favorecido\s*[:\s]+([A-Z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\-\'\s]{2,60})",
-    r"\bde\s+([A-Z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\-\'\s]{2,60})",
-    r"por\s+([A-Z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\-\'\s]{2,60})",
+    r"transfer[e\u00ea]ncia\s+de\s+([A-Za-z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\-\'\s]{2,60})",
+    r"voc[e\u00ea]\s+recebeu.*?de\s+([A-Za-z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\-\'\s]{2,60})",
+    r"pix\s+de\s+([A-Za-z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\-\'\s]{2,60})",
+    r"recebido\s+de\s+([A-Za-z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\-\'\s]{2,60})",
+    r"origem\s*[:\s]+([A-Za-z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\-\'\s]{2,60})",
+    r"favorecido\s*[:\s]+([A-Za-z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\-\'\s]{2,60})",
+    r"pagador\s*[:\s]+([A-Za-z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\-\'\s]{2,60})",
+    r"remetente\s*[:\s]+([A-Za-z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\-\'\s]{2,60})",
 ]
 
 
@@ -98,6 +99,7 @@ def _extrair_valor(content: str) -> str:
 
 
 def _extrair_pagador(content: str) -> str:
+    # Limpa HTML mas mantém o texto original com acentos e maiusculas
     corpo = re.sub(r'<[^>]+>', ' ', content)
     corpo = re.sub(r'&[a-zA-Z0-9#]+;', ' ', corpo)
     corpo = re.sub(r'\s+', ' ', corpo)
@@ -105,10 +107,13 @@ def _extrair_pagador(content: str) -> str:
         m = re.search(padrao, corpo, flags=re.IGNORECASE)
         if m:
             nome = m.group(1).strip()
+            # Remove lixo no final (ex: "e o valor", "via Pix", pontuacao)
+            nome = re.split(r'\s+e\s+o\s+|\s+via\s+|\s+no\s+valor|[,;\.]', nome, flags=re.IGNORECASE)[0].strip()
             palavras = nome.split()
-            if 2 <= len(palavras) <= 5:
-                nome = re.sub(r'[^A-Za-z\u00C0-\u00FF\s\-]', '', nome)
-                return nome.title()
+            # Filtra palavras validas (so letras, minimo 2 chars)
+            palavras = [p for p in palavras if re.match(r'^[A-Za-z\u00C0-\u00FF\-]+$', p) and len(p) >= 2]
+            if len(palavras) >= 2:
+                return ' '.join(palavras).title()
     return "Desconhecido"
 
 
