@@ -172,9 +172,15 @@ class IMAPCache:
     def search(self, nome: str) -> Optional[dict]:
         nome_norm = _normalize(nome)
         partes = nome_norm.split()
-        for entry in self.data.values():
+        # Coleta todos os matches e retorna o mais recente
+        matches = []
+        for uid, entry in self.data.items():
             if _match_nome(entry["norm"], partes):
-                return {"valor": entry["valor"], "banco": entry["banco"]}
+                matches.append((entry.get("ts", ""), entry))
+        if matches:
+            matches.sort(key=lambda x: x[0], reverse=True)  # mais recente primeiro
+            entry = matches[0][1]
+            return {"valor": entry["valor"], "banco": entry["banco"]}
         return None
 
     def search_debug(self, nome: str) -> str:
