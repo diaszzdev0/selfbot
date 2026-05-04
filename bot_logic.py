@@ -605,8 +605,8 @@ def run_selfbot(config: dict, user_id: int):
         cmd = conteudo.lower()
 
         if message.author == client.user:
-            if cmd in ("!gn", "!inf", "!normal", "!infinito"):
-                salaid = SALA_INF if cmd in ("!inf", "!infinito") else SALA_GN
+            if cmd in ("!gn", "!gi", "!normal", "!infinito"):
+                salaid = SALA_INF if cmd in ("!gi", "!infinito") else SALA_GN
                 log_msg(user_id, f"Comando {cmd} detectado")
                 msg_req = await channel.send("Criando sala...")
                 await _enviar_sala(channel, salaid)
