@@ -952,6 +952,41 @@ def testar_api_salas():
     return redirect(url_for("admin") + "#salas")
 
 
+@app.route("/admin/debug_imap")
+@admin_required
+def debug_imap_admin():
+    nome = request.args.get("nome", "").strip()
+    if not nome:
+        return jsonify({"error": "Parâmetro 'nome' obrigatório"}), 400
+    
+    try:
+        # Get first user for demo (or param user_id)
+        user = User.query.filter_by(is_admin=False).first()
+        if not user or not user.config:
+            return jsonify({"error": "Nenhum usuário com config"}), 404
+        
+        cache = imap_manager.get_cache(user.id, _config_dict(user.config))
+        resultado = cache.search_payment_optimized(nome)
+        
+        debug = {
+            "nome_pesquisado": nome,
+            "total_emails": cache.stats.total_emails,
+            "resultado": resultado,
+            "trechos_debug": cache.search_debug(nome),
+            "user_demo": user.username
+        }
+        
+        # TEMP mark as used for demo
+        if resultado and 'uid' in resultado:
+            cache.cache.data[resultado['uid']]['usado'] = True
+            cache.cache._save()
+        
+        return jsonify(debug)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+
 @app.route("/admin/adicionar_salas", methods=["POST"])
 @admin_required
 def adicionar_salas():

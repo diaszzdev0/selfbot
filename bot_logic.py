@@ -171,22 +171,52 @@ def _salvar_thread(user_id: int, thread_id: int):
         pass
 
 
-def _buscar_pagamento_otimizado(cfg: dict, nome: str, user_id: int):
+def _buscar_pagamento_otimizado(cfg: dict, nome: str, user_id: int, attempt=1):
     if not nome or not isinstance(nome, str) or len(nome.strip()) < 2:
+        log_msg(user_id, f"❌ Nome inválido: '{nome}' (len={len(nome)})")
         return None
-    nome = nome.strip()
-    log_msg(user_id, f"Buscando: {nome}")
+    
+    nome_strip = nome.strip()
+    log_msg(user_id, f"🔍 Busca #{attempt}: '{nome_strip}'")
+    
     try:
         cache = imap_manager.get_cache(user_id, cfg)
-        log_msg(user_id, f"Cache: {cache.stats.total_emails} emails")
-        resultado = cache.search_payment_optimized(nome)
+        total_emails = cache.stats.total_emails
+        log_msg(user_id, f"📊 Cache: {total_emails} emails totais")
+        
+        resultado = cache.search_payment_optimized(nome_strip)
         if resultado:
-            log_msg(user_id, f"✅ Encontrado: {nome} - {resultado['banco']}")
+            log_msg(user_id, f"✅ MATCH: {nome_strip} | {resultado['banco']} | R${resultado['valor']}")
             return {"valor": str(resultado["valor"])[:20], "banco": str(resultado["banco"])[:50]}
-        log_msg(user_id, f"❌ Não encontrado: {nome}")
+        
+        # Debug detalhado no miss
+        trechos = cache.search_debug(nome_strip)
+        partes = nome_strip.split()
+        partes_sig = [p for p in partes if len(p) >= 4]
+        log_msg(user_id, f"🔎 DEBUG: partes_sig={len(partes_sig)} total={len(partes)}")
+        if trechos:
+            log_msg(user_id, f"📝 TOP 3 trechos próximos:\n" + "\n".join(trechos[:3]))
+        else:
+            log_msg(user_id, f"🚫 NENHUM trecho com partes de '{nome_strip}' achado")
+        
+        log_msg(user_id, f"❌ MISS #{attempt}: {nome_strip} (cache={total_emails})")
+        
+        # Retry logic
+        if attempt < 3:
+            delay = 5 * (2 ** (attempt - 1))  # 5s, 10s, 20s
+            log_msg(user_id, f"🔄 Retry #{attempt+1} em {delay}s...")
+            time.sleep(delay)
+            return _buscar_pagamento_otimizado(cfg, nome_strip, user_id, attempt + 1)
+        
         return None
+        
     except Exception as e:
-        log_msg(user_id, f"Erro busca: {type(e).__name__}: {str(e)[:100]}")
+        log_msg(user_id, f"💥 ERRO busca #{attempt}: {type(e).__name__}: {str(e)[:120]}")
+        if attempt < 3:
+            delay = 5 * (2 ** (attempt - 1))
+            log_msg(user_id, f"🔄 Retry erro em {delay}s...")
+            time.sleep(delay)
+            return _buscar_pagamento_otimizado(cfg, nome, user_id, attempt + 1)
         return None
 
 
@@ -587,10 +617,10 @@ def run_selfbot(config: dict, user_id: int):
             log_msg(user_id, f"🔍 !very: {nome_very}")
             msg_very = await channel.send(f"⏳ Verificando pagamento de **{nome_very}**...")
             try:
-                resultado = await asyncio.wait_for(
-                    asyncio.get_running_loop().run_in_executor(None, _buscar_pagamento_otimizado, config, nome_very, user_id),
-                    timeout=60
-                )
+            resultado = await asyncio.wait_for(
+                asyncio.get_running_loop().run_in_executor(None, lambda: _buscar_pagamento_otimizado(config, nome_very, user_id)),
+                timeout=120  # Increased for retries
+            )
             except asyncio.TimeoutError:
                 resultado = None
             try:
@@ -640,8 +670,8 @@ def run_selfbot(config: dict, user_id: int):
 
         try:
             resultado = await asyncio.wait_for(
-                asyncio.get_running_loop().run_in_executor(None, _buscar_pagamento_otimizado, config, nome_busca, user_id),
-                timeout=90
+                asyncio.get_running_loop().run_in_executor(None, lambda: _buscar_pagamento_otimizado(config, nome_busca, user_id)),
+                timeout=120  # Increased for retries
             )
         except asyncio.TimeoutError:
             log_msg(user_id, "Timeout na busca")

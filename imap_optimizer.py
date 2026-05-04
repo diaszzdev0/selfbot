@@ -195,13 +195,13 @@ class IMAPCache:
         }
         return True
 
-    def cleanup(self):
-        cutoff = (datetime.utcnow() - timedelta(days=1)).isoformat()
+def cleanup(self):
+        cutoff = (datetime.utcnow() - timedelta(days=3)).isoformat()  # Increased to 3 days
         antes = len(self.data)
         self.data = {k: v for k, v in self.data.items() if v.get("ts", "") >= cutoff}
         removidos = antes - len(self.data)
         if removidos:
-            logger.info(f"User {self.user_id}: {removidos} entradas antigas removidas")
+            logger.info(f"User {self.user_id}: {removidos} entradas antigas removidas (3-day window)")
 
     def search(self, nome: str) -> Optional[dict]:
         nome_norm = _normalize(nome)
@@ -266,7 +266,7 @@ class OptimizedIMAPCache:
         logger.info(f"User {self.user_id}: {msg}")
 
     def _sincronizar(self, mb) -> int:
-        since = date.today() - timedelta(days=1)
+        since = date.today() - timedelta(days=3)  # Match 3-day cache
         # Lista todas as pastas e tenta cada uma
         pastas_tentar = ["[Gmail]/All Mail", "INBOX", "[Gmail]/Caixa de entrada", "Caixa de entrada", "All Mail"]
         try:
