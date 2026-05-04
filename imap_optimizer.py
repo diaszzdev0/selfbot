@@ -266,7 +266,7 @@ class OptimizedIMAPCache:
         logger.info(f"User {self.user_id}: {msg}")
 
     def _sincronizar(self, mb=None) -> int:
-        since = date.today() - timedelta(days=3)
+        since = date.today() - timedelta(days=7)
         pastas_tentar = ["[Gmail]/All Mail", "INBOX"]
 
         uids_novos_global = set()
@@ -293,6 +293,7 @@ class OptimizedIMAPCache:
             try:
                 mb.folder.set(pasta)
                 msgs = list(mb.fetch(AND(date_gte=since), mark_seen=False, limit=500))
+                self._log_msg(f"\U0001f4c2 '{pasta}': {len(msgs)} emails encontrados (desde {since})")
                 for msg in msgs:
                     uid = str(msg.uid) if msg.uid else None
                     if uid and uid not in self.cache.uids and uid not in uids_novos_global:
