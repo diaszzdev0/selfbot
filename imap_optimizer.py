@@ -265,22 +265,28 @@ class OptimizedIMAPCache:
             self._log(self.user_id, msg)
         logger.info(f"User {self.user_id}: {msg}")
 
-    def _sincronizar(self, mb) -> int:
-        since = date.today() - timedelta(days=3)  # Match 3-day cache
-        # Lista todas as pastas e tenta cada uma
-        pastas_tentar = ["[Gmail]/All Mail", "INBOX", "[Gmail]/Caixa de entrada", "Caixa de entrada", "All Mail"]
+    def _sincronizar(self, mb=None) -> int:
+        since = date.today() - timedelta(days=3)
+        pastas_tentar = ["[Gmail]/All Mail", "INBOX"]
+
+        uids_novos_global = set()
+        msgs_novas = []
+
+        # Reconecta sempre para evitar conexão morta
+        try:
+            mb = MailBox(self.config["imap_server"], timeout=30)
+            mb.login(self.config["email_user"], self.config["email_pass"], initial_folder="INBOX")
+        except Exception as e:
+            self._log_msg(f"\u26a0\ufe0f Falha ao conectar IMAP: {type(e).__name__}: {str(e)[:80]}")
+            return 0
+
         try:
             todas = [f.name for f in mb.folder.list()]
-            self._log_msg(f"\U0001f4c2 Pastas disponíveis: {todas}")
-            # Adiciona pastas encontradas que não estão na lista padrão
             for p in todas:
                 if p not in pastas_tentar:
                     pastas_tentar.append(p)
         except Exception:
             pass
-
-        uids_novos_global = set()
-        msgs_novas = []
 
         for pasta in pastas_tentar:
             try:
@@ -291,10 +297,15 @@ class OptimizedIMAPCache:
                     if uid and uid not in self.cache.uids and uid not in uids_novos_global:
                         uids_novos_global.add(uid)
                         msgs_novas.append(msg)
-                break  # usa a primeira pasta que funcionar com All Mail
+                break
             except Exception as e:
                 self._log_msg(f"\u26a0\ufe0f '{pasta}' falhou: {type(e).__name__}: {str(e)[:60]}")
                 continue
+
+        try:
+            mb.logout()
+        except Exception:
+            pass
 
         novos = 0
         for msg in msgs_novas:
@@ -320,28 +331,16 @@ class OptimizedIMAPCache:
     def _loop(self):
         while not self._stop:
             try:
-                mb = MailBox(self.config["imap_server"], timeout=30)
-                mb.login(self.config["email_user"], self.config["email_pass"], initial_folder="INBOX")
-                self._log_msg("\u2705 Login IMAP OK")
-
-                novos = self._sincronizar(mb)
-                self._log_msg(f"\U0001f4e7 Cache pronto: {self.cache.total} emails ({novos} novos)")
-
-                while not self._stop:
-                    time.sleep(10)
-                    if self._stop:
-                        break
-                    try:
-                        novos = self._sincronizar(mb)
-                        if novos:
-                            self._log_msg(f"\u2705 {novos} nova(s) transferencia(s) adicionada(s)")
-                    except Exception:
-                        break
-
-                mb.logout()
+                novos = self._sincronizar()
+                if not hasattr(self, '_primeiro_sync'):
+                    self._primeiro_sync = True
+                    self._log_msg(f"\U0001f4e7 Cache pronto: {self.cache.total} emails ({novos} novos)")
+                elif novos:
+                    self._log_msg(f"\u2705 {novos} nova(s) transferencia(s) adicionada(s)")
+                self.stats.total_emails = self.cache.total
             except Exception as e:
-                self._log_msg(f"\u26a0\ufe0f ERRO IMAP: {type(e).__name__}: {str(e)[:150]} \u2014 reconectando em 10s...")
-                time.sleep(10)
+                self._log_msg(f"\u26a0\ufe0f ERRO IMAP: {type(e).__name__}: {str(e)[:150]}")
+            time.sleep(10)
 
     def search_payment(self, nome: str) -> Optional[dict]:
         with self._lock:
