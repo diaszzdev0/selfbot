@@ -445,6 +445,16 @@
                   </div>
                 </div>
 
+                <div class="mb-4">
+                  <label>Modo de Sala Padrão <span id="modo-loading" class="text-muted small">(carregando...)</span></label>
+                  <select name="modo_sala_id" id="modo_sala_id" class="form-select">
+                    <option value="">Auto-detect (por nome thread)</option>
+                  </select>
+                  <div class="form-text text-secondary small mt-1" id="modo-help">
+                    Escolha o modo padrão para salas. Auto-detect usa nome da thread (ex: "-inf" → Infinito).
+                  </div>
+                </div>
+
                 <button class="btn w-100" style="background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border:none;border-radius:8px;font-weight:500;padding:10px">
                   <i class="bi bi-floppy me-1"></i> Salvar Configurações
                 </button>
@@ -632,6 +642,32 @@
         campo.style.display = el.checked ? 'block' : 'none';
       }
     }
+
+    // Load modos sala
+    async function loadModos() {
+      try {
+        const url = '/api_modos';
+        const resp = await fetch(url);
+        const data = await resp.json();
+        const sel = document.getElementById('modo_sala_id');
+        const loading = document.getElementById('modo-loading');
+        if (sel && loading && data.status === 'ok') {
+          sel.innerHTML = '<option value="">Auto-detect (por nome thread)</option>';
+          data.modos.forEach(m => {
+            const opt = document.createElement('option');
+            opt.value = m.salaid;
+            opt.textContent = m.nome;
+            if ('{{ cfg.modo_sala_id if cfg else "" }}' === m.salaid) opt.selected = true;
+            sel.appendChild(opt);
+          });
+          loading.textContent = `(${data.modos.length} modos)`;
+          loading.style.color = '#10b981';
+        }
+      } catch(e) {
+        document.getElementById('modo-loading').textContent = '(erro)';
+      }
+    }
+    window.addEventListener('load', loadModos);
 
     const userId = {{ user.id if user and user.id else 0 }};
     if (userId <= 0) {

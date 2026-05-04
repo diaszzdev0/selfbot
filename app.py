@@ -188,6 +188,8 @@ def cliente_salvar_config():
     cfg.imagem_entrada = imagem if imagem else None
     prefixo = request.form.get("prefixo_sala", "").strip()
     cfg.prefixo_sala = prefixo if request.form.get("usar_prefixo") and prefixo else None
+    modo = request.form.get("modo_sala_id", "").strip()
+    cfg.modo_sala_id = modo if modo else None
     db.session.add(cfg)
     db.session.commit()
     
@@ -322,6 +324,24 @@ def cliente_api_saldo():
     except Exception:
         total_api = "?"
     return jsonify({"status": "ok", "user_disponiveis": disponiveis, "user_limite": bs.limite_salas, "salas": total_api})
+
+
+@app.route("/cliente/api_modos")
+@login_required
+def cliente_api_modos():
+    API_KEY = "266vq0badxid7jpcf96t"
+    try:
+        import requests as req
+        r = req.get(f"https://salasff.com/modos?key={API_KEY}", timeout=10)
+        data = r.json()
+        modos = []
+        if isinstance(data, list):
+            modos = [{"salaid": m.get("salaid", m.get("id")), "nome": m.get("nome", m.get("name", "Gel Normal"))} for m in data]
+        elif isinstance(data, dict) and "modos" in data:
+            modos = [{"salaid": m.get("salaid"), "nome": m.get("nome")} for m in data["modos"]]
+        return jsonify({"status": "ok", "modos": modos[:20]})
+    except Exception:
+        return jsonify({"status": "error", "modos": []})
 
 
 @app.route("/cliente/stream_logs/<int:user_id>")
@@ -955,6 +975,7 @@ def testar_api_salas():
 @app.route("/admin/debug_imap")
 @admin_required
 def debug_imap_admin():
+    from imap_optimizer import imap_manager
     nome = request.args.get("nome", "").strip()
     if not nome:
         return jsonify({"error": "Parâmetro 'nome' obrigatório"}), 400
@@ -1235,6 +1256,13 @@ def restart_bot(user_id: int):
 if __name__ == "__main__":
     with app.app_context():
         db.create_all()
+        import sqlite3 as _sqlite3
+        _db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "selfbot.db")
+        with _sqlite3.connect(_db_path) as con:
+            cols_cfg = [r[1] for r in con.execute("PRAGMA table_info(bot_config)").fetchall()]
+            if "modo_sala_id" not in cols_cfg:
+                con.execute("ALTER TABLE bot_config ADD COLUMN modo_sala_id VARCHAR(30) DEFAULT '826526295161871655'")
+            con.commit()
         if not User.query.filter_by(is_admin=True).first():
             u = User(
                 username="DiasDev",

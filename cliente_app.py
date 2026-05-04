@@ -145,6 +145,8 @@ def salvar_config():
     cfg.imagem_entrada = imagem if imagem else None
     prefixo = request.form.get("prefixo_sala", "").strip()
     cfg.prefixo_sala = prefixo if request.form.get("usar_prefixo") and prefixo else None
+    modo = request.form.get("modo_sala_id", "").strip()
+    cfg.modo_sala_id = modo if modo else None
     db.session.add(cfg)
     db.session.commit()
     return redirect(url_for("cliente"))
@@ -210,6 +212,24 @@ def api_saldo():
     return jsonify({"status": "ok", "user_disponiveis": disponiveis, "user_limite": bs.limite_salas, "salas": total_api})
 
 
+@app.route("/api_modos")
+@login_required
+def api_modos():
+    API_KEY = "266vq0badxid7jpcf96t"
+    try:
+        import requests as req
+        r = req.get(f"https://salasff.com/modos?key={API_KEY}", timeout=10)
+        data = r.json()
+        modos = []
+        if isinstance(data, list):
+            modos = [{"salaid": m.get("salaid", m.get("id")), "nome": m.get("nome", m.get("name", "Modo Padrão"))} for m in data]
+        elif isinstance(data, dict) and "modos" in data:
+            modos = [{"salaid": m.get("salaid"), "nome": m.get("nome")} for m in data["modos"]]
+        return jsonify({"status": "ok", "modos": modos[:20]})  # Limite 20 modos
+    except Exception:
+        return jsonify({"status": "error", "modos": []})
+
+
 @app.route("/stream_logs/<int:user_id>")
 @login_required
 def stream_logs(user_id: int):
@@ -254,6 +274,8 @@ if __name__ == "__main__":
                 con.execute("ALTER TABLE bot_config ADD COLUMN prefixo_sala VARCHAR(20)")
             if "imagem_entrada" not in cols_cfg:
                 con.execute("ALTER TABLE bot_config ADD COLUMN imagem_entrada VARCHAR(500)")
+            if "modo_sala_id" not in cols_cfg:
+                con.execute("ALTER TABLE bot_config ADD COLUMN modo_sala_id VARCHAR(30) DEFAULT '826526295161871655'")
             con.commit()
         for status in BotStatus.query.filter_by(ativo=True).all():
             user = db.session.get(User, status.user_id)

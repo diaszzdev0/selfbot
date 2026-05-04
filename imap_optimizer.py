@@ -195,8 +195,8 @@ class IMAPCache:
         }
         return True
 
-def cleanup(self):
-        cutoff = (datetime.utcnow() - timedelta(days=3)).isoformat()  # Increased to 3 days
+    def cleanup(self):
+        cutoff = (datetime.utcnow() - timedelta(days=3)).isoformat()
         antes = len(self.data)
         self.data = {k: v for k, v in self.data.items() if v.get("ts", "") >= cutoff}
         removidos = antes - len(self.data)

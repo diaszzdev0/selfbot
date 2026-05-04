@@ -1,12 +1,12 @@
 import asyncio
 import re
 import os
+import time
 import traceback
 import aiohttp
-import json
 import random
 import unicodedata
-from datetime import datetime, timedelta
+from datetime import datetime
 import discord
 from imap_optimizer import imap_manager
 
@@ -22,7 +22,7 @@ _rate_limiters: dict[int, dict] = {}  # user_id -> {"last_request": timestamp, "
 
 API_KEY = "266vq0badxid7jpcf96t"
 API_CRIAR_URL = f"https://salasff.com/criar?key={API_KEY}&salaid={{salaid}}"
-API_INFO_URL = f"https://salasff.com/info?pedidoid={{pedidoid}}"
+API_INFO_URL = "https://salasff.com/info?pedidoid={pedidoid}"
 API_INICIAR_URL = f"https://salasff.com/iniciar?key={API_KEY}&pedidoid={{pedidoid}}"
 API_MODOS_URL = f"https://salasff.com/modos?key={API_KEY}"
 
@@ -195,7 +195,7 @@ def _buscar_pagamento_otimizado(cfg: dict, nome: str, user_id: int, attempt=1):
         partes_sig = [p for p in partes if len(p) >= 4]
         log_msg(user_id, f"🔎 DEBUG: partes_sig={len(partes_sig)} total={len(partes)}")
         if trechos:
-            log_msg(user_id, f"📝 TOP 3 trechos próximos:\n" + "\n".join(trechos[:3]))
+            log_msg(user_id, "📝 TOP 3 trechos próximos:\n" + "\n".join(trechos[:3]))
         else:
             log_msg(user_id, f"🚫 NENHUM trecho com partes de '{nome_strip}' achado")
         
@@ -372,7 +372,7 @@ def run_selfbot(config: dict, user_id: int):
         import io
         import aiohttp as _aiohttp
         if IMAGEM_ENTRADA:
-            log_msg(user_id, f"Tentando enviar imagem...")
+            log_msg(user_id, "Tentando enviar imagem...")
             try:
                 async with _aiohttp.ClientSession() as sess:
                     async with sess.get(IMAGEM_ENTRADA, timeout=_aiohttp.ClientTimeout(total=15)) as resp:
@@ -411,17 +411,22 @@ def run_selfbot(config: dict, user_id: int):
             go_auto_tasks.pop(channel.id, None)
 
     async def _enviar_sala(channel, salaid: str = ""):
-        # Detecta modo pelo nome da thread se salaid não foi passado
-        if not salaid:
+        # Prioridade: config.modo_sala_id → nome thread → default
+        if salaid:
+            modo_config = salaid
+        elif "modo_sala_id" in config and config["modo_sala_id"]:
+            modo_config = config["modo_sala_id"]
+            log_msg(user_id, f"🎮 Modo config: {modo_config}")
+        else:
             nome_canal = getattr(channel, 'name', '') or ''
-            if '-inf' in nome_canal.lower():
-                salaid = SALA_INF
+            if '-inf' in nome_canal.lower() or 'infinito' in nome_canal.lower():
+                modo_config = SALA_INF
                 log_msg(user_id, f"🎮 Modo: Infinito ({nome_canal})")
             else:
-                salaid = SALA_PADRAO
+                modo_config = SALA_GN  # SALA_PADRAO == SALA_GN
                 log_msg(user_id, f"🎮 Modo: Gel Normal ({nome_canal})")
 
-        data = await _criar_sala_api(salaid)
+        data = await _criar_sala_api(modo_config)
         if "_erro" in data:
             log_msg(user_id, f"🎮 Erro API sala: {data['_erro']}")
             await channel.send("Nao foi possivel criar a sala. Erro na API.")
@@ -617,10 +622,10 @@ def run_selfbot(config: dict, user_id: int):
             log_msg(user_id, f"🔍 !very: {nome_very}")
             msg_very = await channel.send(f"⏳ Verificando pagamento de **{nome_very}**...")
             try:
-            resultado = await asyncio.wait_for(
-                asyncio.get_running_loop().run_in_executor(None, lambda: _buscar_pagamento_otimizado(config, nome_very, user_id)),
-                timeout=120  # Increased for retries
-            )
+                resultado = await asyncio.wait_for(
+                    asyncio.get_running_loop().run_in_executor(None, lambda: _buscar_pagamento_otimizado(config, nome_very, user_id)),
+                    timeout=120  # Increased for retries
+                )
             except asyncio.TimeoutError:
                 resultado = None
             try:
@@ -671,7 +676,7 @@ def run_selfbot(config: dict, user_id: int):
         try:
             resultado = await asyncio.wait_for(
                 asyncio.get_running_loop().run_in_executor(None, lambda: _buscar_pagamento_otimizado(config, nome_busca, user_id)),
-                timeout=120  # Increased for retries
+                timeout=120
             )
         except asyncio.TimeoutError:
             log_msg(user_id, "Timeout na busca")
