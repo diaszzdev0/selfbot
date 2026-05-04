@@ -270,7 +270,6 @@ class OptimizedIMAPCache:
         since = date.today()
         # Pastas em ordem de prioridade — inclui nome em portugues
         pastas_tentar = [
-            "[Gmail]/Todos os e-mails",
             "[Gmail]/All Mail",
             "INBOX",
         ]
