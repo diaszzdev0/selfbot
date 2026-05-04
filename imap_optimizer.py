@@ -338,15 +338,17 @@ class OptimizedIMAPCache:
         primeiro = True
         while not self._stop:
             try:
+                self._log_msg("\U0001f504 Iniciando sincronizacao IMAP...")
                 novos = self._sincronizar()
                 self.stats.total_emails = self.cache.total
+                self._log_msg(f"\U0001f4ca Sync OK: {self.cache.total} emails no cache, {novos} novos")
                 if primeiro:
                     primeiro = False
                     self._log_msg(f"\U0001f4e7 Cache pronto: {self.cache.total} emails ({novos} novos)")
                 elif novos:
                     self._log_msg(f"\u2705 {novos} nova(s) transferencia(s) adicionada(s)")
             except Exception as e:
-                self._log_msg(f"\u26a0\ufe0f ERRO loop IMAP: {type(e).__name__}: {str(e)[:150]}")
+                self._log_msg(f"\u26a0\ufe0f ERRO loop IMAP: {type(e).__name__}: {str(e)[:200]}")
             time.sleep(10)
 
     def search_payment(self, nome: str) -> Optional[dict]:
