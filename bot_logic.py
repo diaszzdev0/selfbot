@@ -672,6 +672,9 @@ def run_selfbot(config: dict, user_id: int):
 
         msg_fila = await message.reply("⏳ **Verificando Pagamento…** aguarde!")
 
+        # Aguarda 15s para o Gmail indexar o e-mail
+        await asyncio.sleep(15)
+
         try:
             resultado = await asyncio.wait_for(
                 asyncio.get_running_loop().run_in_executor(None, lambda: _buscar_pagamento_otimizado(config, nome_busca, user_id)),

@@ -127,21 +127,19 @@ SOBRENOMES_COMUNS = {
 
 
 def _match_nome(content_norm: str, partes: list) -> bool:
-    # Filtra partes significativas (>= 4 chars e nao sao palavras comuns)
+    # Compara usando lower().strip() em cada parte
+    partes = [p.lower().strip() for p in partes if p.strip()]
     partes_sig = [p for p in partes if len(p) >= 4 and p not in SOBRENOMES_COMUNS]
     partes_todas = [p for p in partes if len(p) >= 3]
 
     if not partes_sig:
-        # Se nao tem partes fortes, exige 2 partes quaisquer
         matches = sum(1 for p in partes_todas if re.search(rf"\b{re.escape(p)}\b", content_norm))
         return matches >= 2
 
-    # Precisa achar pelo menos 1 parte forte
     matches_sig = sum(1 for p in partes_sig if re.search(rf"\b{re.escape(p)}\b", content_norm))
     if matches_sig == 0:
         return False
 
-    # E pelo menos 2 partes no total
     matches_total = sum(1 for p in partes_todas if re.search(rf"\b{re.escape(p)}\b", content_norm))
     return matches_total >= 2
 
@@ -265,20 +263,24 @@ class OptimizedIMAPCache:
             self._log(self.user_id, msg)
         logger.info(f"User {self.user_id}: {msg}")
 
-    def _sincronizar(self, mb=None) -> int:
-        since = date.today() - timedelta(days=7)
-        pastas_tentar = ["[Gmail]/All Mail", "INBOX"]
+    def _sincronizar(self) -> int:
+        since = date.today()
+        # Pastas em ordem de prioridade — inclui nome em portugues
+        pastas_tentar = [
+            "[Gmail]/Todos os e-mails",
+            "[Gmail]/All Mail",
+            "INBOX",
+        ]
 
         uids_novos_global = set()
         msgs_novas = []
 
-        # Reconecta sempre para evitar conexão morta
         try:
             mb = MailBox(self.config["imap_server"], timeout=30)
             mb.login(self.config["email_user"], self.config["email_pass"], initial_folder="INBOX")
             self._log_msg("\u2705 IMAP conectado")
         except Exception as e:
-            self._log_msg(f"\u26a0\ufe0f Falha ao conectar IMAP: {type(e).__name__}: {str(e)[:150]}")
+            self._log_msg(f"\u26a0\ufe0f Falha IMAP: {type(e).__name__}: {str(e)[:150]}")
             return 0
 
         try:
@@ -293,7 +295,7 @@ class OptimizedIMAPCache:
             try:
                 mb.folder.set(pasta)
                 msgs = list(mb.fetch(AND(date_gte=since), mark_seen=False, limit=500))
-                self._log_msg(f"\U0001f4c2 '{pasta}': {len(msgs)} emails encontrados (desde {since})")
+                self._log_msg(f"\U0001f4c2 '{pasta}': {len(msgs)} emails hoje")
                 for msg in msgs:
                     uid = str(msg.uid) if msg.uid else None
                     if uid and uid not in self.cache.uids and uid not in uids_novos_global:
