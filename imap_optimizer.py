@@ -1,9 +1,8 @@
 import re
 import unicodedata
 import logging
-from datetime import date
 from typing import Optional
-from imap_tools import MailBox, AND
+from imap_tools import MailBox, AND, A
 
 logger = logging.getLogger(__name__)
 
@@ -18,17 +17,22 @@ BANCOS_PATTERNS = {
     "Mercado Pago":    [r"mercado\s*pago"],
     "PagSeguro":       [r"pagseguro|pagbank"],
     "C6 Bank":         [r"c6\s*bank"],
-    "Next":            [r"\bnext\b"],
-    "Neon":            [r"\bneon\b"],
-    "BTG":             [r"\bbtg\b"],
-    "Stone":           [r"\bstone\b"],
     "Sicoob":          [r"sicoob"],
     "Sicredi":         [r"sicredi"],
     "Banco do Brasil": [r"banco\s*do\s*brasil"],
-    "Original":        [r"banco\s*original"],
-    "Pan":             [r"banco\s*pan"],
-    "Will Bank":       [r"will\s*bank"],
 }
+
+ASSUNTOS_PIX = [
+    "você recebeu uma transferência via pix",
+    "voce recebeu uma transferencia via pix",
+    "você recebeu um pix",
+    "voce recebeu um pix",
+    "transferência via pix",
+    "transferencia via pix",
+    "pix recebido",
+    "recebemos sua transferência",
+    "recebemos sua transferencia",
+]
 
 NOME_PADROES = [
     r"voc[e\u00ea]\s+recebeu\s+um\s+pix\s+de\s+(.+?)\s+e\s+o\s+valor",
@@ -38,6 +42,7 @@ NOME_PADROES = [
     r"recebido\s+de\s+([A-Za-z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\-\'\s]{2,60})",
     r"pagador\s*[:\s]+([A-Za-z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\-\'\s]{2,60})",
     r"remetente\s*[:\s]+([A-Za-z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\-\'\s]{2,60})",
+    r"de\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)",
 ]
 
 
@@ -51,11 +56,11 @@ def _normalizar(text: str) -> str:
     return unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii").lower().strip()
 
 
-def _detectar_banco(content: str) -> str:
-    cl = content.lower()
+def _detectar_banco(subject: str, content: str) -> str:
+    texto = (subject + " " + content).lower()
     for banco, patterns in BANCOS_PATTERNS.items():
         for p in patterns:
-            if re.search(p, cl, re.IGNORECASE):
+            if re.search(p, texto, re.IGNORECASE):
                 return banco
     return "Desconhecido"
 
@@ -91,6 +96,11 @@ def _extrair_pagador(content: str) -> str:
     return "Desconhecido"
 
 
+def _is_email_pix(subject: str) -> bool:
+    s = _normalizar(subject)
+    return any(p in s for p in ASSUNTOS_PIX)
+
+
 def buscar_pagamento_imap(config: dict, nome: str, log_fn=None) -> Optional[dict]:
     def log(msg):
         if log_fn:
@@ -98,7 +108,6 @@ def buscar_pagamento_imap(config: dict, nome: str, log_fn=None) -> Optional[dict
         logger.info(msg)
 
     nome_busca = _normalizar(nome).lower().strip()
-    since = date.today()
 
     try:
         mb = MailBox(config["imap_server"], timeout=15)
@@ -110,34 +119,46 @@ def buscar_pagamento_imap(config: dict, nome: str, log_fn=None) -> Optional[dict
 
     resultado = None
     try:
-        for pasta in ["INBOX", "[Gmail]/All Mail"]:
-            try:
-                mb.folder.set(pasta)
-                msgs = list(mb.fetch(AND(date_gte=since), mark_seen=False, limit=30))
-                log(f"\U0001f4c2 '{pasta}': {len(msgs)} emails hoje")
-                for msg in reversed(msgs):
-                    content = f"{msg.subject or ''} {msg.text or ''} {msg.html or ''}"
-                    pagador = _extrair_pagador(content)
-                    pagador_norm = _normalizar(pagador).lower().strip()
-                    log(f"\U0001f4e7 '{msg.subject}' | pagador='{pagador_norm}'")
-                    if pagador_norm and nome_busca and nome_busca in pagador_norm:
-                        valor = _extrair_valor(content)
-                        banco = _detectar_banco(content)
-                        log(f"\u2705 MATCH: '{pagador_norm}' | R${valor} | {banco}")
-                        resultado = {"valor": valor, "banco": banco, "pagador": pagador}
-                        break
-                break
-            except Exception as e:
-                log(f"\u26a0\ufe0f '{pasta}' falhou: {type(e).__name__}: {str(e)[:80]}")
+        # Busca os ultimos 5 emails nao lidos na INBOX
+        msgs = list(mb.fetch(A(seen=False), mark_seen=False, limit=5, reverse=True))
+        log(f"\U0001f4ec INBOX: {len(msgs)} emails nao lidos")
+
+        if not msgs:
+            # Se nao tem nao lidos, pega os ultimos 10 emails
+            msgs = list(mb.fetch(AND(all=True), mark_seen=False, limit=10, reverse=True))
+            log(f"\U0001f4ec INBOX: {len(msgs)} emails recentes (fallback)")
+
+        for msg in msgs:
+            subject = msg.subject or ""
+            log(f"\U0001f4e7 Assunto: '{subject}'")
+
+            if not _is_email_pix(subject):
+                log(f"\u23e9 Ignorado (nao e pix): '{subject}'")
                 continue
+
+            content = f"{subject} {msg.text or ''} {msg.html or ''}"
+            pagador = _extrair_pagador(content)
+            pagador_norm = _normalizar(pagador).lower().strip()
+            valor = _extrair_valor(content)
+            banco = _detectar_banco(subject, content)
+
+            log(f"\U0001f4b0 Pix encontrado | pagador='{pagador_norm}' | R${valor} | {banco}")
+
+            if pagador_norm and nome_busca and nome_busca in pagador_norm:
+                log(f"\u2705 MATCH: '{pagador_norm}' contém '{nome_busca}'")
+                resultado = {"valor": valor, "banco": banco, "pagador": pagador}
+                break
+
+        if not resultado:
+            log(f"\u274c Nenhum pix de '{nome_busca}' encontrado")
+
+    except Exception as e:
+        log(f"\u26a0\ufe0f Erro na busca: {type(e).__name__}: {str(e)[:150]}")
     finally:
         try:
             mb.logout()
         except Exception:
             pass
-
-    if not resultado:
-        log(f"\u274c Nenhum pagamento de '{nome_busca}' encontrado hoje")
 
     return resultado
 
