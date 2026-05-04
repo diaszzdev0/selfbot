@@ -92,7 +92,6 @@ def _extrair_pagador(content: str) -> str:
 
 
 def buscar_pagamento_imap(config: dict, nome: str, log_fn=None) -> Optional[dict]:
-    """Busca diretamente no IMAP sem cache."""
     def log(msg):
         if log_fn:
             log_fn(msg)
@@ -104,38 +103,32 @@ def buscar_pagamento_imap(config: dict, nome: str, log_fn=None) -> Optional[dict
     try:
         mb = MailBox(config["imap_server"], timeout=15)
         mb.login(config["email_user"], config["email_pass"], initial_folder="INBOX")
-        log("✅ IMAP conectado")
+        log("\u2705 IMAP conectado")
     except Exception as e:
-        log(f"⚠️ Falha IMAP: {type(e).__name__}: {str(e)[:150]}")
+        log(f"\u26a0\ufe0f Falha IMAP: {type(e).__name__}: {str(e)[:150]}")
         return None
 
     resultado = None
     try:
-        pastas = ["INBOX", "[Gmail]/All Mail"]
-
-        for pasta in pastas:
+        for pasta in ["INBOX", "[Gmail]/All Mail"]:
             try:
                 mb.folder.set(pasta)
-                msgs = list(mb.fetch(AND(date_gte=since), mark_seen=False, limit=200))
-                log(f"📂 '{pasta}': {len(msgs)} emails hoje")
-
-                for msg in msgs:
+                msgs = list(mb.fetch(AND(date_gte=since), mark_seen=False, limit=30))
+                log(f"\U0001f4c2 '{pasta}': {len(msgs)} emails hoje")
+                for msg in reversed(msgs):
                     content = f"{msg.subject or ''} {msg.text or ''} {msg.html or ''}"
                     pagador = _extrair_pagador(content)
                     pagador_norm = _normalizar(pagador).lower().strip()
-                    log(f"📧 Email: '{msg.subject}' | pagador='{pagador_norm}'")
-
+                    log(f"\U0001f4e7 '{msg.subject}' | pagador='{pagador_norm}'")
                     if pagador_norm and nome_busca and nome_busca in pagador_norm:
                         valor = _extrair_valor(content)
                         banco = _detectar_banco(content)
-                        log(f"✅ MATCH: '{pagador_norm}' contém '{nome_busca}' | R${valor} | {banco}")
+                        log(f"\u2705 MATCH: '{pagador_norm}' | R${valor} | {banco}")
                         resultado = {"valor": valor, "banco": banco, "pagador": pagador}
                         break
-
-                if resultado:
-                    break
+                break
             except Exception as e:
-                log(f"⚠️ '{pasta}' falhou: {type(e).__name__}: {str(e)[:80]}")
+                log(f"\u26a0\ufe0f '{pasta}' falhou: {type(e).__name__}: {str(e)[:80]}")
                 continue
     finally:
         try:
@@ -144,43 +137,25 @@ def buscar_pagamento_imap(config: dict, nome: str, log_fn=None) -> Optional[dict
             pass
 
     if not resultado:
-        log(f"❌ Nenhum email com pagador contendo '{nome_busca}' encontrado hoje")
+        log(f"\u274c Nenhum pagamento de '{nome_busca}' encontrado hoje")
 
     return resultado
 
 
 class IMAPManager:
-    """Mantém configs por user_id para compatibilidade com bot_logic.py"""
     def __init__(self):
         self.configs: dict[int, dict] = {}
-        self.logs: dict[int, object] = {}
 
     def get_cache(self, user_id: int, config: dict):
         self.configs[user_id] = config
         return self
 
-    def set_log(self, user_id: int, log_fn):
-        self.logs[user_id] = log_fn
-
-    def search_payment_optimized(self, nome: str, user_id: int = None, config: dict = None) -> Optional[dict]:
-        cfg = config or self.configs.get(user_id, {})
-        log_fn = None
-        if user_id and user_id in self.logs:
-            uid = user_id
-            log_fn = lambda msg: self.logs[uid](uid, msg)
-        return buscar_pagamento_imap(cfg, nome, log_fn)
-
-    def search_debug(self, nome: str) -> list:
-        return []
-
     def stop_cache(self, user_id: int):
         self.configs.pop(user_id, None)
-        self.logs.pop(user_id, None)
 
     def get_global_stats(self) -> dict:
         return {"active_caches": len(self.configs)}
 
-    # Compatibilidade com stats.total_emails
     class _Stats:
         total_emails = 0
     stats = _Stats()
