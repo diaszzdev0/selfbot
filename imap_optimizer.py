@@ -276,8 +276,9 @@ class OptimizedIMAPCache:
         try:
             mb = MailBox(self.config["imap_server"], timeout=30)
             mb.login(self.config["email_user"], self.config["email_pass"], initial_folder="INBOX")
+            self._log_msg("\u2705 IMAP conectado")
         except Exception as e:
-            self._log_msg(f"\u26a0\ufe0f Falha ao conectar IMAP: {type(e).__name__}: {str(e)[:80]}")
+            self._log_msg(f"\u26a0\ufe0f Falha ao conectar IMAP: {type(e).__name__}: {str(e)[:150]}")
             return 0
 
         try:
@@ -329,17 +330,18 @@ class OptimizedIMAPCache:
         return novos
 
     def _loop(self):
+        primeiro = True
         while not self._stop:
             try:
                 novos = self._sincronizar()
-                if not hasattr(self, '_primeiro_sync'):
-                    self._primeiro_sync = True
+                self.stats.total_emails = self.cache.total
+                if primeiro:
+                    primeiro = False
                     self._log_msg(f"\U0001f4e7 Cache pronto: {self.cache.total} emails ({novos} novos)")
                 elif novos:
                     self._log_msg(f"\u2705 {novos} nova(s) transferencia(s) adicionada(s)")
-                self.stats.total_emails = self.cache.total
             except Exception as e:
-                self._log_msg(f"\u26a0\ufe0f ERRO IMAP: {type(e).__name__}: {str(e)[:150]}")
+                self._log_msg(f"\u26a0\ufe0f ERRO loop IMAP: {type(e).__name__}: {str(e)[:150]}")
             time.sleep(10)
 
     def search_payment(self, nome: str) -> Optional[dict]:
