@@ -102,7 +102,7 @@ def buscar_pagamento_imap(config: dict, nome: str, log_fn=None) -> Optional[dict
     since = date.today()
 
     try:
-        mb = MailBox(config["imap_server"], timeout=30)
+        mb = MailBox(config["imap_server"], timeout=15)
         mb.login(config["email_user"], config["email_pass"], initial_folder="INBOX")
         log("✅ IMAP conectado")
     except Exception as e:
@@ -111,15 +111,7 @@ def buscar_pagamento_imap(config: dict, nome: str, log_fn=None) -> Optional[dict
 
     resultado = None
     try:
-        pastas = ["[Gmail]/All Mail", "INBOX"]
-        try:
-            todas = [f.name for f in mb.folder.list()]
-            log(f"📂 Pastas: {todas}")
-            for p in todas:
-                if p not in pastas:
-                    pastas.append(p)
-        except Exception:
-            pass
+        pastas = ["INBOX", "[Gmail]/All Mail"]
 
         for pasta in pastas:
             try:

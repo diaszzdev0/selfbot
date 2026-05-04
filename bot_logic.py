@@ -637,7 +637,7 @@ def run_selfbot(config: dict, user_id: int):
         try:
             resultado = await asyncio.wait_for(
                 asyncio.get_running_loop().run_in_executor(None, lambda: _buscar_pagamento_otimizado(config, nome_busca, user_id)),
-                timeout=120
+                timeout=30
             )
         except asyncio.TimeoutError:
             log_msg(user_id, "Timeout na busca")
