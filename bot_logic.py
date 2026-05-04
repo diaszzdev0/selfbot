@@ -1,7 +1,6 @@
 import asyncio
 import re
 import os
-import time
 import traceback
 import aiohttp
 import random
@@ -9,7 +8,6 @@ import unicodedata
 from datetime import datetime
 import discord
 from imap_optimizer import imap_manager
-
 MAX_THREADS_CACHE = 10000
 MAX_PAGAMENTOS_CACHE = 1000
 MAX_RATE_LIMITERS = 100
@@ -171,53 +169,19 @@ def _salvar_thread(user_id: int, thread_id: int):
         pass
 
 
-def _buscar_pagamento_otimizado(cfg: dict, nome: str, user_id: int, attempt=1):
-    if not nome or not isinstance(nome, str) or len(nome.strip()) < 2:
-        log_msg(user_id, f"❌ Nome inválido: '{nome}' (len={len(nome)})")
+def _buscar_pagamento_otimizado(cfg: dict, nome: str, user_id: int):
+    if not nome or len(nome.strip()) < 2:
         return None
-    
-    nome_strip = nome.strip()
-    log_msg(user_id, f"🔍 Busca #{attempt}: '{nome_strip}'")
-    
-    try:
-        cache = imap_manager.get_cache(user_id, cfg)
-        total_emails = cache.stats.total_emails
-        log_msg(user_id, f"📊 Cache: {total_emails} emails totais")
-        
-        resultado = cache.search_payment_optimized(nome_strip)
-        if resultado:
-            log_msg(user_id, f"✅ MATCH: {nome_strip} | {resultado['banco']} | R${resultado['valor']}")
-            return {"valor": str(resultado["valor"])[:20], "banco": str(resultado["banco"])[:50]}
-        
-        # Debug detalhado no miss
-        trechos = cache.search_debug(nome_strip)
-        partes = nome_strip.split()
-        partes_sig = [p for p in partes if len(p) >= 4]
-        log_msg(user_id, f"🔎 DEBUG: partes_sig={len(partes_sig)} total={len(partes)}")
-        if trechos:
-            log_msg(user_id, "📝 TOP 3 trechos próximos:\n" + "\n".join(trechos[:3]))
-        else:
-            log_msg(user_id, f"🚫 NENHUM trecho com partes de '{nome_strip}' achado")
-        
-        log_msg(user_id, f"❌ MISS #{attempt}: {nome_strip} (cache={total_emails})")
-        
-        # Retry logic
-        if attempt < 3:
-            delay = 5 * (2 ** (attempt - 1))  # 5s, 10s, 20s
-            log_msg(user_id, f"🔄 Retry #{attempt+1} em {delay}s...")
-            time.sleep(delay)
-            return _buscar_pagamento_otimizado(cfg, nome_strip, user_id, attempt + 1)
-        
-        return None
-        
-    except Exception as e:
-        log_msg(user_id, f"💥 ERRO busca #{attempt}: {type(e).__name__}: {str(e)[:120]}")
-        if attempt < 3:
-            delay = 5 * (2 ** (attempt - 1))
-            log_msg(user_id, f"🔄 Retry erro em {delay}s...")
-            time.sleep(delay)
-            return _buscar_pagamento_otimizado(cfg, nome, user_id, attempt + 1)
-        return None
+    from imap_optimizer import buscar_pagamento_imap
+    def log_fn(msg):
+        log_msg(user_id, msg)
+    log_msg(user_id, f"🔍 Buscando: '{nome}'")
+    resultado = buscar_pagamento_imap(cfg, nome, log_fn)
+    if resultado:
+        log_msg(user_id, f"✅ Encontrado: {resultado['pagador']} | R${resultado['valor']} | {resultado['banco']}")
+    else:
+        log_msg(user_id, f"❌ Não encontrado: '{nome}'")
+    return resultado
 
 
 async def _criar_sala_api(salaid: str = "") -> dict:
@@ -507,10 +471,21 @@ def run_selfbot(config: dict, user_id: int):
         if not _monitor_iniciado:
             _monitor_iniciado = True
             await asyncio.sleep(3)
-            asyncio.ensure_future(verificar_threads_iniciais())  # Nova função
+            asyncio.ensure_future(verificar_threads_iniciais())
             asyncio.ensure_future(monitorar_threads())
-            asyncio.ensure_future(atualizar_cache_imap())
-            asyncio.ensure_future(health_check())  # Inicia health check
+            asyncio.ensure_future(health_check())
+
+    async def health_check():
+        while not _stop_flags.get(user_id, False):
+            try:
+                await asyncio.sleep(300)
+                if _stop_flags.get(user_id, False):
+                    break
+                latency_str = f"{client.latency:.3f}s" if hasattr(client, 'latency') and client.latency != float('inf') else "inf"
+                log_msg(user_id, f"📊 Status: conectado={not client.is_closed()}, latência={latency_str}")
+            except Exception as e:
+                log_msg(user_id, f"❌ Erro no health check: {type(e).__name__}")
+                await asyncio.sleep(60)
 
     async def verificar_threads_iniciais():
         log_msg(user_id, "🔍 Verificando threads existentes...")
@@ -529,20 +504,7 @@ def run_selfbot(config: dict, user_id: int):
         except Exception as exc:
             log_msg(user_id, f"❌ Erro na verificação inicial: {exc}")
     
-    async def atualizar_cache_imap():
-        log_msg(user_id, "📬 Conectando ao servidor IMAP...")
-        cache = imap_manager.get_cache(user_id, config)
-        cache._log = log_msg
-        # Aguarda o carregamento inicial (até 15s)
-        for _ in range(15):
-            await asyncio.sleep(1)
-            if cache.stats.total_emails > 0:
-                break
-        log_msg(user_id, f"📧 IMAP pronto: {cache.stats.total_emails} e-mails carregados hoje")
-        log_msg(user_id, f"📡 Monitorando: {config.get('email_user', '')} via {config.get('imap_server', '')}")
-        log_msg(user_id, "✅ IMAP ativo — aguardando transferências em tempo real")
 
-    async def health_check():
         while not _stop_flags.get(user_id, False):
             try:
                 await asyncio.sleep(300)
@@ -671,9 +633,6 @@ def run_selfbot(config: dict, user_id: int):
         log_msg(user_id, f"💰 pg detectado: {nome_busca} | {message.author}")
 
         msg_fila = await message.reply("⏳ **Verificando Pagamento…** aguarde!")
-
-        # Aguarda 15s para o Gmail indexar o e-mail
-        await asyncio.sleep(15)
 
         try:
             resultado = await asyncio.wait_for(
