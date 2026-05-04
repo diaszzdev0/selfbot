@@ -363,6 +363,10 @@ class OptimizedIMAPCache:
     def search_payment_optimized(self, nome: str) -> Optional[dict]:
         return self.search_payment(nome)
 
+    def search_debug(self, nome: str) -> list:
+        with self._lock:
+            return self.cache.search_debug(nome)
+
     def get_stats(self) -> dict:
         return {
             "total_emails": self.cache.total,
