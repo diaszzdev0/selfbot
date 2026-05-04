@@ -646,7 +646,7 @@
     // Load modos sala
     async function loadModos() {
       try {
-        const url = '/api_modos';
+        const url = '/cliente/api_modos';
         const resp = await fetch(url);
         const data = await resp.json();
         const sel = document.getElementById('modo_sala_id');
