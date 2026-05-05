@@ -581,6 +581,15 @@ def run_selfbot(config: dict, user_id: int):
         conteudo = message.content.strip()
         cmd = conteudo.lower()
 
+        # Comandos de sala - verificados antes do filtro de autor
+        if cmd in ("!normal", "!infinito"):
+            log_msg(user_id, f"Comando {cmd} detectado")
+            salaid = SALA_INF if cmd == "!infinito" else SALA_GN
+            msg_req = await channel.send("Criando sala...")
+            await _enviar_sala(channel, salaid)
+            await msg_req.delete()
+            return
+
         if message.author == client.user:
             log_msg(user_id, f"\U0001f916 Mensagem propria: '{cmd[:30]}'")
             if cmd in ("!normal", "!infinito"):
