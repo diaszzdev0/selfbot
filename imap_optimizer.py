@@ -3,6 +3,7 @@ import imaplib
 import email
 import unicodedata
 import logging
+import threading
 import time
 from datetime import datetime, timedelta, date
 from email.header import decode_header
@@ -134,101 +135,163 @@ def _get_body(msg):
     return body
 
 
-def buscar_pagamento_imap(config, nome, log_fn=None):
-    def log(msg):
-        if log_fn:
-            log_fn(msg)
+class PersistentIMAPConnection:
+    """Mantém uma conexão IMAP aberta permanentemente com keepalive."""
 
-    nome_busca = _normalizar(nome).lower().strip()
+    def __init__(self, config, log_fn=None):
+        self.config = config
+        self.log_fn = log_fn
+        self._mail = None
+        self._lock = threading.Lock()
+        self._stop = False
+        self._connected = False
+        self._keepalive_thread = threading.Thread(target=self._keepalive_loop, daemon=True)
+        self._keepalive_thread.start()
 
-    for tentativa in range(1, 4):
+    def _log(self, msg):
+        if self.log_fn:
+            self.log_fn(msg)
+        logger.info(msg)
+
+    def _conectar(self):
         try:
-            mail = imaplib.IMAP4_SSL(config["imap_server"])
+            mail = imaplib.IMAP4_SSL(self.config["imap_server"])
             mail.socket().settimeout(30)
-            mail.login(config["email_user"], config["email_pass"])
+            mail.login(self.config["email_user"], self.config["email_pass"])
             mail.select("INBOX")
-            log(f"\u2705 IMAP conectado (tentativa {tentativa})")
-            break
+            self._mail = mail
+            self._connected = True
+            self._log("\u2705 IMAP conexao persistente estabelecida")
+            return True
         except Exception as e:
-            log(f"\u26a0\ufe0f Falha IMAP tentativa {tentativa}: {type(e).__name__}: {str(e)[:100]}")
-            if tentativa == 3:
-                return None
-            time.sleep(3)
-            continue
+            self._log(f"\u26a0\ufe0f Falha conexao IMAP: {type(e).__name__}: {str(e)[:100]}")
+            self._connected = False
+            return False
 
-    resultado = None
-    try:
-        hoje = date.today().strftime("%d-%b-%Y")
-        cutoff = datetime.now() - timedelta(minutes=3)
-        _, data = mail.search(None, f'(SINCE "{hoje}" FROM "nubank.com.br")')
-        uids = data[0].split() if data and data[0] else []
-        uids_sorted = sorted(uids, key=lambda x: int(x), reverse=True)[:20]
-        log(f"\U0001f4ec {len(uids_sorted)} emails mais recentes do Nubank")
+    def _keepalive_loop(self):
+        """Mantém a conexão viva com NOOP a cada 5 minutos."""
+        while not self._stop:
+            time.sleep(300)  # 5 minutos
+            if self._stop:
+                break
+            with self._lock:
+                if self._mail and self._connected:
+                    try:
+                        self._mail.noop()
+                    except Exception:
+                        self._connected = False
+                        self._log("\u26a0\ufe0f Conexao IMAP perdida, reconectando...")
+                        self._conectar()
 
-        if uids_sorted:
-            # Busca todos os emails de uma vez em lote
-            uid_set = b",".join(uids_sorted)
-            _, msgs_data = mail.fetch(uid_set, "(RFC822)")
-            emails_parsed = []
-            for i in range(0, len(msgs_data), 2):
-                try:
-                    if isinstance(msgs_data[i], tuple):
-                        msg = email.message_from_bytes(msgs_data[i][1])
-                        subject = _decode_header_str(msg.get("Subject", ""))
-                        if not _is_email_pix(subject):
-                            continue
-                        try:
-                            from email.utils import parsedate_to_datetime
-                            ts = parsedate_to_datetime(msg.get("Date", "")).replace(tzinfo=None)
-                            if ts < cutoff:
-                                continue
-                        except Exception:
-                            pass
-                        content = f"{subject} {_get_body(msg)}"
-                        pagador = _extrair_pagador(content)
-                        pagador_norm = _normalizar(pagador).lower().strip()
-                        valor = _extrair_valor(content)
-                        banco = _detectar_banco(content)
-                        emails_parsed.append((msg, subject, pagador, pagador_norm, valor, banco))
-                except Exception:
-                    continue
-
-            for _, subject, pagador, pagador_norm, valor, banco in emails_parsed:
-                log(f"\U0001f4b0 pagador='{pagador_norm}' | R${valor}")
-                match1 = nome_busca in pagador_norm
-                match2 = _match_nomes(nome_busca, pagador_norm)
-                log(f"\U0001f50d match direto={match1} | match_nomes={match2}")
-                if pagador_norm and nome_busca and (match1 or match2):
-                    log(f"\u2705 MATCH: '{pagador_norm}'")
-                    resultado = {"valor": valor, "banco": banco, "pagador": pagador}
-                    break
-
-        if not resultado:
-            log(f"\u274c Nenhum pix de '{nome_busca}' encontrado")
-    except Exception as e:
-        log(f"\u26a0\ufe0f Erro: {type(e).__name__}: {str(e)[:150]}")
-    finally:
+    def _garantir_conexao(self):
+        """Garante que a conexão está ativa, reconecta se necessário."""
+        if not self._connected or self._mail is None:
+            return self._conectar()
         try:
-            mail.logout()
+            self._mail.noop()
+            return True
+        except Exception:
+            self._connected = False
+            return self._conectar()
+
+    def buscar(self, nome, log_fn=None):
+        def log(msg):
+            if log_fn:
+                log_fn(msg)
+
+        nome_busca = _normalizar(nome).lower().strip()
+
+        with self._lock:
+            if not self._garantir_conexao():
+                log("\u26a0\ufe0f Sem conexao IMAP")
+                return None
+
+            try:
+                hoje = date.today().strftime("%d-%b-%Y")
+                cutoff = datetime.now() - timedelta(minutes=3)
+
+                _, data = self._mail.search(None, f'(SINCE "{hoje}" FROM "nubank.com.br")')
+                uids = data[0].split() if data and data[0] else []
+                uids_sorted = sorted(uids, key=lambda x: int(x), reverse=True)[:20]
+                log(f"\U0001f4ec {len(uids_sorted)} emails recentes do Nubank")
+
+                if not uids_sorted:
+                    log(f"\u274c Nenhum pix de '{nome_busca}' encontrado")
+                    return None
+
+                uid_set = b",".join(uids_sorted)
+                _, msgs_data = self._mail.fetch(uid_set, "(RFC822)")
+
+                emails_parsed = []
+                for i in range(0, len(msgs_data), 2):
+                    try:
+                        if isinstance(msgs_data[i], tuple):
+                            msg = email.message_from_bytes(msgs_data[i][1])
+                            subject = _decode_header_str(msg.get("Subject", ""))
+                            if not _is_email_pix(subject):
+                                continue
+                            try:
+                                from email.utils import parsedate_to_datetime
+                                ts = parsedate_to_datetime(msg.get("Date", "")).replace(tzinfo=None)
+                                if ts < cutoff:
+                                    continue
+                            except Exception:
+                                pass
+                            content = f"{subject} {_get_body(msg)}"
+                            pagador = _extrair_pagador(content)
+                            pagador_norm = _normalizar(pagador).lower().strip()
+                            valor = _extrair_valor(content)
+                            banco = _detectar_banco(content)
+                            emails_parsed.append((pagador, pagador_norm, valor, banco))
+                    except Exception:
+                        continue
+
+                for pagador, pagador_norm, valor, banco in emails_parsed:
+                    log(f"\U0001f4b0 pagador='{pagador_norm}' | R${valor}")
+                    if pagador_norm and nome_busca and (nome_busca in pagador_norm or _match_nomes(nome_busca, pagador_norm)):
+                        log(f"\u2705 MATCH: '{pagador_norm}'")
+                        return {"valor": valor, "banco": banco, "pagador": pagador}
+
+                log(f"\u274c Nenhum pix de '{nome_busca}' encontrado")
+                return None
+
+            except Exception as e:
+                log(f"\u26a0\ufe0f Erro busca: {type(e).__name__}: {str(e)[:150]}")
+                self._connected = False
+                return None
+
+    def stop(self):
+        self._stop = True
+        try:
+            if self._mail:
+                self._mail.logout()
         except Exception:
             pass
-
-    return resultado
 
 
 class IMAPManager:
     def __init__(self):
+        self.connections = {}
         self.configs = {}
 
     def get_cache(self, user_id, config):
         self.configs[user_id] = config
+        if user_id not in self.connections:
+            self.connections[user_id] = PersistentIMAPConnection(config)
         return self
 
+    def set_log(self, user_id, log_fn):
+        if user_id in self.connections:
+            self.connections[user_id].log_fn = lambda msg: log_fn(user_id, msg)
+
     def stop_cache(self, user_id):
+        if user_id in self.connections:
+            self.connections[user_id].stop()
+            del self.connections[user_id]
         self.configs.pop(user_id, None)
 
     def get_global_stats(self):
-        return {"active_caches": len(self.configs)}
+        return {"active_caches": len(self.connections)}
 
     class _Stats:
         total_emails = 0
@@ -244,3 +307,17 @@ class IMAPManager:
 
 
 imap_manager = IMAPManager()
+
+
+def buscar_pagamento_imap(config, nome, log_fn=None):
+    """Busca usando conexão persistente."""
+    for conn in imap_manager.connections.values():
+        if conn.config.get("email_user") == config.get("email_user"):
+            return conn.buscar(nome, log_fn)
+
+    # Fallback: cria conexão temporária
+    conn_temp = PersistentIMAPConnection(config)
+    time.sleep(2)  # aguarda conectar
+    resultado = conn_temp.buscar(nome, log_fn)
+    conn_temp.stop()
+    return resultado

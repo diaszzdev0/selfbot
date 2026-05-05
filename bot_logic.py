@@ -492,7 +492,14 @@ def run_selfbot(config: dict, user_id: int):
             await asyncio.sleep(3)
             asyncio.ensure_future(verificar_threads_iniciais())
             asyncio.ensure_future(monitorar_threads())
+            asyncio.ensure_future(iniciar_imap())
             asyncio.ensure_future(health_check())
+
+    async def iniciar_imap():
+        log_msg(user_id, "📬 Iniciando conexão IMAP persistente...")
+        imap_manager.get_cache(user_id, config)
+        imap_manager.set_log(user_id, log_msg)
+        log_msg(user_id, "✅ IMAP persistente ativo")
 
     async def health_check():
         while not _stop_flags.get(user_id, False):
