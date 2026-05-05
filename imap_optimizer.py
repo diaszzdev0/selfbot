@@ -159,7 +159,7 @@ def buscar_pagamento_imap(config, nome, log_fn=None):
     resultado = None
     try:
         hoje = date.today().strftime("%d-%b-%Y")
-        cutoff = datetime.now() - timedelta(minutes=1)
+        cutoff = datetime.now() - timedelta(minutes=3)
         _, data = mail.search(None, f'(SINCE "{hoje}" FROM "nubank.com.br")')
         uids = data[0].split() if data and data[0] else []
         uids_sorted = sorted(uids, key=lambda x: int(x), reverse=True)[:20]
