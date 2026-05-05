@@ -424,6 +424,13 @@ def logout():
 
 # ── Admin ─────────────────────────────────────────────────────────────────────
 
+@app.route("/admin/limpar_sessao")
+@admin_required
+def limpar_sessao():
+    session.clear()
+    return redirect(url_for("login"))
+
+
 @app.route("/admin")
 @admin_required
 def admin():
