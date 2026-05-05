@@ -649,7 +649,11 @@ def run_selfbot(config: dict, user_id: int):
                         pass
 
                     if resultado_ocr.get("erro"):
-                        await message.reply(f"⚠️ Erro ao ler comprovante: {resultado_ocr['erro']}")
+                        if resultado_ocr.get("fake"):
+                            await message.reply(f"🚨 **Comprovante inválido!**\n{resultado_ocr['erro']}")
+                            log_msg(user_id, f"🚨 Comprovante fake detectado: {message.author}")
+                        else:
+                            await message.reply(f"⚠️ Erro ao ler comprovante: {resultado_ocr['erro']}")
                     elif not resultado_ocr.get("nome_encontrado") and resultado_ocr.get("valor") == "N/A":
                         await message.reply("❌ Não foi possível identificar o comprovante.")
                     else:
