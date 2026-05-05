@@ -162,7 +162,12 @@ def _parse_email(mail, uid) -> Optional[dict]:
         pagador_norm = _normalizar(pagador).lower().strip()
         valor = _extrair_valor(content)
         banco = _detectar_banco(content)
-        ts = datetime.now()
+        # Usa a data real do email
+        try:
+            from email.utils import parsedate_to_datetime
+            ts = parsedate_to_datetime(msg.get("Date", "")).replace(tzinfo=None)
+        except Exception:
+            ts = datetime.now()
         return {
             "uid": uid.decode() if isinstance(uid, bytes) else str(uid),
             "pagador": pagador,
