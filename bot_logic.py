@@ -639,11 +639,12 @@ def run_selfbot(config: dict, user_id: int):
 
         if resultado:
             await message.reply(
-                f"✅ **PAGAMENTO CONFIRMADO PELO SISTEMA**\n\n"
-                f"👤 Nome: {resultado.get('pagador', nome_busca)}\n"
-                f"💰 Valor: R$ {resultado['valor']}\n"
-                f"🏦 Origem: {resultado['banco']}\n"
-                f"🆔 ID: {random.randint(1000, 9999)}"
+                f"✅ **PAGAMENTO CONFIRMADO**\n\n"
+                f"👤 **Cliente:** {message.author.mention}\n"
+                f"📝 **Nome:** `{resultado.get('pagador', nome_busca)}`\n"
+                f"💰 **Valor:** `R$ {resultado['valor']} (BRL)`\n"
+                f"🔍 **Destino:** `e-mail {resultado['banco']}`\n"
+                f"🎉 **Sua vaga está garantida! A sala será enviada aqui.**"
             )
             pagamentos_por_thread[channel.id] = pagamentos_por_thread.get(channel.id, 0) + 1
             log_msg(user_id, f"💰 Pagamentos: {pagamentos_por_thread[channel.id]}/2")
