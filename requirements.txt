@@ -9,3 +9,4 @@ aiohttp>=3.10.0
 psycopg2-binary
 requests
 psutil
+pillow

@@ -627,6 +627,39 @@ def run_selfbot(config: dict, user_id: int):
         if message.author == client.user:
             return
 
+        # Verifica se e um comprovante (imagem anexada)
+        if message.attachments and not _extrair_nome(conteudo):
+            for attachment in message.attachments:
+                ct = getattr(attachment, 'content_type', '') or ''
+                ext = attachment.filename.split('.')[-1].lower()
+                if any(t in ct for t in ['image', 'pdf']) or ext in ('png', 'jpg', 'jpeg', 'gif', 'webp', 'pdf'):
+                    msg_ocr = await message.reply("🔍 **Lendo comprovante...** aguarde!")
+                    try:
+                        resultado_ocr = await asyncio.wait_for(
+                            asyncio.get_running_loop().run_in_executor(
+                                None, lambda a=attachment: __import__('ocr_comprovante').ler_comprovante_url(a.url, "")
+                            ),
+                            timeout=20
+                        )
+                    except asyncio.TimeoutError:
+                        resultado_ocr = {"encontrado": False, "erro": "Timeout"}
+                    try:
+                        await msg_ocr.delete()
+                    except Exception:
+                        pass
+                    if resultado_ocr.get("encontrado") is False and "erro" not in resultado_ocr:
+                        await message.reply("❌ Não foi possível identificar o comprovante.")
+                    elif resultado_ocr.get("erro"):
+                        await message.reply(f"⚠️ Erro ao ler comprovante: {resultado_ocr['erro']}")
+                    else:
+                        valor = resultado_ocr.get('valor', 'N/A')
+                        await message.reply(
+                            f"✅ **COMPROVANTE LIDO**\n\n"
+                            f"💰 **Valor detectado:** `R$ {valor}`\n"
+                            f"📝 Use `pg Nome Sobrenome` para confirmar o pagamento."
+                        )
+                    return
+
         nome_busca = _extrair_nome(conteudo)
         if not nome_busca:
             # Log para debug quando não consegue extrair nome
