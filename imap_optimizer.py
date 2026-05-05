@@ -167,10 +167,14 @@ def buscar_pagamento_imap(config, nome, log_fn=None):
 
         for uid in uids_sorted:
             try:
-                _, msg_data = mail.fetch(uid, "(RFC822)")
+                _, msg_data = mail.fetch(uid, "(BODY[HEADER.FIELDS (SUBJECT DATE)] BODY[TEXT])")
                 if not msg_data or not msg_data[0]:
                     continue
-                msg = email.message_from_bytes(msg_data[0][1])
+                raw = b""
+                for part in msg_data:
+                    if isinstance(part, tuple):
+                        raw += part[1]
+                msg = email.message_from_bytes(raw)
                 subject = _decode_header_str(msg.get("Subject", ""))
                 if not _is_email_pix(subject):
                     continue
