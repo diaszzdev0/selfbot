@@ -123,7 +123,7 @@ def buscar_pagamento_imap(config: dict, nome: str, log_fn=None) -> Optional[dict
     nome_busca = _normalizar(nome).lower().strip()
 
     try:
-        mb = MailBox(config["imap_server"], timeout=15)
+        mb = MailBox(config["imap_server"], timeout=25)
         mb.login(config["email_user"], config["email_pass"], initial_folder="INBOX")
         log("\u2705 IMAP conectado")
     except Exception as e:
