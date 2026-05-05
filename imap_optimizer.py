@@ -121,9 +121,8 @@ def buscar_pagamento_imap(config: dict, nome: str, log_fn=None) -> Optional[dict
 
     resultado = None
     try:
-        # Busca os ultimos 10 emails (lidos e nao lidos)
-        msgs = list(mb.fetch(AND(all=True), mark_seen=False, limit=10, reverse=True))
-        log(f"\U0001f4ec INBOX: {len(msgs)} emails recentes")
+        msgs = list(mb.fetch(AND(all=True), mark_seen=False, reverse=True))
+        log(f"\U0001f4ec INBOX: {len(msgs)} emails")
 
         for msg in msgs:
             subject = msg.subject or ""
