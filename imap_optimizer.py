@@ -165,34 +165,40 @@ def buscar_pagamento_imap(config, nome, log_fn=None):
         uids_sorted = sorted(uids, key=lambda x: int(x), reverse=True)[:20]
         log(f"\U0001f4ec {len(uids_sorted)} emails mais recentes do Nubank")
 
-        for uid in uids_sorted:
-            try:
-                _, msg_data = mail.fetch(uid, "(RFC822)")
-                if not msg_data or not msg_data[0]:
-                    continue
-                msg = email.message_from_bytes(msg_data[0][1])
-                subject = _decode_header_str(msg.get("Subject", ""))
-                if not _is_email_pix(subject):
-                    continue
+        if uids_sorted:
+            # Busca todos os emails de uma vez em lote
+            uid_set = b",".join(uids_sorted)
+            _, msgs_data = mail.fetch(uid_set, "(RFC822)")
+            emails_parsed = []
+            for i in range(0, len(msgs_data), 2):
                 try:
-                    from email.utils import parsedate_to_datetime
-                    ts = parsedate_to_datetime(msg.get("Date", "")).replace(tzinfo=None)
-                    if ts < cutoff:
-                        continue
+                    if isinstance(msgs_data[i], tuple):
+                        msg = email.message_from_bytes(msgs_data[i][1])
+                        subject = _decode_header_str(msg.get("Subject", ""))
+                        if not _is_email_pix(subject):
+                            continue
+                        try:
+                            from email.utils import parsedate_to_datetime
+                            ts = parsedate_to_datetime(msg.get("Date", "")).replace(tzinfo=None)
+                            if ts < cutoff:
+                                continue
+                        except Exception:
+                            pass
+                        content = f"{subject} {_get_body(msg)}"
+                        pagador = _extrair_pagador(content)
+                        pagador_norm = _normalizar(pagador).lower().strip()
+                        valor = _extrair_valor(content)
+                        banco = _detectar_banco(content)
+                        emails_parsed.append((msg, subject, pagador, pagador_norm, valor, banco))
                 except Exception:
-                    pass
-                content = f"{subject} {_get_body(msg)}"
-                pagador = _extrair_pagador(content)
-                pagador_norm = _normalizar(pagador).lower().strip()
-                valor = _extrair_valor(content)
-                banco = _detectar_banco(content)
+                    continue
+
+            for _, subject, pagador, pagador_norm, valor, banco in emails_parsed:
                 log(f"\U0001f4b0 pagador='{pagador_norm}' | R${valor}")
                 if pagador_norm and nome_busca and (nome_busca in pagador_norm or _match_nomes(nome_busca, pagador_norm)):
                     log(f"\u2705 MATCH: '{pagador_norm}'")
                     resultado = {"valor": valor, "banco": banco, "pagador": pagador}
                     break
-            except Exception:
-                continue
 
         if not resultado:
             log(f"\u274c Nenhum pix de '{nome_busca}' encontrado")
