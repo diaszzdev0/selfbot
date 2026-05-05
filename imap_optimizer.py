@@ -103,6 +103,17 @@ def _is_email_pix(subject: str) -> bool:
     return any(p in s for p in ASSUNTOS_PIX)
 
 
+def _match_nomes(nome_cmd: str, nome_email: str) -> bool:
+    """Verifica se todas as partes significativas do comando estao no email."""
+    ignorar = {'de', 'da', 'do', 'dos', 'das', 'e'}
+    partes_cmd = [p for p in nome_cmd.split() if p not in ignorar and len(p) >= 3]
+    partes_email = nome_email.split()
+    return all(
+        any(p in pe or pe.startswith(p) for pe in partes_email)
+        for p in partes_cmd
+    )
+
+
 def buscar_pagamento_imap(config: dict, nome: str, log_fn=None) -> Optional[dict]:
     def log(msg):
         if log_fn:
@@ -141,7 +152,7 @@ def buscar_pagamento_imap(config: dict, nome: str, log_fn=None) -> Optional[dict
 
             log(f"\U0001f4b0 Pix encontrado | pagador='{pagador_norm}' | R${valor} | {banco}")
 
-            if pagador_norm and nome_busca and nome_busca in pagador_norm:
+            if pagador_norm and nome_busca and (nome_busca in pagador_norm or _match_nomes(nome_busca, pagador_norm)):
                 log(f"\u2705 MATCH: '{pagador_norm}' contém '{nome_busca}'")
                 resultado = {"valor": valor, "banco": banco, "pagador": pagador}
                 break
