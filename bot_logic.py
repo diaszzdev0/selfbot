@@ -620,7 +620,11 @@ def run_selfbot(config: dict, user_id: int):
         pg_em_processamento.add(chave_pg)
         log_msg(user_id, f"💰 pg detectado: {nome_busca} | {message.author}")
 
-        msg_fila = await message.reply("⏳ **Verificando Pagamento…** aguarde!")
+        msg_fila = await message.reply(
+            "⏳ **Verificação na fila!**\n"
+            "Sua posição: `1`\n"
+            "Estimativa de espera: **35 segundos**."
+        )
 
         try:
             resultado = await asyncio.wait_for(
