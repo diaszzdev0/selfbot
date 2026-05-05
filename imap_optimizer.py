@@ -121,8 +121,9 @@ def buscar_pagamento_imap(config: dict, nome: str, log_fn=None) -> Optional[dict
 
     resultado = None
     try:
-        msgs = list(mb.fetch(AND(all=True), mark_seen=False, reverse=True))
-        log(f"\U0001f4ec INBOX: {len(msgs)} emails")
+        from datetime import date
+        msgs = list(mb.fetch(AND(date_gte=date.today()), mark_seen=False, reverse=True))
+        log(f"\U0001f4ec INBOX: {len(msgs)} emails hoje")
 
         for msg in msgs:
             subject = msg.subject or ""
