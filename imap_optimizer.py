@@ -173,7 +173,7 @@ def buscar_pagamento_imap(config: dict, nome: str, log_fn=None) -> Optional[dict
         # Busca por cada parte do nome no corpo do email
         uids_encontrados = set()
         for parte in partes[:2]:  # usa as 2 primeiras partes significativas
-            _, data = mail.search(None, f'(SINCE "{hoje}" BODY "{parte}")')
+            _, data = mail.search(None, f'(SINCE "{hoje}" FROM "no-reply@nubank.com.br" BODY "{parte}")')
             if data and data[0]:
                 for uid in data[0].split():
                     uids_encontrados.add(uid)
