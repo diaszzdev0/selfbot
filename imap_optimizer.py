@@ -6,7 +6,6 @@ import logging
 import threading
 import time
 from datetime import datetime, timedelta, date
-from typing import Optional
 from email.header import decode_header
 
 logger = logging.getLogger(__name__)
@@ -46,17 +45,17 @@ NOME_PADROES = [
 ]
 
 
-def _limpar_html(text: str) -> str:
+def _limpar_html(text):
     text = re.sub(r'<[^>]+>', ' ', text)
     text = re.sub(r'&[a-zA-Z0-9#]+;', ' ', text)
     return re.sub(r'\s+', ' ', text).strip()
 
 
-def _normalizar(text: str) -> str:
+def _normalizar(text):
     return unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii").lower().strip()
 
 
-def _detectar_banco(content: str) -> str:
+def _detectar_banco(content):
     cl = content.lower()
     for banco, patterns in BANCOS_PATTERNS.items():
         for p in patterns:
@@ -65,25 +64,24 @@ def _detectar_banco(content: str) -> str:
     return "Desconhecido"
 
 
-def _extrair_valor(content: str) -> str:
-    padroes = [
+def _extrair_valor(content):
+    for padrao in [
         r'valor\s*creditado\s*[:\s]*R\$\s*([0-9]+(?:[\.,][0-9]{1,2})?)',
         r'valor\s*[:\-]\s*R\$\s*([0-9]+(?:[\.,][0-9]{1,2})?)',
         r'R\$\s*([0-9]+(?:[\.,][0-9]{1,2})?)',
-    ]
-    for padrao in padroes:
+    ]:
         m = re.search(padrao, content, re.IGNORECASE)
         if m:
-            valor = m.group(1).strip().replace('.', ',')
-            if ',' not in valor:
-                valor += ',00'
-            elif len(valor.split(',')[1]) == 1:
-                valor += '0'
-            return valor
+            v = m.group(1).strip().replace('.', ',')
+            if ',' not in v:
+                v += ',00'
+            elif len(v.split(',')[1]) == 1:
+                v += '0'
+            return v
     return "N/A"
 
 
-def _extrair_pagador(content: str) -> str:
+def _extrair_pagador(content):
     corpo = _limpar_html(content)
     for padrao in NOME_PADROES:
         m = re.search(padrao, corpo, flags=re.IGNORECASE)
@@ -96,22 +94,19 @@ def _extrair_pagador(content: str) -> str:
     return "Desconhecido"
 
 
-def _is_email_pix(subject: str) -> bool:
+def _is_email_pix(subject):
     s = _normalizar(subject)
     return any(p in s for p in ASSUNTOS_PIX)
 
 
-def _match_nomes(nome_cmd: str, nome_email: str) -> bool:
+def _match_nomes(nome_cmd, nome_email):
     ignorar = {'de', 'da', 'do', 'dos', 'das', 'e'}
     partes_cmd = [p for p in nome_cmd.split() if p not in ignorar and len(p) >= 3]
     partes_email = nome_email.split()
-    return all(
-        any(p in pe or pe.startswith(p) for pe in partes_email)
-        for p in partes_cmd
-    )
+    return all(any(p in pe or pe.startswith(p) for pe in partes_email) for p in partes_cmd)
 
 
-def _decode_header_str(value: str) -> str:
+def _decode_header_str(value):
     if not value:
         return ""
     parts = decode_header(value)
@@ -124,44 +119,34 @@ def _decode_header_str(value: str) -> str:
     return " ".join(result)
 
 
-def _get_body(msg) -> str:
+def _get_body(msg):
     body = ""
     if msg.is_multipart():
         for part in msg.walk():
-            ct = part.get_content_type()
-            if ct in ("text/plain", "text/html"):
+            if part.get_content_type() in ("text/plain", "text/html"):
                 try:
-                    body += part.get_payload(decode=True).decode(
-                        part.get_content_charset() or "utf-8", errors="ignore"
-                    )
+                    body += part.get_payload(decode=True).decode(part.get_content_charset() or "utf-8", errors="ignore")
                 except Exception:
                     pass
     else:
         try:
-            body = msg.get_payload(decode=True).decode(
-                msg.get_content_charset() or "utf-8", errors="ignore"
-            )
+            body = msg.get_payload(decode=True).decode(msg.get_content_charset() or "utf-8", errors="ignore")
         except Exception:
             pass
     return body
 
 
-def _parse_email(mail, uid) -> Optional[dict]:
+def _parse_email(mail, uid):
     try:
         _, msg_data = mail.fetch(uid, "(RFC822)")
         if not msg_data or not msg_data[0]:
             return None
-        raw = msg_data[0][1]
-        msg = email.message_from_bytes(raw)
+        msg = email.message_from_bytes(msg_data[0][1])
         subject = _decode_header_str(msg.get("Subject", ""))
         if not _is_email_pix(subject):
             return None
-        body = _get_body(msg)
-        content = f"{subject} {body}"
+        content = f"{subject} {_get_body(msg)}"
         pagador = _extrair_pagador(content)
-        pagador_norm = _normalizar(pagador).lower().strip()
-        valor = _extrair_valor(content)
-        banco = _detectar_banco(content)
         try:
             from email.utils import parsedate_to_datetime
             ts = parsedate_to_datetime(msg.get("Date", "")).replace(tzinfo=None)
@@ -171,26 +156,80 @@ def _parse_email(mail, uid) -> Optional[dict]:
         return {
             "uid": uid_str,
             "pagador": pagador,
-            "pagador_norm": pagador_norm,
-            "valor": valor,
-            "banco": banco,
+            "pagador_norm": _normalizar(pagador).lower().strip(),
+            "valor": _extrair_valor(content),
+            "banco": _detectar_banco(content),
             "ts": ts,
         }
     except Exception:
         return None
 
 
+def _buscar_direto(config, nome, log_fn=None):
+    def log(msg):
+        if log_fn:
+            log_fn(msg)
+
+    nome_busca = _normalizar(nome).lower().strip()
+
+    for tentativa in range(1, 4):
+        try:
+            mail = imaplib.IMAP4_SSL(config["imap_server"])
+            mail.socket().settimeout(30)
+            mail.login(config["email_user"], config["email_pass"])
+            mail.select("INBOX")
+            log(f"\u2705 IMAP direto conectado (tentativa {tentativa})")
+            break
+        except Exception as e:
+            log(f"\u26a0\ufe0f Falha IMAP tentativa {tentativa}: {type(e).__name__}: {str(e)[:100]}")
+            if tentativa == 3:
+                return None
+            time.sleep(3)
+            continue
+
+    resultado = None
+    try:
+        hoje = date.today().strftime("%d-%b-%Y")
+        cutoff = datetime.now() - timedelta(minutes=30)
+        _, data = mail.search(None, f'(SINCE "{hoje}" FROM "nubank.com.br")')
+        uids = data[0].split() if data and data[0] else []
+        uids_sorted = sorted(uids, key=lambda x: int(x), reverse=True)
+        log(f"\U0001f4ec {len(uids_sorted)} emails do Nubank hoje")
+
+        for uid in uids_sorted:
+            entry = _parse_email(mail, uid)
+            if not entry or entry["ts"] < cutoff:
+                continue
+            log(f"\U0001f4b0 Pix | pagador='{entry['pagador_norm']}' | R${entry['valor']}")
+            if entry["pagador_norm"] and nome_busca and (nome_busca in entry["pagador_norm"] or _match_nomes(nome_busca, entry["pagador_norm"])):
+                log(f"\u2705 MATCH direto: '{entry['pagador_norm']}'")
+                resultado = {"valor": entry["valor"], "banco": entry["banco"], "pagador": entry["pagador"]}
+                break
+
+        if not resultado:
+            log(f"\u274c Nenhum pix de '{nome_busca}' encontrado")
+    except Exception as e:
+        log(f"\u26a0\ufe0f Erro: {type(e).__name__}: {str(e)[:150]}")
+    finally:
+        try:
+            mail.logout()
+        except Exception:
+            pass
+
+    return resultado
+
+
 class IMAPIDLEListener:
-    def __init__(self, config: dict, log_fn=None):
+    def __init__(self, config, log_fn=None):
         self.config = config
         self.log_fn = log_fn
-        self._emails: list = []
+        self._emails = []
         self._lock = threading.Lock()
         self._stop = False
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 
-    def _log(self, msg: str):
+    def _log(self, msg):
         if self.log_fn:
             self.log_fn(msg)
         logger.info(msg)
@@ -280,7 +319,7 @@ class IMAPIDLEListener:
                 self._log(f"\u26a0\ufe0f IMAP IDLE falhou: {type(e).__name__}: {str(e)[:100]} — retry em 5s")
                 time.sleep(5)
 
-    def buscar(self, nome: str, log_fn=None) -> Optional[dict]:
+    def buscar(self, nome, log_fn=None):
         def log(msg):
             if log_fn:
                 log_fn(msg)
@@ -298,13 +337,13 @@ class IMAPIDLEListener:
             log(f"\U0001f4b0 Verificando: pagador='{pagador_norm}'")
             if pagador_norm and nome_busca and (nome_busca in pagador_norm or _match_nomes(nome_busca, pagador_norm)):
                 log(f"\u2705 MATCH: '{pagador_norm}' cont\u00e9m '{nome_busca}'")
-                # Remove da memoria para nao reutilizar
                 with self._lock:
                     self._emails = [e for e in self._emails if e["uid"] != entry["uid"]]
                 return {"valor": entry["valor"], "banco": entry["banco"], "pagador": entry["pagador"]}
 
-        log(f"\u274c Nenhum pix de '{nome_busca}' encontrado")
-        return None
+        # Fallback: busca direto no IMAP
+        log("\U0001f504 N\u00e3o encontrado na mem\u00f3ria, buscando direto no IMAP...")
+        return _buscar_direto(self.config, nome, log_fn)
 
     def stop(self):
         self._stop = True
@@ -312,26 +351,26 @@ class IMAPIDLEListener:
 
 class IMAPManager:
     def __init__(self):
-        self.listeners: dict = {}
-        self.configs: dict = {}
+        self.listeners = {}
+        self.configs = {}
 
-    def get_cache(self, user_id: int, config: dict):
+    def get_cache(self, user_id, config):
         self.configs[user_id] = config
         if user_id not in self.listeners:
             self.listeners[user_id] = IMAPIDLEListener(config)
         return self
 
-    def set_log(self, user_id: int, log_fn):
+    def set_log(self, user_id, log_fn):
         if user_id in self.listeners:
             self.listeners[user_id].log_fn = lambda msg: log_fn(user_id, msg)
 
-    def stop_cache(self, user_id: int):
+    def stop_cache(self, user_id):
         if user_id in self.listeners:
             self.listeners[user_id].stop()
             del self.listeners[user_id]
         self.configs.pop(user_id, None)
 
-    def get_global_stats(self) -> dict:
+    def get_global_stats(self):
         return {"active_caches": len(self.listeners)}
 
     class _Stats:
@@ -350,64 +389,10 @@ class IMAPManager:
 imap_manager = IMAPManager()
 
 
-def buscar_pagamento_imap(config: dict, nome: str, log_fn=None) -> Optional[dict]:
+def buscar_pagamento_imap(config, nome, log_fn=None):
     for listener in imap_manager.listeners.values():
         if listener.config.get("email_user") == config.get("email_user"):
             return listener.buscar(nome, log_fn)
     if log_fn:
         log_fn("\u26a0\ufe0f IDLE nao iniciado, buscando diretamente...")
     return _buscar_direto(config, nome, log_fn)
-
-
-def _buscar_direto(config: dict, nome: str, log_fn=None) -> Optional[dict]:
-    def log(msg):
-        if log_fn:
-            log_fn(msg)
-
-    nome_busca = _normalizar(nome).lower().strip()
-
-    for tentativa in range(1, 4):
-        try:
-            mail = imaplib.IMAP4_SSL(config["imap_server"])
-            mail.socket().settimeout(30)
-            mail.login(config["email_user"], config["email_pass"])
-            mail.select("INBOX")
-            log(f"\u2705 IMAP conectado (tentativa {tentativa})")
-            break
-        except Exception as e:
-            log(f"\u26a0\ufe0f Falha IMAP tentativa {tentativa}: {type(e).__name__}: {str(e)[:100]}")
-            if tentativa == 3:
-                return None
-            time.sleep(3)
-            continue
-
-    resultado = None
-    try:
-        hoje = date.today().strftime("%d-%b-%Y")
-        cutoff = datetime.now() - timedelta(minutes=30)
-        _, data = mail.search(None, f'(SINCE "{hoje}" FROM "nubank.com.br")')
-        uids = data[0].split() if data and data[0] else []
-        uids_sorted = sorted(uids, key=lambda x: int(x), reverse=True)
-        log(f"\U0001f4ec {len(uids_sorted)} emails do Nubank hoje")
-
-        for uid in uids_sorted:
-            entry = _parse_email(mail, uid)
-            if not entry or entry["ts"] < cutoff:
-                continue
-            log(f"\U0001f4b0 Pix | pagador='{entry['pagador_norm']}' | R${entry['valor']}")
-            if entry["pagador_norm"] and nome_busca and (nome_busca in entry["pagador_norm"] or _match_nomes(nome_busca, entry["pagador_norm"])):
-                log(f"\u2705 MATCH: '{entry['pagador_norm']}' cont\u00e9m '{nome_busca}'")
-                resultado = {"valor": entry["valor"], "banco": entry["banco"], "pagador": entry["pagador"]}
-                break
-
-        if not resultado:
-            log(f"\u274c Nenhum pix de '{nome_busca}' encontrado")
-    except Exception as e:
-        log(f"\u26a0\ufe0f Erro: {type(e).__name__}: {str(e)[:150]}")
-    finally:
-        try:
-            mail.logout()
-        except Exception:
-            pass
-
-    return resultado
