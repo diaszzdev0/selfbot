@@ -172,7 +172,7 @@ def buscar_pagamento_imap(config: dict, nome: str, log_fn=None) -> Optional[dict
     try:
         # Data de hoje no formato IMAP
         hoje = date.today().strftime("%d-%b-%Y")
-        cutoff = datetime.now() - timedelta(minutes=2)
+        cutoff = datetime.now() - timedelta(minutes=1)
 
         # Busca todos os emails do Nubank de hoje (muito menos que 500)
         _, data = mail.search(None, f'(SINCE "{hoje}" FROM "nubank.com.br")')
