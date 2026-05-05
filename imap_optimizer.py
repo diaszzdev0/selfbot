@@ -306,7 +306,7 @@ class IMAPIDLEListener:
 
         log(f"\U0001f4ec Memória: {len(emails)} emails nos últimos 30 min")
 
-        for entry in sorted(emails, key=lambda x: x["ts"], reverse=True):
+        for entry in sorted(emails, key=lambda x: int(x["uid"]), reverse=True):
             pagador_norm = entry["pagador_norm"]
             log(f"\U0001f4b0 Verificando: pagador='{pagador_norm}'")
             if pagador_norm and nome_busca and (nome_busca in pagador_norm or _match_nomes(nome_busca, pagador_norm)):
