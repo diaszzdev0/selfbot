@@ -383,7 +383,7 @@ def run_selfbot(config: dict, user_id: int):
             log_msg(user_id, f"🎮 Modo config: {modo_config}")
         else:
             nome_canal = getattr(channel, 'name', '') or ''
-            if '-inf' in nome_canal.lower() or 'infinito' in nome_canal.lower():
+            if 'inf' in nome_canal.lower() or 'infinito' in nome_canal.lower():
                 modo_config = SALA_INF
                 log_msg(user_id, f"🎮 Modo: Infinito ({nome_canal})")
             else:
