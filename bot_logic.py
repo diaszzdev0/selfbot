@@ -633,7 +633,7 @@ def run_selfbot(config: dict, user_id: int):
                 ct = getattr(attachment, 'content_type', '') or ''
                 ext = attachment.filename.split('.')[-1].lower()
                 if any(t in ct for t in ['image', 'pdf']) or ext in ('png', 'jpg', 'jpeg', 'gif', 'webp', 'pdf'):
-                    msg_ocr = await message.reply("⏳ **Verificação na fila!**\nSua posição: `1`\nEstimativa de espera: **35 segundos**.")
+                    msg_ocr = await message.reply("🔍 **Verificando comprovante… Aguarde!**")
                     try:
                         resultado_ocr = await asyncio.wait_for(
                             asyncio.get_running_loop().run_in_executor(
