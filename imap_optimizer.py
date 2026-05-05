@@ -151,9 +151,6 @@ def buscar_pagamento_imap(config: dict, nome: str, log_fn=None) -> Optional[dict
         logger.info(msg)
 
     nome_busca = _normalizar(nome).lower().strip()
-    # Pega as partes significativas do nome para busca no servidor
-    ignorar = {'de', 'da', 'do', 'dos', 'das', 'e'}
-    partes = [p for p in nome_busca.split() if p not in ignorar and len(p) >= 3]
 
     try:
         mail = imaplib.IMAP4_SSL(config["imap_server"], timeout=20)
@@ -170,18 +167,13 @@ def buscar_pagamento_imap(config: dict, nome: str, log_fn=None) -> Optional[dict
         hoje = date.today().strftime("%d-%b-%Y")
         cutoff = datetime.now() - timedelta(hours=2)
 
-        # Busca por cada parte do nome no corpo do email
-        uids_encontrados = set()
-        for parte in partes[:2]:  # usa as 2 primeiras partes significativas
-            _, data = mail.search(None, f'(SINCE "{hoje}" FROM "no-reply@nubank.com.br" BODY "{parte}")')
-            if data and data[0]:
-                for uid in data[0].split():
-                    uids_encontrados.add(uid)
+        # Busca todos os emails do Nubank de hoje (muito menos que 500)
+        _, data = mail.search(None, f'(SINCE "{hoje}" FROM "nubank.com.br")')
+        uids = data[0].split() if data and data[0] else []
+        log(f"\U0001f4ec INBOX: {len(uids)} emails do Nubank hoje")
 
-        log(f"\U0001f4ec INBOX: {len(uids_encontrados)} emails com '{nome_busca}' hoje")
-
-        # Ordena do mais recente (maior uid) para o mais antigo
-        uids_sorted = sorted(uids_encontrados, key=lambda x: int(x), reverse=True)
+        # Ordena do mais recente para o mais antigo
+        uids_sorted = sorted(uids, key=lambda x: int(x), reverse=True)
 
         for uid in uids_sorted:
             _, msg_data = mail.fetch(uid, "(RFC822)")
