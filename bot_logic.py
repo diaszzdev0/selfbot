@@ -332,6 +332,7 @@ def run_selfbot(config: dict, user_id: int):
             chunk_guilds_at_startup=False,
             heartbeat_timeout=60.0,
             max_messages=100,
+            self_bot=True,
         )
     except Exception as e:
         log_msg(user_id, f"❌ Erro ao criar cliente: {e}")
