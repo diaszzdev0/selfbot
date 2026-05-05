@@ -371,8 +371,11 @@ def cliente_stream_logs(user_id: int):
         with open(log_path, "a", encoding="utf-8"):
             pass
         with open(log_path, "r", encoding="utf-8", errors="replace") as f:
-            # Vai para o final do arquivo, nao relê o historico
-            f.seek(0, 2)
+            # Mostra as ultimas 50 linhas ao abrir
+            linhas = f.readlines()
+            for linha in linhas[-50:]:
+                if linha.strip():
+                    yield f"data: {linha.rstrip()}\n\n"
             last_heartbeat = time.time()
             while True:
                 linha = f.readline()
