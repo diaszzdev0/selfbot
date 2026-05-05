@@ -597,11 +597,10 @@ def run_selfbot(config: dict, user_id: int):
             if message.author != client.user:
                 go_por_thread.setdefault(channel.id, set()).add(message.author.id)
                 count = len(go_por_thread[channel.id])
+                await message.add_reaction("✅")
                 log_msg(user_id, f"🎮 Go de {message.author} ({count}/2)")
                 if count >= 2:
                     log_msg(user_id, "🎮 Dois go - iniciando sala...")
-                    await message.add_reaction("✅")
-                    await message.reply("⚡ **Ambos deram go!** Iniciando a partida...")
                     await _dar_go(channel, salas_ativas[channel.id])
             return
 
