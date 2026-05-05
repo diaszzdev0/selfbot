@@ -581,7 +581,9 @@ def run_selfbot(config: dict, user_id: int):
         cmd = conteudo.lower()
 
         if message.author == client.user:
+            log_msg(user_id, f"\U0001f916 Mensagem propria: '{cmd[:30]}'")
             if cmd in ("!normal", "!infinito"):
+                log_msg(user_id, f"Comando {cmd} detectado")
                 salaid = SALA_INF if cmd == "!infinito" else SALA_GN
                 log_msg(user_id, f"Comando {cmd} detectado")
                 msg_req = await channel.send("Criando sala...")
