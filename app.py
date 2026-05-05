@@ -43,7 +43,6 @@ db.init_app(app)
 MAX_PROCESSOS = 50
 processos: dict[int, multiprocessing.Process] = {}
 
-# Mata processos zumbis ao iniciar
 def _matar_processos_anteriores():
     import psutil
     try:
@@ -1287,4 +1286,4 @@ if __name__ == "__main__":
             db.session.add(u)
             db.session.commit()
             print("Admin criado: DiasDev / DiasDev0")
-    app.run(host="0.0.0.0", port=80, debug=False, use_reloader=False)
+    app.run(host="0.0.0.0", port=80, debug=False, use_reloader=False, threaded=True, processes=1)
