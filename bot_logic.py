@@ -281,6 +281,24 @@ def parar_selfbot(user_id: int):
 
 
 def run_selfbot(config: dict, user_id: int):
+    lock_path = os.path.join(LOG_DIR, f"user_{user_id}.lock")
+    try:
+        if os.path.exists(lock_path):
+            with open(lock_path, 'r') as f:
+                pid = f.read().strip()
+            if pid:
+                import psutil
+                try:
+                    if psutil.pid_exists(int(pid)):
+                        log_msg(user_id, f"⚠️ Instância já rodando (PID {pid}). Abortando.")
+                        return
+                except Exception:
+                    pass
+        with open(lock_path, 'w') as f:
+            f.write(str(os.getpid()))
+    except Exception:
+        pass
+
     log_msg(user_id, "🚀 Iniciando selfbot...")
     
     TOKEN = config.get("discord_token", "").strip()
@@ -723,4 +741,9 @@ def run_selfbot(config: dict, user_id: int):
         _clientes.pop(user_id, None)
         _loops.pop(user_id, None)
         _stop_flags.pop(user_id, None)
+        lock_path = os.path.join(LOG_DIR, f"user_{user_id}.lock")
+        try:
+            os.remove(lock_path)
+        except Exception:
+            pass
         log_msg(user_id, "🔴 Selfbot encerrado.")
