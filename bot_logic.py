@@ -405,6 +405,7 @@ def run_selfbot(config: dict, user_id: int):
             go_por_thread[channel.id] = set()
             log_msg(user_id, f"🎮 Sala enviada: {msg_sala}")
             await channel.send(msg_sala)
+            await asyncio.sleep(4)
             await channel.send("⚡ **IMPORTANTE:** Após ambos entrarem, digitem `go` aqui no chat para iniciar! A sala dá go automático em **5 minutos**.")
 
             async def go_auto(ch=channel, pid=pedidoid):
