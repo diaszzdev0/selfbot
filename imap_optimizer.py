@@ -5,7 +5,7 @@ import unicodedata
 import logging
 import threading
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from typing import Optional
 from email.header import decode_header
 
@@ -162,14 +162,14 @@ def _parse_email(mail, uid) -> Optional[dict]:
         pagador_norm = _normalizar(pagador).lower().strip()
         valor = _extrair_valor(content)
         banco = _detectar_banco(content)
-        # Usa a data real do email
         try:
             from email.utils import parsedate_to_datetime
             ts = parsedate_to_datetime(msg.get("Date", "")).replace(tzinfo=None)
         except Exception:
             ts = datetime.now()
+        uid_str = uid.decode() if isinstance(uid, bytes) else str(uid)
         return {
-            "uid": uid.decode() if isinstance(uid, bytes) else str(uid),
+            "uid": uid_str,
             "pagador": pagador,
             "pagador_norm": pagador_norm,
             "valor": valor,
@@ -181,12 +181,10 @@ def _parse_email(mail, uid) -> Optional[dict]:
 
 
 class IMAPIDLEListener:
-    """Mantém conexão IMAP IDLE e armazena emails Pix em memória."""
-
     def __init__(self, config: dict, log_fn=None):
         self.config = config
         self.log_fn = log_fn
-        self._emails: list[dict] = []  # emails recentes em memória
+        self._emails: list = []
         self._lock = threading.Lock()
         self._stop = False
         self._thread = threading.Thread(target=self._run, daemon=True)
@@ -205,15 +203,12 @@ class IMAPIDLEListener:
         return mail
 
     def _carregar_recentes(self, mail):
-        """Carrega emails do Nubank dos últimos 30 min ao iniciar."""
-        from datetime import date
         hoje = date.today().strftime("%d-%b-%Y")
         _, data = mail.search(None, f'(SINCE "{hoje}" FROM "nubank.com.br")')
         uids = data[0].split() if data and data[0] else []
         cutoff = datetime.now() - timedelta(minutes=30)
         carregados = 0
-        uids_sorted = sorted(uids, key=lambda x: int(x), reverse=True)
-        for uid in uids_sorted[:200]:  # max 200 emails iniciais
+        for uid in sorted(uids, key=lambda x: int(x), reverse=True)[:200]:
             entry = _parse_email(mail, uid)
             if entry and entry["ts"] >= cutoff:
                 with self._lock:
@@ -223,8 +218,6 @@ class IMAPIDLEListener:
         self._log(f"\u2705 IDLE ativo: {carregados} emails Pix carregados")
 
     def _processar_novos(self, mail):
-        """Busca emails novos após notificação IDLE."""
-        from datetime import date
         hoje = date.today().strftime("%d-%b-%Y")
         with self._lock:
             uids_conhecidos = {e["uid"] for e in self._emails}
@@ -241,10 +234,10 @@ class IMAPIDLEListener:
                     self._emails.append(entry)
                 novos += 1
                 self._log(f"\U0001f4e9 Pix recebido: {entry['pagador']} | R${entry['valor']} | {entry['banco']}")
-        # Limpa emails com mais de 30 min
         cutoff = datetime.now() - timedelta(minutes=30)
         with self._lock:
             self._emails = [e for e in self._emails if e["ts"] >= cutoff]
+
     def _run(self):
         while not self._stop:
             try:
@@ -254,17 +247,13 @@ class IMAPIDLEListener:
 
                 while not self._stop:
                     try:
-                        # Envia IDLE
                         tag = mail._new_tag()
                         mail.send(f"{tag} IDLE\r\n".encode())
-                        mail.readline()  # "+" (continua)
-
-                        # Aguarda notificação por até 25s (Gmail exige refresh a cada 29s)
+                        mail.readline()
                         mail.socket().settimeout(25)
                         try:
                             line = mail.readline()
                             if b"EXISTS" in line or b"RECENT" in line:
-                                # Sai do IDLE e processa
                                 mail.send(b"DONE\r\n")
                                 mail.readline()
                                 self._processar_novos(mail)
@@ -277,9 +266,7 @@ class IMAPIDLEListener:
                                 mail.readline()
                             except Exception:
                                 pass
-
                         mail.socket().settimeout(60)
-
                     except Exception as e:
                         self._log(f"\u26a0\ufe0f IDLE erro: {type(e).__name__} — reconectando...")
                         break
@@ -304,13 +291,16 @@ class IMAPIDLEListener:
         with self._lock:
             emails = [e for e in self._emails if e["ts"] >= cutoff]
 
-        log(f"\U0001f4ec Memória: {len(emails)} emails nos últimos 30 min")
+        log(f"\U0001f4ec Mem\u00f3ria: {len(emails)} emails nos \u00faltimos 30 min")
 
         for entry in sorted(emails, key=lambda x: int(x["uid"]), reverse=True):
             pagador_norm = entry["pagador_norm"]
             log(f"\U0001f4b0 Verificando: pagador='{pagador_norm}'")
             if pagador_norm and nome_busca and (nome_busca in pagador_norm or _match_nomes(nome_busca, pagador_norm)):
-                log(f"\u2705 MATCH: '{pagador_norm}' contém '{nome_busca}'")
+                log(f"\u2705 MATCH: '{pagador_norm}' cont\u00e9m '{nome_busca}'")
+                # Remove da memoria para nao reutilizar
+                with self._lock:
+                    self._emails = [e for e in self._emails if e["uid"] != entry["uid"]]
                 return {"valor": entry["valor"], "banco": entry["banco"], "pagador": entry["pagador"]}
 
         log(f"\u274c Nenhum pix de '{nome_busca}' encontrado")
@@ -322,8 +312,8 @@ class IMAPIDLEListener:
 
 class IMAPManager:
     def __init__(self):
-        self.listeners: dict[int, IMAPIDLEListener] = {}
-        self.configs: dict[int, dict] = {}
+        self.listeners: dict = {}
+        self.configs: dict = {}
 
     def get_cache(self, user_id: int, config: dict):
         self.configs[user_id] = config
@@ -361,20 +351,15 @@ imap_manager = IMAPManager()
 
 
 def buscar_pagamento_imap(config: dict, nome: str, log_fn=None) -> Optional[dict]:
-    """Busca nos emails já carregados pelo IDLE listener."""
-    # Encontra o listener pelo config
     for listener in imap_manager.listeners.values():
         if listener.config.get("email_user") == config.get("email_user"):
             return listener.buscar(nome, log_fn)
-
-    # Fallback: cria listener temporário e busca diretamente
     if log_fn:
-        log_fn("\u26a0\ufe0f IDLE não iniciado, buscando diretamente...")
+        log_fn("\u26a0\ufe0f IDLE nao iniciado, buscando diretamente...")
     return _buscar_direto(config, nome, log_fn)
 
 
 def _buscar_direto(config: dict, nome: str, log_fn=None) -> Optional[dict]:
-    """Fallback: busca direta no IMAP sem IDLE."""
     def log(msg):
         if log_fn:
             log_fn(msg)
@@ -398,9 +383,8 @@ def _buscar_direto(config: dict, nome: str, log_fn=None) -> Optional[dict]:
 
     resultado = None
     try:
-        from datetime import date
         hoje = date.today().strftime("%d-%b-%Y")
-        cutoff = datetime.now() - timedelta(minutes=1)
+        cutoff = datetime.now() - timedelta(minutes=30)
         _, data = mail.search(None, f'(SINCE "{hoje}" FROM "nubank.com.br")')
         uids = data[0].split() if data and data[0] else []
         uids_sorted = sorted(uids, key=lambda x: int(x), reverse=True)
@@ -408,13 +392,11 @@ def _buscar_direto(config: dict, nome: str, log_fn=None) -> Optional[dict]:
 
         for uid in uids_sorted:
             entry = _parse_email(mail, uid)
-            if not entry:
-                continue
-            if entry["ts"] < cutoff:
+            if not entry or entry["ts"] < cutoff:
                 continue
             log(f"\U0001f4b0 Pix | pagador='{entry['pagador_norm']}' | R${entry['valor']}")
             if entry["pagador_norm"] and nome_busca and (nome_busca in entry["pagador_norm"] or _match_nomes(nome_busca, entry["pagador_norm"])):
-                log(f"\u2705 MATCH: '{entry['pagador_norm']}' contém '{nome_busca}'")
+                log(f"\u2705 MATCH: '{entry['pagador_norm']}' cont\u00e9m '{nome_busca}'")
                 resultado = {"valor": entry["valor"], "banco": entry["banco"], "pagador": entry["pagador"]}
                 break
 
