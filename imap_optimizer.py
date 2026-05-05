@@ -2,7 +2,7 @@ import re
 import unicodedata
 import logging
 from typing import Optional
-from imap_tools import MailBox, AND, A
+from imap_tools import MailBox, AND
 
 logger = logging.getLogger(__name__)
 
@@ -121,14 +121,9 @@ def buscar_pagamento_imap(config: dict, nome: str, log_fn=None) -> Optional[dict
 
     resultado = None
     try:
-        # Busca os ultimos 10 emails nao lidos na INBOX
-        msgs = list(mb.fetch(A(seen=False), mark_seen=False, limit=10, reverse=True))
-        log(f"\U0001f4ec INBOX: {len(msgs)} emails nao lidos")
-
-        if not msgs:
-            # Se nao tem nao lidos, pega os ultimos 20 emails
-            msgs = list(mb.fetch(AND(all=True), mark_seen=False, limit=20, reverse=True))
-            log(f"\U0001f4ec INBOX: {len(msgs)} emails recentes (fallback)")
+        # Busca os ultimos 10 emails (lidos e nao lidos)
+        msgs = list(mb.fetch(AND(all=True), mark_seen=False, limit=10, reverse=True))
+        log(f"\U0001f4ec INBOX: {len(msgs)} emails recentes")
 
         for msg in msgs:
             subject = msg.subject or ""
