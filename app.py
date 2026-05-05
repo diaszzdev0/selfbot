@@ -40,8 +40,23 @@ app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
 db.init_app(app)
 
 # Dicionário para controlar processos com limite
-MAX_PROCESSOS = 50  # Limite máximo de processos simultâneos
+MAX_PROCESSOS = 50
 processos: dict[int, multiprocessing.Process] = {}
+
+# Mata processos zumbis ao iniciar
+def _matar_processos_anteriores():
+    import psutil
+    try:
+        atual = psutil.Process()
+        for filho in atual.children(recursive=True):
+            try:
+                filho.kill()
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+_matar_processos_anteriores()
 
 
 def _limpar_processos_mortos():
