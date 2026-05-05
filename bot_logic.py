@@ -622,7 +622,7 @@ def run_selfbot(config: dict, user_id: int):
                 salas_api = "?"
             await channel.send(
                 f"**Salas FF**\n"
-                f"\u2022 Restantes: **{salas_api}**\n"
+                f"\u2022 Restantes: **{disponiveis}**\n"
                 f"\u2022 Criadas (1h): **{h1}** | (1 dia): **{d1}** | (1 semana): **{s1}**"
             )
             return
