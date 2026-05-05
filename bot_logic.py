@@ -655,15 +655,16 @@ def run_selfbot(config: dict, user_id: int):
                     else:
                         valor = resultado_ocr.get('valor', 'N/A')
                         banco = resultado_ocr.get('banco', 'Comprovante')
+                        pagador = resultado_ocr.get('pagador', 'Desconhecido')
                         pagamentos_por_thread[channel.id] = pagamentos_por_thread.get(channel.id, 0) + 1
-                        log_msg(user_id, f"💰 Comprovante confirmado | R${valor} | {message.author}")
+                        log_msg(user_id, f"💰 Comprovante confirmado | {pagador} | R${valor} | {message.author}")
                         log_msg(user_id, f"💰 Pagamentos: {pagamentos_por_thread[channel.id]}/2")
                         await message.reply(
                             f"✅ **PAGAMENTO CONFIRMADO**\n\n"
                             f"👤 **Cliente:** {message.author.mention}\n"
-                            f"📝 **Nome:** `{message.author.display_name}`\n"
+                            f"📝 **Nome:** `{pagador}`\n"
                             f"💰 **Valor:** `R$ {valor} (BRL)`\n"
-                            f"🔍 **Destino:** `comprovante {banco}`\n"
+                            f"🔍 **Destino:** `e-mail {banco}`\n"
                             f"🎉 **Sua vaga está garantida! A sala será enviada aqui.**"
                         )
                         if pagamentos_por_thread[channel.id] >= 2:

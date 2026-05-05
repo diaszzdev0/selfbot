@@ -9,21 +9,28 @@ logger = logging.getLogger(__name__)
 OCR_API_URL = "https://api.ocr.space/parse/image"
 OCR_API_KEY = os.getenv("OCR_API_KEY", "helloworld")
 
+BANCOS = {
+    "Nubank":       [r"nubank"],
+    "Itau":         [r"ita[u\u00fa]"],
+    "Bradesco":     [r"bradesco"],
+    "Santander":    [r"santander"],
+    "Inter":        [r"banco\s*inter"],
+    "Caixa":        [r"caixa"],
+    "Mercado Pago": [r"mercado\s*pago"],
+    "PicPay":       [r"picpay"],
+}
+
+NOME_PADROES = [
+    r"pagador\s*[:\-]?\s*([A-Za-z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\s]{4,50})",
+    r"remetente\s*[:\-]?\s*([A-Za-z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\s]{4,50})",
+    r"origem\s*[:\-]?\s*([A-Za-z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\s]{4,50})",
+    r"de\s*[:\-]?\s*([A-Z][a-z\u00C0-\u00FF]+(?:\s+[A-Z][a-z\u00C0-\u00FF]+)+)",
+    r"nome\s*[:\-]?\s*([A-Za-z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\s]{4,50})",
+]
+
 
 def _normalizar(text: str) -> str:
     return unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii").lower().strip()
-
-
-BANCOS = {
-    "Nubank": [r"nubank"],
-    "Itau": [r"ita[u\u00fa]"],
-    "Bradesco": [r"bradesco"],
-    "Santander": [r"santander"],
-    "Inter": [r"banco\s*inter"],
-    "Caixa": [r"caixa"],
-    "Mercado Pago": [r"mercado\s*pago"],
-    "PicPay": [r"picpay"],
-}
 
 
 def _detectar_banco(text: str) -> str:
@@ -36,11 +43,10 @@ def _detectar_banco(text: str) -> str:
 
 
 def _extrair_valor_texto(text: str) -> str:
-    padroes = [
+    for padrao in [
         r'R\$\s*([0-9]+(?:[.,][0-9]{1,2})?)',
         r'valor\s*[:\-]?\s*([0-9]+(?:[.,][0-9]{1,2})?)',
-    ]
-    for padrao in padroes:
+    ]:
         m = re.search(padrao, text, re.IGNORECASE)
         if m:
             v = m.group(1).strip().replace('.', ',')
@@ -52,17 +58,24 @@ def _extrair_valor_texto(text: str) -> str:
     return "N/A"
 
 
+def _extrair_pagador_texto(text: str) -> str:
+    for padrao in NOME_PADROES:
+        m = re.search(padrao, text, flags=re.IGNORECASE)
+        if m:
+            nome = m.group(1).strip()
+            palavras = [p for p in nome.split() if re.match(r'^[A-Za-z\u00C0-\u00FF]+$', p) and len(p) >= 2]
+            if len(palavras) >= 2:
+                return ' '.join(palavras).title()
+    return "Desconhecido"
+
+
 def _match_nomes(nome_cmd: str, texto_norm: str) -> bool:
     ignorar = {'de', 'da', 'do', 'dos', 'das', 'e'}
     partes = [p for p in nome_cmd.split() if p not in ignorar and len(p) >= 3]
     return all(p in texto_norm for p in partes)
 
 
-def ler_comprovante_url(image_url: str, nome: str) -> dict:
-    """
-    Lê comprovante via URL usando OCR.space.
-    Retorna dict com 'encontrado', 'valor', 'texto' ou None se falhar.
-    """
+def ler_comprovante_url(image_url: str, nome: str = "") -> dict:
     try:
         resp = requests.post(
             OCR_API_URL,
@@ -80,41 +93,26 @@ def ler_comprovante_url(image_url: str, nome: str) -> dict:
         data = resp.json()
 
         if data.get("IsErroredOnProcessing"):
-            logger.warning(f"OCR erro: {data.get('ErrorMessage')}")
             return {"encontrado": False, "erro": data.get("ErrorMessage", "Erro OCR")}
 
         texto = ""
         for result in data.get("ParsedResults", []):
             texto += result.get("ParsedText", "") + " "
 
-        texto_norm = _normalizar(texto)
-        nome_norm = _normalizar(nome)
-
-        encontrado = _match_nomes(nome_norm, texto_norm)
         valor = _extrair_valor_texto(texto)
+        pagador = _extrair_pagador_texto(texto)
+        banco = _detectar_banco(texto)
+
+        encontrado = valor != "N/A"
 
         return {
             "encontrado": encontrado,
             "valor": valor,
+            "pagador": pagador,
+            "banco": banco,
             "texto": texto[:500],
-            "nome_encontrado": encontrado,
-            "banco": _detectar_banco(texto),
         }
 
     except Exception as e:
         logger.error(f"OCR falhou: {type(e).__name__}: {str(e)[:100]}")
         return {"encontrado": False, "erro": str(e)[:100]}
-
-
-async def ler_comprovante_discord(attachment, nome: str) -> dict:
-    """Lê comprovante de um attachment do Discord."""
-    url = attachment.url
-    content_type = getattr(attachment, 'content_type', '') or ''
-
-    # Aceita imagens e PDFs
-    if not any(t in content_type for t in ['image', 'pdf']):
-        ext = url.split('.')[-1].lower().split('?')[0]
-        if ext not in ('png', 'jpg', 'jpeg', 'gif', 'webp', 'pdf'):
-            return {"encontrado": False, "erro": "Formato não suportado"}
-
-    return ler_comprovante_url(url, nome)
