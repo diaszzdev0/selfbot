@@ -60,3 +60,9 @@ class BotStatus(db.Model):
     ativo = db.Column(db.Boolean, default=False)
     salas_usadas = db.Column(db.Integer, default=0)
     limite_salas = db.Column(db.Integer, default=0)
+
+
+class SalaHistorico(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, nullable=False)
+    criado_em = db.Column(db.DateTime, default=datetime.utcnow)

@@ -136,6 +136,13 @@ def _incrementar_sala(user_id: int):
             con.execute(text(
                 "UPDATE bot_status SET salas_usadas = salas_usadas + 1 WHERE user_id = :uid"
             ), {"uid": user_id})
+            # Registra no historico
+            con.execute(text(
+                "CREATE TABLE IF NOT EXISTS sala_historico (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+            ))
+            con.execute(text(
+                "INSERT INTO sala_historico (user_id) VALUES (:uid)"
+            ), {"uid": user_id})
         log_msg(user_id, "\U0001f3ae +1 sala contabilizada")
     except Exception as e:
         log_msg(user_id, f"\u26a0\ufe0f Erro ao incrementar sala: {type(e).__name__}: {str(e)[:80]}")
@@ -593,11 +600,23 @@ def run_selfbot(config: dict, user_id: int):
         if cmd == "!salas":
             usadas, limite = _get_salas_info(user_id)
             disponiveis = max(limite - usadas, 0)
+            # Busca historico por periodo
+            try:
+                from sqlalchemy import text
+                from datetime import datetime, timedelta
+                engine = _get_db_engine()
+                with engine.connect() as con:
+                    con.execute(text("CREATE TABLE IF NOT EXISTS sala_historico (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"))
+                    agora = datetime.utcnow()
+                    h1 = con.execute(text("SELECT COUNT(*) FROM sala_historico WHERE user_id=:uid AND criado_em >= :dt"), {"uid": user_id, "dt": agora - timedelta(hours=1)}).scalar()
+                    d1 = con.execute(text("SELECT COUNT(*) FROM sala_historico WHERE user_id=:uid AND criado_em >= :dt"), {"uid": user_id, "dt": agora - timedelta(days=1)}).scalar()
+                    s1 = con.execute(text("SELECT COUNT(*) FROM sala_historico WHERE user_id=:uid AND criado_em >= :dt"), {"uid": user_id, "dt": agora - timedelta(weeks=1)}).scalar()
+            except Exception:
+                h1 = d1 = s1 = 0
             await channel.send(
-                f"\U0001f3ae **Salas**\n\n"
-                f"\u2705 Criadas: `{usadas}`\n"
-                f"\U0001f513 Dispon\u00edveis: `{disponiveis}`\n"
-                f"\U0001f4ca Limite total: `{limite}`"
+                f"**Salas FF**\n"
+                f"\u2022 Restantes: **{disponiveis}**\n"
+                f"\u2022 Criadas (1h): **{h1}** | (1 dia): **{d1}** | (1 semana): **{s1}**"
             )
             return
             log_msg(user_id, f"Comando {cmd} detectado")
