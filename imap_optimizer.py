@@ -3,7 +3,6 @@ import unicodedata
 import logging
 from typing import Optional
 from imap_tools import MailBox, AND
-
 logger = logging.getLogger(__name__)
 
 BANCOS_PATTERNS = {
@@ -132,9 +131,11 @@ def buscar_pagamento_imap(config: dict, nome: str, log_fn=None) -> Optional[dict
 
     resultado = None
     try:
-        from datetime import date
+        from datetime import date, datetime, timedelta
+        cutoff = datetime.now() - timedelta(hours=2)
         msgs = list(mb.fetch(AND(date_gte=date.today()), mark_seen=False, reverse=True))
-        log(f"\U0001f4ec INBOX: {len(msgs)} emails hoje")
+        msgs = [m for m in msgs if m.date and m.date.replace(tzinfo=None) >= cutoff]
+        log(f"\U0001f4ec INBOX: {len(msgs)} emails nas ultimas 2h")
 
         for msg in msgs:
             subject = msg.subject or ""
