@@ -195,7 +195,10 @@ def buscar_pagamento_imap(config, nome, log_fn=None):
 
             for _, subject, pagador, pagador_norm, valor, banco in emails_parsed:
                 log(f"\U0001f4b0 pagador='{pagador_norm}' | R${valor}")
-                if pagador_norm and nome_busca and (nome_busca in pagador_norm or _match_nomes(nome_busca, pagador_norm)):
+                match1 = nome_busca in pagador_norm
+                match2 = _match_nomes(nome_busca, pagador_norm)
+                log(f"\U0001f50d match direto={match1} | match_nomes={match2}")
+                if pagador_norm and nome_busca and (match1 or match2):
                     log(f"\u2705 MATCH: '{pagador_norm}'")
                     resultado = {"valor": valor, "banco": banco, "pagador": pagador}
                     break
