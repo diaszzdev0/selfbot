@@ -25,29 +25,23 @@ NOME_PADROES = [
     r"institui[c\u00e7][a\u00e3]o\s+([A-Za-z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\s]{4,60?})\s*(?:\||\d|R\$)",
     r"pagador\s*[:\-]?\s*([A-Za-z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\s]{4,50})",
     r"remetente\s*[:\-]?\s*([A-Za-z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\s]{4,50})",
+    r"recebedor\s*[:\-]?\s*([A-Za-z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\s]{4,50})",
     r"origem\s*[:\-]?\s*([A-Za-z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\s]{4,50})",
     r"de\s*[:\-]?\s*([A-Z][a-z\u00C0-\u00FF]+(?:\s+[A-Z][a-z\u00C0-\u00FF]+)+)",
     r"nome\s*[:\-]?\s*([A-Za-z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\s]{4,50})",
 ]
 
-# Padrões de autenticidade por banco
 VALIDACOES = {
-    "Nubank": {
-        "campos": [r"nubank", r"R\$", r"\d{2}/\d{2}/\d{4}|\d{2}\s+de\s+\w+"],
-        "id_e2e": r"E\d{10,35}",
-    },
-    "Itau": {
-        "campos": [r"ita[u\u00fa]", r"R\$", r"autentica[c\u00e7][a\u00e3]o|autenticacao"],
-        "id_e2e": r"E\d{10,35}",
-    },
-    "Bradesco": {
-        "campos": [r"bradesco", r"R\$", r"autentica[c\u00e7][a\u00e3]o|autenticacao"],
-        "id_e2e": r"\d{20,30}",
-    },
-    "Inter": {
-        "campos": [r"inter", r"R\$", r"\d{2}/\d{2}/\d{4}"],
-        "id_e2e": r"E\d{10,35}",
-    },
+    "Nubank": {"campos": [r"nubank", r"R\$", r"\d{2}/\d{2}/\d{4}|\d{2}\s+de\s+\w+"]},
+    "Itau":   {"campos": [r"ita[u\u00fa]", r"R\$", r"autentica"]},
+    "Bradesco":{"campos": [r"bradesco", r"R\$", r"autentica"]},
+    "Inter":  {"campos": [r"inter", r"R\$", r"\d{2}/\d{2}/\d{4}"]},
+    "Caixa":  {"campos": [r"caixa", r"R\$", r"\d{2}/\d{2}/\d{4}"]},
+}
+
+MESES = {
+    'janeiro':1,'fevereiro':2,'marco':3,'abril':4,'maio':5,'junho':6,
+    'julho':7,'agosto':8,'setembro':9,'outubro':10,'novembro':11,'dezembro':12
 }
 
 
@@ -83,6 +77,7 @@ def _extrair_valor_texto(text):
 def _extrair_pagador_texto(text):
     texto_limpo = re.sub(r'nome\s*cpf\s*institui[c\u00e7][a\u00e3]o\s*', '', text, flags=re.IGNORECASE)
     texto_limpo = re.sub(r'nome\s*cpf\s*', '', texto_limpo, flags=re.IGNORECASE)
+    texto_limpo = re.sub(r'recebedor\s*nome\s*cpf\s*institui[c\u00e7][a\u00e3]o\s*', '', texto_limpo, flags=re.IGNORECASE)
 
     for padrao in NOME_PADROES:
         m = re.search(padrao, texto_limpo, flags=re.IGNORECASE)
@@ -101,46 +96,38 @@ def _extrair_pagador_texto(text):
     return "Desconhecido"
 
 
-def _extrair_data_comprovante(text):
-    """Extrai a data/hora do comprovante."""
-    padroes = [
-        r'(\d{2}/\d{2}/\d{4})\s+(\d{2}:\d{2})',
-        r'(\d{2}/\d{2}/\d{4})',
-        r'(\d{1,2})\s+de\s+(\w+)\s+de\s+(\d{4})',
-    ]
-    for padrao in padroes:
-        m = re.search(padrao, text, re.IGNORECASE)
-        if m:
-            return m.group(0)
-    return None
-
-
-def _validar_data(text) -> tuple:
-    """
-    Verifica se a data do comprovante é recente (últimos 10 minutos).
-    Retorna (valido, motivo)
-    """
-    data_str = _extrair_data_comprovante(text)
-    if not data_str:
-        return True, None  # sem data, nao bloqueia
-
+def _validar_data(text):
     agora = datetime.now()
 
-    # Tenta parsear DD/MM/YYYY HH:MM
-    m = re.search(r'(\d{2})/(\d{2})/(\d{4})\s+(\d{2}):(\d{2})', text)
+    # DD/MM/YYYY, HH:MM:SS (Caixa) ou DD/MM/YYYY HH:MM
+    m = re.search(r'(\d{2})/(\d{2})/(\d{4}),?\s*(\d{2}):(\d{2})(?::(\d{2}))?', text)
     if m:
         try:
             dt = datetime(int(m.group(3)), int(m.group(2)), int(m.group(1)),
                           int(m.group(4)), int(m.group(5)))
             diff = abs((agora - dt).total_seconds())
-            if diff > 180:  # mais de 3 minutos
-                minutos = int(diff / 60)
-                return False, f"Comprovante de {minutos} minutos atrás"
+            if diff > 180:
+                return False, f"Comprovante de {int(diff/60)} minutos atr\u00e1s"
             return True, None
         except Exception:
             pass
 
-    # Tenta parsear só DD/MM/YYYY
+    # DD de mes de YYYY as HH:MM (Nubank)
+    m = re.search(r'(\d{1,2})\s+de\s+(\w+)\s+de\s+(\d{4})\s*(?:\u00e0s|as)?\s*(\d{2}):(\d{2})', text, re.IGNORECASE)
+    if m:
+        try:
+            mes = MESES.get(_normalizar(m.group(2)))
+            if mes:
+                dt = datetime(int(m.group(3)), mes, int(m.group(1)),
+                              int(m.group(4)), int(m.group(5)))
+                diff = abs((agora - dt).total_seconds())
+                if diff > 180:
+                    return False, f"Comprovante de {int(diff/60)} minutos atr\u00e1s"
+                return True, None
+        except Exception:
+            pass
+
+    # Sem hora — verifica só a data
     m = re.search(r'(\d{2})/(\d{2})/(\d{4})', text)
     if m:
         try:
@@ -154,20 +141,12 @@ def _validar_data(text) -> tuple:
     return True, None
 
 
-def _validar_formato(text, banco) -> tuple:
-    """
-    Verifica se o comprovante tem os campos esperados do banco.
-    Retorna (valido, motivo)
-    """
+def _validar_formato(text, banco):
     if banco not in VALIDACOES:
         return True, None
-
-    regras = VALIDACOES[banco]
-    campos_ok = sum(1 for p in regras["campos"] if re.search(p, text, re.IGNORECASE))
-
+    campos_ok = sum(1 for p in VALIDACOES[banco]["campos"] if re.search(p, text, re.IGNORECASE))
     if campos_ok < 2:
-        return False, f"Comprovante não parece ser do {banco}"
-
+        return False, f"Comprovante n\u00e3o parece ser do {banco}"
     return True, None
 
 
@@ -205,17 +184,15 @@ def ler_comprovante_url(image_url, nome=""):
         pagador = _extrair_pagador_texto(texto)
         banco = _detectar_banco(texto)
 
-        logger.info(f"OCR texto bruto: {texto[:300]}")
+        logger.info(f"OCR texto: {texto[:300]}")
 
         if valor == "N/A":
-            return {"encontrado": False, "erro": "Valor não encontrado no comprovante"}
+            return {"encontrado": False, "erro": "Valor n\u00e3o encontrado no comprovante"}
 
-        # Valida data
         data_valida, motivo_data = _validar_data(texto)
         if not data_valida:
             return {"encontrado": False, "fake": True, "erro": f"\u26a0\ufe0f Comprovante suspeito: {motivo_data}"}
 
-        # Valida formato do banco
         formato_valido, motivo_formato = _validar_formato(texto, banco)
         if not formato_valido:
             return {"encontrado": False, "fake": True, "erro": f"\u26a0\ufe0f Comprovante suspeito: {motivo_formato}"}
