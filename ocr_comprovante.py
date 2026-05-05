@@ -205,6 +205,8 @@ def ler_comprovante_url(image_url, nome=""):
         pagador = _extrair_pagador_texto(texto)
         banco = _detectar_banco(texto)
 
+        logger.info(f"OCR texto bruto: {texto[:300]}")
+
         if valor == "N/A":
             return {"encontrado": False, "erro": "Valor não encontrado no comprovante"}
 

@@ -662,6 +662,7 @@ def run_selfbot(config: dict, user_id: int):
                         pagador = resultado_ocr.get('pagador', 'Desconhecido')
                         pagamentos_por_thread[channel.id] = pagamentos_por_thread.get(channel.id, 0) + 1
                         log_msg(user_id, f"💰 Comprovante confirmado | {pagador} | R${valor} | {message.author}")
+                        log_msg(user_id, f"📝 Texto OCR: {resultado_ocr.get('texto', '')[:200]}")
                         log_msg(user_id, f"💰 Pagamentos: {pagamentos_por_thread[channel.id]}/2")
                         await message.reply(
                             f"✅ **PAGAMENTO CONFIRMADO**\n\n"
