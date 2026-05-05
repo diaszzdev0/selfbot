@@ -152,14 +152,21 @@ def buscar_pagamento_imap(config: dict, nome: str, log_fn=None) -> Optional[dict
 
     nome_busca = _normalizar(nome).lower().strip()
 
-    try:
-        mail = imaplib.IMAP4_SSL(config["imap_server"], timeout=20)
-        mail.login(config["email_user"], config["email_pass"])
-        mail.select("INBOX")
-        log("\u2705 IMAP conectado")
-    except Exception as e:
-        log(f"\u26a0\ufe0f Falha IMAP: {type(e).__name__}: {str(e)[:150]}")
-        return None
+    for tentativa in range(1, 4):  # 3 tentativas
+        try:
+            mail = imaplib.IMAP4_SSL(config["imap_server"])
+            mail.socket().settimeout(30)
+            mail.login(config["email_user"], config["email_pass"])
+            mail.select("INBOX")
+            log(f"\u2705 IMAP conectado (tentativa {tentativa})")
+            break
+        except Exception as e:
+            log(f"\u26a0\ufe0f Falha IMAP tentativa {tentativa}: {type(e).__name__}: {str(e)[:100]}")
+            if tentativa == 3:
+                return None
+            import time
+            time.sleep(3)
+            continue
 
     resultado = None
     try:
