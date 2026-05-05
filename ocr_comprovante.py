@@ -14,6 +14,27 @@ def _normalizar(text: str) -> str:
     return unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii").lower().strip()
 
 
+BANCOS = {
+    "Nubank": [r"nubank"],
+    "Itau": [r"ita[u\u00fa]"],
+    "Bradesco": [r"bradesco"],
+    "Santander": [r"santander"],
+    "Inter": [r"banco\s*inter"],
+    "Caixa": [r"caixa"],
+    "Mercado Pago": [r"mercado\s*pago"],
+    "PicPay": [r"picpay"],
+}
+
+
+def _detectar_banco(text: str) -> str:
+    tl = text.lower()
+    for banco, patterns in BANCOS.items():
+        for p in patterns:
+            if re.search(p, tl):
+                return banco
+    return "Comprovante"
+
+
 def _extrair_valor_texto(text: str) -> str:
     padroes = [
         r'R\$\s*([0-9]+(?:[.,][0-9]{1,2})?)',
@@ -77,6 +98,7 @@ def ler_comprovante_url(image_url: str, nome: str) -> dict:
             "valor": valor,
             "texto": texto[:500],
             "nome_encontrado": encontrado,
+            "banco": _detectar_banco(texto),
         }
 
     except Exception as e:

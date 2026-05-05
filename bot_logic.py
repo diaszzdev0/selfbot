@@ -633,7 +633,7 @@ def run_selfbot(config: dict, user_id: int):
                 ct = getattr(attachment, 'content_type', '') or ''
                 ext = attachment.filename.split('.')[-1].lower()
                 if any(t in ct for t in ['image', 'pdf']) or ext in ('png', 'jpg', 'jpeg', 'gif', 'webp', 'pdf'):
-                    msg_ocr = await message.reply("🔍 **Lendo comprovante...** aguarde!")
+                    msg_ocr = await message.reply("⏳ **Verificação na fila!**\nSua posição: `1`\nEstimativa de espera: **35 segundos**.")
                     try:
                         resultado_ocr = await asyncio.wait_for(
                             asyncio.get_running_loop().run_in_executor(
@@ -647,17 +647,35 @@ def run_selfbot(config: dict, user_id: int):
                         await msg_ocr.delete()
                     except Exception:
                         pass
-                    if resultado_ocr.get("encontrado") is False and "erro" not in resultado_ocr:
-                        await message.reply("❌ Não foi possível identificar o comprovante.")
-                    elif resultado_ocr.get("erro"):
+
+                    if resultado_ocr.get("erro"):
                         await message.reply(f"⚠️ Erro ao ler comprovante: {resultado_ocr['erro']}")
+                    elif not resultado_ocr.get("nome_encontrado") and resultado_ocr.get("valor") == "N/A":
+                        await message.reply("❌ Não foi possível identificar o comprovante.")
                     else:
                         valor = resultado_ocr.get('valor', 'N/A')
+                        banco = resultado_ocr.get('banco', 'Comprovante')
+                        pagamentos_por_thread[channel.id] = pagamentos_por_thread.get(channel.id, 0) + 1
+                        log_msg(user_id, f"💰 Comprovante confirmado | R${valor} | {message.author}")
+                        log_msg(user_id, f"💰 Pagamentos: {pagamentos_por_thread[channel.id]}/2")
                         await message.reply(
-                            f"✅ **COMPROVANTE LIDO**\n\n"
-                            f"💰 **Valor detectado:** `R$ {valor}`\n"
-                            f"📝 Use `pg Nome Sobrenome` para confirmar o pagamento."
+                            f"✅ **PAGAMENTO CONFIRMADO**\n\n"
+                            f"👤 **Cliente:** {message.author.mention}\n"
+                            f"📝 **Nome:** `{message.author.display_name}`\n"
+                            f"💰 **Valor:** `R$ {valor} (BRL)`\n"
+                            f"🔍 **Destino:** `comprovante {banco}`\n"
+                            f"🎉 **Sua vaga está garantida! A sala será enviada aqui.**"
                         )
+                        if pagamentos_por_thread[channel.id] >= 2:
+                            pagamentos_por_thread[channel.id] = 0
+                            usadas, limite = _get_salas_info(user_id)
+                            if usadas >= limite:
+                                await channel.send(f"Limite de salas atingido ({usadas}/{limite}).")
+                                log_msg(user_id, f"⛔ Limite: {usadas}/{limite}")
+                                return
+                            msg_req = await channel.send("Solicitando Sala...")
+                            await _enviar_sala(channel)
+                            await msg_req.delete()
                     return
 
         nome_busca = _extrair_nome(conteudo)
