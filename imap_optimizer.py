@@ -299,12 +299,12 @@ class IMAPIDLEListener:
                 log_fn(msg)
 
         nome_busca = _normalizar(nome).lower().strip()
-        cutoff = datetime.now() - timedelta(minutes=5)
+        cutoff = datetime.now() - timedelta(minutes=30)
 
         with self._lock:
             emails = [e for e in self._emails if e["ts"] >= cutoff]
 
-        log(f"\U0001f4ec Memória: {len(emails)} emails nos últimos 5 min")
+        log(f"\U0001f4ec Memória: {len(emails)} emails nos últimos 30 min")
 
         for entry in sorted(emails, key=lambda x: x["ts"], reverse=True):
             pagador_norm = entry["pagador_norm"]
