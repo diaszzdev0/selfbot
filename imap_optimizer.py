@@ -1,8 +1,12 @@
 import re
+import imaplib
+import email
 import unicodedata
 import logging
+from datetime import date, datetime, timedelta
 from typing import Optional
-from imap_tools import MailBox, AND
+from email.header import decode_header
+
 logger = logging.getLogger(__name__)
 
 BANCOS_PATTERNS = {
@@ -22,17 +26,11 @@ BANCOS_PATTERNS = {
 }
 
 ASSUNTOS_PIX = [
-    "você recebeu uma transferência via pix",
-    "voce recebeu uma transferencia via pix",
-    "você recebeu uma transferência",
-    "voce recebeu uma transferencia",
-    "você recebeu um pix",
-    "voce recebeu um pix",
-    "transferência via pix",
+    "recebeu uma transfer",
+    "recebeu um pix",
     "transferencia via pix",
     "pix recebido",
-    "recebemos sua transferência",
-    "recebemos sua transferencia",
+    "recebemos sua transfer",
 ]
 
 NOME_PADROES = [
@@ -43,7 +41,6 @@ NOME_PADROES = [
     r"recebido\s+de\s+([A-Za-z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\-\'\s]{2,60})",
     r"pagador\s*[:\s]+([A-Za-z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\-\'\s]{2,60})",
     r"remetente\s*[:\s]+([A-Za-z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\-\'\s]{2,60})",
-    r"de\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)",
 ]
 
 
@@ -57,11 +54,11 @@ def _normalizar(text: str) -> str:
     return unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii").lower().strip()
 
 
-def _detectar_banco(subject: str, content: str) -> str:
-    texto = (subject + " " + content).lower()
+def _detectar_banco(content: str) -> str:
+    cl = content.lower()
     for banco, patterns in BANCOS_PATTERNS.items():
         for p in patterns:
-            if re.search(p, texto, re.IGNORECASE):
+            if re.search(p, cl, re.IGNORECASE):
                 return banco
     return "Desconhecido"
 
@@ -103,7 +100,6 @@ def _is_email_pix(subject: str) -> bool:
 
 
 def _match_nomes(nome_cmd: str, nome_email: str) -> bool:
-    """Verifica se todas as partes significativas do comando estao no email."""
     ignorar = {'de', 'da', 'do', 'dos', 'das', 'e'}
     partes_cmd = [p for p in nome_cmd.split() if p not in ignorar and len(p) >= 3]
     partes_email = nome_email.split()
@@ -113,6 +109,41 @@ def _match_nomes(nome_cmd: str, nome_email: str) -> bool:
     )
 
 
+def _decode_header_str(value: str) -> str:
+    if not value:
+        return ""
+    parts = decode_header(value)
+    result = []
+    for part, enc in parts:
+        if isinstance(part, bytes):
+            result.append(part.decode(enc or "utf-8", errors="ignore"))
+        else:
+            result.append(part)
+    return " ".join(result)
+
+
+def _get_body(msg) -> str:
+    body = ""
+    if msg.is_multipart():
+        for part in msg.walk():
+            ct = part.get_content_type()
+            if ct in ("text/plain", "text/html"):
+                try:
+                    body += part.get_payload(decode=True).decode(
+                        part.get_content_charset() or "utf-8", errors="ignore"
+                    )
+                except Exception:
+                    pass
+    else:
+        try:
+            body = msg.get_payload(decode=True).decode(
+                msg.get_content_charset() or "utf-8", errors="ignore"
+            )
+        except Exception:
+            pass
+    return body
+
+
 def buscar_pagamento_imap(config: dict, nome: str, log_fn=None) -> Optional[dict]:
     def log(msg):
         if log_fn:
@@ -120,10 +151,14 @@ def buscar_pagamento_imap(config: dict, nome: str, log_fn=None) -> Optional[dict
         logger.info(msg)
 
     nome_busca = _normalizar(nome).lower().strip()
+    # Pega as partes significativas do nome para busca no servidor
+    ignorar = {'de', 'da', 'do', 'dos', 'das', 'e'}
+    partes = [p for p in nome_busca.split() if p not in ignorar and len(p) >= 3]
 
     try:
-        mb = MailBox(config["imap_server"], timeout=25)
-        mb.login(config["email_user"], config["email_pass"], initial_folder="INBOX")
+        mail = imaplib.IMAP4_SSL(config["imap_server"], timeout=20)
+        mail.login(config["email_user"], config["email_pass"])
+        mail.select("INBOX")
         log("\u2705 IMAP conectado")
     except Exception as e:
         log(f"\u26a0\ufe0f Falha IMAP: {type(e).__name__}: {str(e)[:150]}")
@@ -131,27 +166,53 @@ def buscar_pagamento_imap(config: dict, nome: str, log_fn=None) -> Optional[dict
 
     resultado = None
     try:
-        from datetime import date, datetime, timedelta
+        # Data de hoje no formato IMAP
+        hoje = date.today().strftime("%d-%b-%Y")
         cutoff = datetime.now() - timedelta(hours=2)
-        msgs = list(mb.fetch(AND(date_gte=date.today()), mark_seen=False, reverse=True))
-        msgs = [m for m in msgs if m.date and m.date.replace(tzinfo=None) >= cutoff]
-        log(f"\U0001f4ec INBOX: {len(msgs)} emails nas ultimas 2h")
 
-        for msg in msgs:
-            subject = msg.subject or ""
-            log(f"\U0001f4e7 Assunto: '{subject}'")
+        # Busca por cada parte do nome no corpo do email
+        uids_encontrados = set()
+        for parte in partes[:2]:  # usa as 2 primeiras partes significativas
+            _, data = mail.search(None, f'(SINCE "{hoje}" BODY "{parte}")')
+            if data and data[0]:
+                for uid in data[0].split():
+                    uids_encontrados.add(uid)
+
+        log(f"\U0001f4ec INBOX: {len(uids_encontrados)} emails com '{nome_busca}' hoje")
+
+        # Ordena do mais recente (maior uid) para o mais antigo
+        uids_sorted = sorted(uids_encontrados, key=lambda x: int(x), reverse=True)
+
+        for uid in uids_sorted:
+            _, msg_data = mail.fetch(uid, "(RFC822)")
+            if not msg_data or not msg_data[0]:
+                continue
+            raw = msg_data[0][1]
+            msg = email.message_from_bytes(raw)
+
+            subject = _decode_header_str(msg.get("Subject", ""))
+            date_str = msg.get("Date", "")
+
+            # Filtra por hora
+            try:
+                from email.utils import parsedate_to_datetime
+                msg_dt = parsedate_to_datetime(date_str).replace(tzinfo=None)
+                if msg_dt < cutoff:
+                    continue
+            except Exception:
+                pass
 
             if not _is_email_pix(subject):
-                log(f"\u23e9 Ignorado (nao e pix): '{subject}'")
                 continue
 
-            content = f"{subject} {msg.text or ''} {msg.html or ''}"
+            body = _get_body(msg)
+            content = f"{subject} {body}"
             pagador = _extrair_pagador(content)
             pagador_norm = _normalizar(pagador).lower().strip()
             valor = _extrair_valor(content)
-            banco = _detectar_banco(subject, content)
+            banco = _detectar_banco(content)
 
-            log(f"\U0001f4b0 Pix encontrado | pagador='{pagador_norm}' | R${valor} | {banco}")
+            log(f"\U0001f4b0 Pix | pagador='{pagador_norm}' | R${valor} | {banco}")
 
             if pagador_norm and nome_busca and (nome_busca in pagador_norm or _match_nomes(nome_busca, pagador_norm)):
                 log(f"\u2705 MATCH: '{pagador_norm}' contém '{nome_busca}'")
@@ -165,7 +226,7 @@ def buscar_pagamento_imap(config: dict, nome: str, log_fn=None) -> Optional[dict
         log(f"\u26a0\ufe0f Erro na busca: {type(e).__name__}: {str(e)[:150]}")
     finally:
         try:
-            mb.logout()
+            mail.logout()
         except Exception:
             pass
 
