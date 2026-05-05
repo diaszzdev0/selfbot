@@ -208,7 +208,7 @@ class IMAPIDLEListener:
         cutoff = datetime.now() - timedelta(minutes=30)
         carregados = 0
         uids_sorted = sorted(uids, key=lambda x: int(x), reverse=True)
-        for uid in uids_sorted[:50]:  # max 50 emails iniciais
+        for uid in uids_sorted[:200]:  # max 200 emails iniciais
             entry = _parse_email(mail, uid)
             if entry and entry["ts"] >= cutoff:
                 with self._lock:
@@ -240,7 +240,6 @@ class IMAPIDLEListener:
         cutoff = datetime.now() - timedelta(minutes=30)
         with self._lock:
             self._emails = [e for e in self._emails if e["ts"] >= cutoff]
-
     def _run(self):
         while not self._stop:
             try:
@@ -295,12 +294,12 @@ class IMAPIDLEListener:
                 log_fn(msg)
 
         nome_busca = _normalizar(nome).lower().strip()
-        cutoff = datetime.now() - timedelta(minutes=1)
+        cutoff = datetime.now() - timedelta(minutes=5)
 
         with self._lock:
             emails = [e for e in self._emails if e["ts"] >= cutoff]
 
-        log(f"\U0001f4ec Memória: {len(emails)} emails no último 1 min")
+        log(f"\U0001f4ec Memória: {len(emails)} emails nos últimos 5 min")
 
         for entry in sorted(emails, key=lambda x: x["ts"], reverse=True):
             pagador_norm = entry["pagador_norm"]
