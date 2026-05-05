@@ -600,7 +600,6 @@ def run_selfbot(config: dict, user_id: int):
         if cmd == "!salas":
             usadas, limite = _get_salas_info(user_id)
             disponiveis = max(limite - usadas, 0)
-            # Busca historico por periodo
             try:
                 from sqlalchemy import text
                 from datetime import datetime, timedelta
@@ -613,9 +612,17 @@ def run_selfbot(config: dict, user_id: int):
                     s1 = con.execute(text("SELECT COUNT(*) FROM sala_historico WHERE user_id=:uid AND criado_em >= :dt"), {"uid": user_id, "dt": agora - timedelta(weeks=1)}).scalar()
             except Exception:
                 h1 = d1 = s1 = 0
+            # Busca saldo na API
+            try:
+                async with aiohttp.ClientSession() as sess:
+                    async with sess.get(f"https://salasff.com/modos?key={API_KEY}", timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                        data = await resp.json(content_type=None)
+                        salas_api = data.get("salas", "?")
+            except Exception:
+                salas_api = "?"
             await channel.send(
                 f"**Salas FF**\n"
-                f"\u2022 Restantes: **{disponiveis}**\n"
+                f"\u2022 Restantes: **{salas_api}**\n"
                 f"\u2022 Criadas (1h): **{h1}** | (1 dia): **{d1}** | (1 semana): **{s1}**"
             )
             return
