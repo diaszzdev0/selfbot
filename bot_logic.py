@@ -363,7 +363,7 @@ def run_selfbot(config: dict, user_id: int):
                 async with sess.get(url) as resp:
                     data = await resp.json(content_type=None)
             if data.get("success"):
-                await channel.send("✅ Sala iniciada!")
+                await channel.send("✅ **Sala iniciou! Tentando dar go…**")
                 log_msg(user_id, f"🎮 Go dado! pedidoid: {pedidoid}")
             else:
                 log_msg(user_id, f"Erro go: {data.get('msg', data)}")
