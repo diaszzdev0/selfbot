@@ -95,8 +95,7 @@ def _extrair_pagador(content):
 
 
 def _is_email_pix(subject):
-    s = _normalizar(subject)
-    return any(p in s for p in ASSUNTOS_PIX)
+    return any(p in _normalizar(subject) for p in ASSUNTOS_PIX)
 
 
 def _match_nomes(nome_cmd, nome_email):
@@ -178,10 +177,10 @@ def _buscar_direto(config, nome, log_fn=None):
             mail.socket().settimeout(30)
             mail.login(config["email_user"], config["email_pass"])
             mail.select("INBOX")
-            log(f"\u2705 IMAP direto conectado (tentativa {tentativa})")
+            log(f"\u2705 IMAP direto (tentativa {tentativa})")
             break
         except Exception as e:
-            log(f"\u26a0\ufe0f Falha IMAP tentativa {tentativa}: {type(e).__name__}: {str(e)[:100]}")
+            log(f"\u26a0\ufe0f Falha tentativa {tentativa}: {type(e).__name__}: {str(e)[:80]}")
             if tentativa == 3:
                 return None
             time.sleep(3)
@@ -193,16 +192,15 @@ def _buscar_direto(config, nome, log_fn=None):
         cutoff = datetime.now() - timedelta(minutes=30)
         _, data = mail.search(None, f'(SINCE "{hoje}" FROM "nubank.com.br")')
         uids = data[0].split() if data and data[0] else []
-        uids_sorted = sorted(uids, key=lambda x: int(x), reverse=True)
-        log(f"\U0001f4ec {len(uids_sorted)} emails do Nubank hoje")
+        log(f"\U0001f4ec {len(uids)} emails do Nubank hoje")
 
-        for uid in uids_sorted:
+        for uid in sorted(uids, key=lambda x: int(x), reverse=True):
             entry = _parse_email(mail, uid)
             if not entry or entry["ts"] < cutoff:
                 continue
-            log(f"\U0001f4b0 Pix | pagador='{entry['pagador_norm']}' | R${entry['valor']}")
+            log(f"\U0001f4b0 pagador='{entry['pagador_norm']}' | R${entry['valor']}")
             if entry["pagador_norm"] and nome_busca and (nome_busca in entry["pagador_norm"] or _match_nomes(nome_busca, entry["pagador_norm"])):
-                log(f"\u2705 MATCH direto: '{entry['pagador_norm']}'")
+                log(f"\u2705 MATCH: '{entry['pagador_norm']}'")
                 resultado = {"valor": entry["valor"], "banco": entry["banco"], "pagador": entry["pagador"]}
                 break
 
@@ -224,6 +222,7 @@ class IMAPIDLEListener:
         self.config = config
         self.log_fn = log_fn
         self._emails = []
+        self._usados = set()  # UIDs ja confirmados — persiste entre reconexoes
         self._lock = threading.Lock()
         self._stop = False
         self._thread = threading.Thread(target=self._run, daemon=True)
@@ -248,18 +247,23 @@ class IMAPIDLEListener:
         cutoff = datetime.now() - timedelta(minutes=30)
         carregados = 0
         for uid in sorted(uids, key=lambda x: int(x), reverse=True)[:200]:
+            uid_str = uid.decode() if isinstance(uid, bytes) else str(uid)
+            with self._lock:
+                if uid_str in self._usados:
+                    continue
+                if any(e["uid"] == uid_str for e in self._emails):
+                    continue
             entry = _parse_email(mail, uid)
             if entry and entry["ts"] >= cutoff:
                 with self._lock:
-                    if not any(e["uid"] == entry["uid"] for e in self._emails):
-                        self._emails.append(entry)
-                        carregados += 1
+                    self._emails.append(entry)
+                    carregados += 1
         self._log(f"\u2705 IDLE ativo: {carregados} emails Pix carregados")
 
     def _processar_novos(self, mail):
         hoje = date.today().strftime("%d-%b-%Y")
         with self._lock:
-            uids_conhecidos = {e["uid"] for e in self._emails}
+            uids_conhecidos = {e["uid"] for e in self._emails} | self._usados
         _, data = mail.search(None, f'(SINCE "{hoje}" FROM "nubank.com.br")')
         uids = data[0].split() if data and data[0] else []
         novos = 0
@@ -333,15 +337,15 @@ class IMAPIDLEListener:
         log(f"\U0001f4ec Mem\u00f3ria: {len(emails)} emails nos \u00faltimos 30 min")
 
         for entry in sorted(emails, key=lambda x: int(x["uid"]), reverse=True):
-            pagador_norm = entry["pagador_norm"]
-            log(f"\U0001f4b0 Verificando: pagador='{pagador_norm}'")
-            if pagador_norm and nome_busca and (nome_busca in pagador_norm or _match_nomes(nome_busca, pagador_norm)):
-                log(f"\u2705 MATCH: '{pagador_norm}' cont\u00e9m '{nome_busca}'")
+            pn = entry["pagador_norm"]
+            log(f"\U0001f4b0 Verificando: pagador='{pn}'")
+            if pn and nome_busca and (nome_busca in pn or _match_nomes(nome_busca, pn)):
+                log(f"\u2705 MATCH: '{pn}' cont\u00e9m '{nome_busca}'")
                 with self._lock:
                     self._emails = [e for e in self._emails if e["uid"] != entry["uid"]]
+                    self._usados.add(entry["uid"])
                 return {"valor": entry["valor"], "banco": entry["banco"], "pagador": entry["pagador"]}
 
-        # Fallback: busca direto no IMAP
         log("\U0001f504 N\u00e3o encontrado na mem\u00f3ria, buscando direto no IMAP...")
         return _buscar_direto(self.config, nome, log_fn)
 
