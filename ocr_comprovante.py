@@ -23,6 +23,7 @@ BANCOS = {
 
 NOME_PADROES = [
     r"institui[c\u00e7][a\u00e3]o\s+([A-Za-z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\s]{4,60?})\s*(?:\||\d|R\$)",
+    r"destino\s*nome\s+([A-Za-z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\s]{4,60}?)\s*institui[c\u00e7][a\u00e3]o",
     r"pagador\s*[:\-]?\s*([A-Za-z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\s]{4,50})",
     r"remetente\s*[:\-]?\s*([A-Za-z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\s]{4,50})",
     r"recebedor\s*[:\-]?\s*([A-Za-z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\s]{4,50})",
@@ -41,7 +42,9 @@ VALIDACOES = {
 
 MESES = {
     'janeiro':1,'fevereiro':2,'marco':3,'abril':4,'maio':5,'junho':6,
-    'julho':7,'agosto':8,'setembro':9,'outubro':10,'novembro':11,'dezembro':12
+    'julho':7,'agosto':8,'setembro':9,'outubro':10,'novembro':11,'dezembro':12,
+    'jan':1,'fev':2,'mar':3,'abr':4,'mai':5,'jun':6,
+    'jul':7,'ago':8,'set':9,'out':10,'nov':11,'dez':12
 }
 
 
@@ -98,6 +101,21 @@ def _extrair_pagador_texto(text):
 
 def _validar_data(text):
     agora = datetime.now()
+
+    # DD MMM YYYY - HH:MM:SS (Nubank: 05 MAI 2026 - 17:28:25)
+    m = re.search(r'(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})\s*[-\u2013]\s*(\d{2}):(\d{2})(?::(\d{2}))?', text, re.IGNORECASE)
+    if m:
+        try:
+            mes = MESES.get(_normalizar(m.group(2)))
+            if mes:
+                dt = datetime(int(m.group(3)), mes, int(m.group(1)),
+                              int(m.group(4)), int(m.group(5)))
+                diff = abs((agora - dt).total_seconds())
+                if diff > 180:
+                    return False, f"Comprovante de {int(diff/60)} minutos atr\u00e1s"
+                return True, None
+        except Exception:
+            pass
 
     # DD/MM/YYYY, HH:MM:SS (Caixa) ou DD/MM/YYYY HH:MM
     m = re.search(r'(\d{2})/(\d{2})/(\d{4}),?\s*(\d{2}):(\d{2})(?::(\d{2}))?', text)
