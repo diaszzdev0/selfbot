@@ -30,11 +30,11 @@ NOME_PADROES = [
 ]
 
 
-def _normalizar(text: str) -> str:
+def _normalizar(text):
     return unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii").lower().strip()
 
 
-def _detectar_banco(text: str) -> str:
+def _detectar_banco(text):
     tl = text.lower()
     for banco, patterns in BANCOS.items():
         for p in patterns:
@@ -43,7 +43,7 @@ def _detectar_banco(text: str) -> str:
     return "Comprovante"
 
 
-def _extrair_valor_texto(text: str) -> str:
+def _extrair_valor_texto(text):
     for padrao in [
         r'R\$\s*([0-9]+(?:[.,][0-9]{1,2})?)',
         r'valor\s*[:\-]?\s*([0-9]+(?:[.,][0-9]{1,2})?)',
@@ -59,24 +59,37 @@ def _extrair_valor_texto(text: str) -> str:
     return "N/A"
 
 
-def _extrair_pagador_texto(text: str) -> str:
+def _extrair_pagador_texto(text):
+    # Remove cabecalho comum: "Nome Cpf Instituicao"
+    texto_limpo = re.sub(r'nome\s*cpf\s*institui[c\u00e7][a\u00e3]o\s*', '', text, flags=re.IGNORECASE)
+    texto_limpo = re.sub(r'nome\s*cpf\s*', '', texto_limpo, flags=re.IGNORECASE)
+
     for padrao in NOME_PADROES:
-        m = re.search(padrao, text, flags=re.IGNORECASE)
+        m = re.search(padrao, texto_limpo, flags=re.IGNORECASE)
         if m:
             nome = m.group(1).strip()
             palavras = [p for p in nome.split() if re.match(r'^[A-Za-z\u00C0-\u00FF]+$', p) and len(p) >= 2]
             if len(palavras) >= 2:
                 return ' '.join(palavras).title()
+
+    # Fallback: pega o primeiro nome completo encontrado no texto limpo
+    m = re.search(r'([A-Z][a-z\u00C0-\u00FF]+(?:\s+[A-Z][a-z\u00C0-\u00FF]+){1,4})', texto_limpo)
+    if m:
+        nome = m.group(1).strip()
+        palavras = [p for p in nome.split() if len(p) >= 2]
+        if len(palavras) >= 2:
+            return ' '.join(palavras).title()
+
     return "Desconhecido"
 
 
-def _match_nomes(nome_cmd: str, texto_norm: str) -> bool:
+def _match_nomes(nome_cmd, texto_norm):
     ignorar = {'de', 'da', 'do', 'dos', 'das', 'e'}
     partes = [p for p in nome_cmd.split() if p not in ignorar and len(p) >= 3]
     return all(p in texto_norm for p in partes)
 
 
-def ler_comprovante_url(image_url: str, nome: str = "") -> dict:
+def ler_comprovante_url(image_url, nome=""):
     try:
         resp = requests.post(
             OCR_API_URL,
@@ -104,10 +117,8 @@ def ler_comprovante_url(image_url: str, nome: str = "") -> dict:
         pagador = _extrair_pagador_texto(texto)
         banco = _detectar_banco(texto)
 
-        encontrado = valor != "N/A"
-
         return {
-            "encontrado": encontrado,
+            "encontrado": valor != "N/A",
             "valor": valor,
             "pagador": pagador,
             "banco": banco,
