@@ -133,7 +133,7 @@ def _validar_data(text) -> tuple:
             dt = datetime(int(m.group(3)), int(m.group(2)), int(m.group(1)),
                           int(m.group(4)), int(m.group(5)))
             diff = abs((agora - dt).total_seconds())
-            if diff > 600:  # mais de 10 minutos
+            if diff > 180:  # mais de 3 minutos
                 minutos = int(diff / 60)
                 return False, f"Comprovante de {minutos} minutos atrás"
             return True, None
