@@ -619,7 +619,7 @@ def run_selfbot(config: dict, user_id: int):
                     log_msg(user_id, f"❌ !very não encontrado: {nome_very}")
             return
 
-        if re.fullmatch(r"go+", cmd) and channel.id in salas_ativas:
+        if re.fullmatch(r"go+[!.]*", cmd.strip()) and channel.id in salas_ativas:
             if message.author != client.user:
                 go_set = go_por_thread.setdefault(channel.id, set())
                 go_set.add(message.author.id)
