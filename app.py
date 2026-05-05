@@ -371,9 +371,8 @@ def cliente_stream_logs(user_id: int):
         with open(log_path, "a", encoding="utf-8"):
             pass
         with open(log_path, "r", encoding="utf-8", errors="replace") as f:
-            for linha in f.read().splitlines():
-                if linha.strip():
-                    yield f"data: {linha}\n\n"
+            # Vai para o final do arquivo, nao relê o historico
+            f.seek(0, 2)
             last_heartbeat = time.time()
             while True:
                 linha = f.readline()
@@ -382,7 +381,6 @@ def cliente_stream_logs(user_id: int):
                     last_heartbeat = time.time()
                 else:
                     time.sleep(0.3)
-                    # Envia heartbeat a cada 20s para manter conexão viva
                     if time.time() - last_heartbeat > 20:
                         yield ": heartbeat\n\n"
                         last_heartbeat = time.time()
