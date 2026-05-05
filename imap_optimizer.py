@@ -25,6 +25,8 @@ BANCOS_PATTERNS = {
 ASSUNTOS_PIX = [
     "você recebeu uma transferência via pix",
     "voce recebeu uma transferencia via pix",
+    "você recebeu uma transferência",
+    "voce recebeu uma transferencia",
     "você recebeu um pix",
     "voce recebeu um pix",
     "transferência via pix",
@@ -119,13 +121,13 @@ def buscar_pagamento_imap(config: dict, nome: str, log_fn=None) -> Optional[dict
 
     resultado = None
     try:
-        # Busca os ultimos 5 emails nao lidos na INBOX
-        msgs = list(mb.fetch(A(seen=False), mark_seen=False, limit=5, reverse=True))
+        # Busca os ultimos 10 emails nao lidos na INBOX
+        msgs = list(mb.fetch(A(seen=False), mark_seen=False, limit=10, reverse=True))
         log(f"\U0001f4ec INBOX: {len(msgs)} emails nao lidos")
 
         if not msgs:
-            # Se nao tem nao lidos, pega os ultimos 10 emails
-            msgs = list(mb.fetch(AND(all=True), mark_seen=False, limit=10, reverse=True))
+            # Se nao tem nao lidos, pega os ultimos 20 emails
+            msgs = list(mb.fetch(AND(all=True), mark_seen=False, limit=20, reverse=True))
             log(f"\U0001f4ec INBOX: {len(msgs)} emails recentes (fallback)")
 
         for msg in msgs:
