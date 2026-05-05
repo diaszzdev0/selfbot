@@ -503,19 +503,7 @@ def run_selfbot(config: dict, user_id: int):
             log_msg(user_id, "✅ Verificação inicial concluída")
         except Exception as exc:
             log_msg(user_id, f"❌ Erro na verificação inicial: {exc}")
-    
 
-        while not _stop_flags.get(user_id, False):
-            try:
-                await asyncio.sleep(300)
-                if _stop_flags.get(user_id, False):
-                    break
-                latency_str = f"{client.latency:.3f}s" if hasattr(client, 'latency') and client.latency != float('inf') else "inf"
-                log_msg(user_id, f"📊 Status: conectado={not client.is_closed()}, latência={latency_str}")
-            except Exception as e:
-                log_msg(user_id, f"❌ Erro no health check: {type(e).__name__}")
-                await asyncio.sleep(60)
-    
     async def monitorar_threads():
         ultima_verificacao = datetime.now()
         while not _stop_flags.get(user_id, False):
@@ -651,9 +639,11 @@ def run_selfbot(config: dict, user_id: int):
 
         if resultado:
             await message.reply(
-                f"**Pagamento confirmado** ({resultado['banco']}) para {nome_busca}!\n"
-                f"Valor: {resultado['valor']} (BRL)\n"
-                f"ID: {random.randint(1000, 9999)}"
+                f"✅ **PAGAMENTO CONFIRMADO PELO SISTEMA**\n\n"
+                f"👤 Nome: {resultado.get('pagador', nome_busca)}\n"
+                f"💰 Valor: R$ {resultado['valor']}\n"
+                f"🏦 Origem: {resultado['banco']}\n"
+                f"🆔 ID: {random.randint(100000, 999999)}"
             )
             pagamentos_por_thread[channel.id] = pagamentos_por_thread.get(channel.id, 0) + 1
             log_msg(user_id, f"💰 Pagamentos: {pagamentos_por_thread[channel.id]}/2")
