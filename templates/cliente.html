@@ -876,11 +876,13 @@
 
     if (userId > 0) {
       function conectarStream() {
+        ['console-full', 'console-mini'].forEach(id => {
+          const el = document.getElementById(id);
+          if (el) { el.innerHTML = ''; el.textContent = 'Aguardando logs...'; }
+        });
         var es = new EventSource('/cliente/stream_logs/' + userId);
         es.onmessage = function(e) {
-          if (e.data && e.data.trim()) {
-            appendLog(e.data);
-          }
+          if (e.data && e.data.trim()) appendLog(e.data);
         };
         es.onerror = function() {
           es.close();
