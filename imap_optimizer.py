@@ -32,6 +32,8 @@ ASSUNTOS_PIX = [
     "transferencia via pix",
     "pix recebido",
     "recebemos sua transfer",
+    "pagamento recebido via pix",
+    "pagamento recebido",
 ]
 
 NOME_PADROES = [
@@ -211,9 +213,14 @@ class PersistentIMAPConnection:
                 cutoff = datetime.now() - timedelta(minutes=3)
 
                 _, data = self._mail.search(None, f'(SINCE "{hoje}" FROM "nubank.com.br")')
-                uids = data[0].split() if data and data[0] else []
+                uids_nubank = data[0].split() if data and data[0] else []
+
+                _, data = self._mail.search(None, f'(SINCE "{hoje}" FROM "nao-responder@picpay.com")')
+                uids_picpay = data[0].split() if data and data[0] else []
+
+                uids = list(set(uids_nubank + uids_picpay))
                 uids_sorted = sorted(uids, key=lambda x: int(x), reverse=True)[:20]
-                log(f"\U0001f4ec {len(uids_sorted)} emails recentes do Nubank")
+                log(f"\U0001f4ec {len(uids_sorted)} emails recentes (Nubank: {len(uids_nubank)}, PicPay: {len(uids_picpay)})")
 
                 if not uids_sorted:
                     log(f"\u274c Nenhum pix de '{nome_busca}' encontrado")
