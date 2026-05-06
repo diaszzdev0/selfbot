@@ -147,6 +147,7 @@ class PersistentIMAPConnection:
         self._lock = threading.Lock()
         self._stop = False
         self._connected = False
+        self._uids_usados = set()
         self._keepalive_thread = threading.Thread(target=self._keepalive_loop, daemon=True)
         self._keepalive_thread.start()
 
@@ -249,15 +250,20 @@ class PersistentIMAPConnection:
                             pagador_norm = _normalizar(pagador).lower().strip()
                             valor = _extrair_valor(content)
                             banco = _detectar_banco(content)
+                            uid_str = uids_sorted[i//2].decode() if isinstance(uids_sorted[i//2], bytes) else str(uids_sorted[i//2])
+                            if uid_str in self._uids_usados:
+                                continue
                             log(f"\U0001f4dd Assunto: '{subject}' | pagador='{pagador_norm}' | R${valor}")
-                            emails_parsed.append((pagador, pagador_norm, valor, banco))
+                            emails_parsed.append((pagador, pagador_norm, valor, banco, uid_str))
                     except Exception:
                         continue
 
-                for pagador, pagador_norm, valor, banco in emails_parsed:
+                for pagador, pagador_norm, valor, banco, uid in emails_parsed:
                     log(f"\U0001f4b0 pagador='{pagador_norm}' | R${valor} | {banco}")
                     if pagador_norm and nome_busca and (nome_busca in pagador_norm or _match_nomes(nome_busca, pagador_norm)):
                         log(f"\u2705 MATCH: '{pagador_norm}'")
+                        # Marca UID como usado
+                        self._uids_usados.add(uid)
                         return {"valor": valor, "banco": banco, "pagador": pagador}
 
                 log(f"\u274c Nenhum pix de '{nome_busca}' encontrado")
