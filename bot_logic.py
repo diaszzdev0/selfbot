@@ -355,12 +355,41 @@ def run_selfbot(config: dict, user_id: int):
     go_por_thread: dict[int, set] = {}       # channel_id -> set de user_ids
     go_auto_tasks: dict[int, asyncio.Task] = {}  # channel_id -> task do timer
     pg_em_processamento: set[str] = set()
+    valores_thread: dict[int, float] = {}   # channel_id -> valor esperado
+    valores_pagos: dict[int, float] = {}    # channel_id -> valor já pago acumulado
     
     log_msg(user_id, "📝 Definindo eventos do Discord...")
+
+    def _extrair_valor_mensagem(texto: str) -> float:
+        """Extrai valor no formato 'Valor: R$1,50' ou '⤷ R$1,50'"""
+        match = re.search(r'[⤷\s]*(?:Valor[:\s]*)?R?\$?\s*([\d]+[.,][\d]{2})', texto, re.IGNORECASE)
+        if match:
+            valor_str = match.group(1).replace(',', '.')
+            try:
+                return float(valor_str)
+            except ValueError:
+                pass
+        return 0.0
+
+    async def _ler_valor_thread(canal):
+        """Lê as mensagens da thread para encontrar o valor esperado"""
+        try:
+            async for msg in canal.history(limit=20):
+                valor = _extrair_valor_mensagem(msg.content)
+                if valor > 0:
+                    valores_thread[canal.id] = valor
+                    log_msg(user_id, f"💰 Valor esperado detectado: R${valor:.2f}")
+                    return
+        except Exception as e:
+            log_msg(user_id, f"⚠️ Erro ao ler histórico: {type(e).__name__}")
 
     async def _enviar_mensagem_entrada(canal):
         import io
         import aiohttp as _aiohttp
+        
+        # Lê mensagens da thread para extrair valor esperado
+        await _ler_valor_thread(canal)
+        
         if IMAGEM_ENTRADA:
             log_msg(user_id, "Tentando enviar imagem...")
             try:
@@ -585,6 +614,13 @@ def run_selfbot(config: dict, user_id: int):
         if parent is None or getattr(parent, "category_id", None) != CATEGORIA_ID:
             return
 
+        # Verifica se a mensagem contém o valor esperado e atualiza
+        if channel.id not in valores_thread:
+            valor = _extrair_valor_mensagem(message.content)
+            if valor > 0:
+                valores_thread[channel.id] = valor
+                log_msg(user_id, f"💰 Valor esperado detectado: R${valor:.2f}")
+
         conteudo = message.content.strip()
         cmd = conteudo.lower()
 
@@ -719,18 +755,46 @@ def run_selfbot(config: dict, user_id: int):
                     elif not resultado_ocr.get("nome_encontrado") and resultado_ocr.get("valor") == "N/A":
                         await message.reply("❌ Não foi possível identificar o comprovante.")
                     else:
-                        valor = resultado_ocr.get('valor', 'N/A')
+                        valor_str = resultado_ocr.get('valor', 'N/A')
                         banco = resultado_ocr.get('banco', 'Comprovante')
                         pagador = resultado_ocr.get('pagador', 'Desconhecido')
+                        
+                        # Verifica se o valor está correto
+                        if channel.id in valores_thread and valor_str != 'N/A':
+                            try:
+                                valor_pago = float(valor_str.replace(',', '.'))
+                                valor_esperado = valores_thread[channel.id]
+                                valor_acumulado = valores_pagos.get(channel.id, 0.0) + valor_pago
+                                
+                                if valor_acumulado < valor_esperado:
+                                    valores_pagos[channel.id] = valor_acumulado
+                                    diferenca = valor_esperado - valor_acumulado
+                                    await message.reply(
+                                        f"⚠️ **VALOR INSUFICIENTE**\n\n"
+                                        f"💰 **Valor esperado:** R$ {valor_esperado:.2f}\n"
+                                        f"💸 **Valor enviado agora:** R$ {valor_pago:.2f}\n"
+                                        f"📊 **Total pago:** R$ {valor_acumulado:.2f}\n"
+                                        f"❌ **Faltam:** R$ {diferenca:.2f}\n\n"
+                                        f"Por favor, envie o restante do pagamento."
+                                    )
+                                    log_msg(user_id, f"⚠️ Valor insuficiente: R${valor_acumulado:.2f} < R${valor_esperado:.2f}")
+                                    return
+                                else:
+                                    # Valor completo ou maior - limpa o acumulado
+                                    valores_pagos.pop(channel.id, None)
+                                    log_msg(user_id, f"✅ Valor completo atingido: R${valor_acumulado:.2f}")
+                            except ValueError:
+                                pass
+                        
                         pagamentos_por_thread[channel.id] = pagamentos_por_thread.get(channel.id, 0) + 1
-                        log_msg(user_id, f"💰 Comprovante confirmado | {pagador} | R${valor} | {message.author}")
+                        log_msg(user_id, f"💰 Comprovante confirmado | {pagador} | R${valor_str} | {message.author}")
                         log_msg(user_id, f"📝 Texto OCR: {resultado_ocr.get('texto', '')[:200]}")
                         log_msg(user_id, f"💰 Pagamentos: {pagamentos_por_thread[channel.id]}/2")
                         await message.reply(
                             f"✅ **PAGAMENTO CONFIRMADO**\n\n"
                             f"👤 **Cliente:** {message.author.mention}\n"
                             f"📝 **Nome:** `{pagador}`\n"
-                            f"💰 **Valor:** `R$ {valor} (BRL)`\n"
+                            f"💰 **Valor:** `R$ {valor_str} (BRL)`\n"
                             f"🔍 **Destino:** `e-mail {banco}`\n"
                             f"🎉 **Sua vaga está garantida! A sala será enviada aqui.**"
                         )
@@ -781,11 +845,40 @@ def run_selfbot(config: dict, user_id: int):
         pg_em_processamento.discard(chave_pg)
 
         if resultado:
+            valor_str = resultado['valor']
+            
+            # Verifica se o valor está correto
+            if channel.id in valores_thread and valor_str != 'N/A':
+                try:
+                    valor_pago = float(valor_str.replace(',', '.'))
+                    valor_esperado = valores_thread[channel.id]
+                    valor_acumulado = valores_pagos.get(channel.id, 0.0) + valor_pago
+                    
+                    if valor_acumulado < valor_esperado:
+                        valores_pagos[channel.id] = valor_acumulado
+                        diferenca = valor_esperado - valor_acumulado
+                        await message.reply(
+                            f"⚠️ **VALOR INSUFICIENTE**\n\n"
+                            f"💰 **Valor esperado:** R$ {valor_esperado:.2f}\n"
+                            f"💸 **Valor enviado agora:** R$ {valor_pago:.2f}\n"
+                            f"📊 **Total pago:** R$ {valor_acumulado:.2f}\n"
+                            f"❌ **Faltam:** R$ {diferenca:.2f}\n\n"
+                            f"Por favor, envie o restante do pagamento."
+                        )
+                        log_msg(user_id, f"⚠️ Valor insuficiente: R${valor_acumulado:.2f} < R${valor_esperado:.2f}")
+                        return
+                    else:
+                        # Valor completo ou maior - limpa o acumulado
+                        valores_pagos.pop(channel.id, None)
+                        log_msg(user_id, f"✅ Valor completo atingido: R${valor_acumulado:.2f}")
+                except ValueError:
+                    pass
+            
             await message.reply(
                 f"✅ **PAGAMENTO CONFIRMADO**\n\n"
                 f"👤 **Cliente:** {message.author.mention}\n"
                 f"📝 **Nome:** `{resultado.get('pagador', nome_busca)}`\n"
-                f"💰 **Valor:** `R$ {resultado['valor']} (BRL)`\n"
+                f"💰 **Valor:** `R$ {valor_str} (BRL)`\n"
                 f"🔍 **Destino:** `e-mail {resultado['banco']}`\n"
                 f"🎉 **Sua vaga está garantida! A sala será enviada aqui.**"
             )
