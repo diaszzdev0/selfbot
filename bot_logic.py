@@ -760,6 +760,21 @@ def run_selfbot(config: dict, user_id: int):
         if message.author == client.user:
             return
 
+        # Sistema de GO para iniciar sala
+        if re.fullmatch(r"go+[!.]*", cmd.strip()) and channel.id in salas_ativas:
+            go_set = go_por_thread.setdefault(channel.id, set())
+            go_set.add(message.author.id)
+            count = len(go_set)
+            try:
+                await message.add_reaction("✅")
+            except Exception:
+                pass
+            log_msg(user_id, f"🎮 Go de {message.author.name} ({count}/2)")
+            if count >= 2:
+                log_msg(user_id, "🎮 Dois usuários deram go - iniciando sala...")
+                await _dar_go(channel, salas_ativas[channel.id])
+            return
+
         # Verifica se e um comprovante (imagem anexada)
         if message.attachments and not _extrair_nome(conteudo):
             for attachment in message.attachments:
