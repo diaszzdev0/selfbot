@@ -102,24 +102,23 @@ def _is_email_pix(subject):
 
 def _match_nomes(nome_cmd, nome_email):
     ignorar = {'de', 'da', 'do', 'dos', 'das', 'e'}
-    partes_cmd = [p for p in nome_cmd.split() if p not in ignorar and len(p) >= 3]
-    partes_email = nome_email.split()
+    partes_cmd   = [p for p in nome_cmd.split()   if p not in ignorar and len(p) >= 3]
+    partes_email = [p for p in nome_email.split() if p not in ignorar and len(p) >= 3]
 
-    if not partes_cmd:
+    if not partes_cmd or not partes_email:
         return False
 
-    # Tenta match pelo primeiro e ultimo nome do comando
     primeiro = partes_cmd[0]
+
+    # Caso 1: só primeiro nome
+    if len(partes_cmd) == 1:
+        return any(pe.startswith(primeiro) or primeiro.startswith(pe) for pe in partes_email)
+
+    # Caso 2/3: primeiro + qualquer outro nome (sobrenome ou último)
     ultimo = partes_cmd[-1]
-
-    tem_primeiro = any(primeiro in pe or pe.startswith(primeiro) for pe in partes_email)
-    tem_ultimo = any(ultimo in pe or pe.startswith(ultimo) for pe in partes_email)
-
-    if tem_primeiro and tem_ultimo:
-        return True
-
-    # Fallback: todas as partes presentes
-    return all(any(p in pe or pe.startswith(p) for pe in partes_email) for p in partes_cmd)
+    tem_primeiro = any(pe.startswith(primeiro) or primeiro.startswith(pe) for pe in partes_email)
+    tem_ultimo   = any(pe.startswith(ultimo)   or ultimo.startswith(pe)   for pe in partes_email)
+    return tem_primeiro and tem_ultimo
 
 
 def _decode_header_str(value):
