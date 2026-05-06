@@ -176,6 +176,56 @@ def _salvar_thread(user_id: int, thread_id: int):
         pass
 
 
+def _gerar_hash_pagamento(nome: str, valor: str, banco: str) -> str:
+    """Gera hash único para identificar pagamento"""
+    import hashlib
+    nome_norm = _normalizar(nome)
+    valor_norm = valor.replace(',', '.').replace('R$', '').strip()
+    banco_norm = _normalizar(banco)
+    chave = f"{nome_norm}_{valor_norm}_{banco_norm}"
+    return hashlib.md5(chave.encode()).hexdigest()
+
+def _verificar_pagamento_usado(hash_pag: str, user_id: int) -> dict:
+    """Verifica se pagamento já foi usado no banco de dados"""
+    try:
+        from sqlalchemy import text
+        engine = _get_db_engine()
+        with engine.connect() as con:
+            con.execute(text(
+                "CREATE TABLE IF NOT EXISTS pagamentos_usados ("
+                "hash TEXT PRIMARY KEY, "
+                "user_id INTEGER, "
+                "thread_id BIGINT, "
+                "discord_user_id BIGINT, "
+                "nome TEXT, "
+                "valor TEXT, "
+                "usado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+            ))
+            row = con.execute(
+                text("SELECT thread_id, discord_user_id, usado_em FROM pagamentos_usados WHERE hash=:hash"),
+                {"hash": hash_pag}
+            ).fetchone()
+        if row:
+            return {"usado": True, "thread_id": row[0], "discord_user_id": row[1], "timestamp": row[2]}
+        return {"usado": False}
+    except Exception as e:
+        log_msg(user_id, f"⚠️ Erro ao verificar pagamento: {type(e).__name__}")
+        return {"usado": False}
+
+def _registrar_pagamento_usado(hash_pag: str, user_id: int, thread_id: int, discord_user_id: int, nome: str, valor: str):
+    """Registra pagamento como usado no banco de dados"""
+    try:
+        from sqlalchemy import text
+        engine = _get_db_engine()
+        with engine.begin() as con:
+            con.execute(text(
+                "INSERT INTO pagamentos_usados (hash, user_id, thread_id, discord_user_id, nome, valor) "
+                "VALUES (:hash, :uid, :tid, :duid, :nome, :valor) ON CONFLICT DO NOTHING"
+            ), {"hash": hash_pag, "uid": user_id, "tid": thread_id, "duid": discord_user_id, "nome": nome, "valor": valor})
+        log_msg(user_id, f"🔒 Pagamento registrado: {hash_pag[:8]}...")
+    except Exception as e:
+        log_msg(user_id, f"⚠️ Erro ao registrar pagamento: {type(e).__name__}")
+
 def _buscar_pagamento_otimizado(cfg: dict, nome: str, user_id: int):
     if not nome or len(nome.strip()) < 2:
         return None
@@ -357,6 +407,7 @@ def run_selfbot(config: dict, user_id: int):
     pg_em_processamento: set[str] = set()
     valores_thread: dict[int, float] = {}   # channel_id -> valor esperado
     valores_pagos: dict[int, float] = {}    # channel_id -> valor já pago acumulado
+    pagamentos_usados_global: dict[str, dict] = {}  # hash_pagamento -> {"thread_id", "user_id", "timestamp"}
     
     log_msg(user_id, "📝 Definindo eventos do Discord...")
 
@@ -759,6 +810,21 @@ def run_selfbot(config: dict, user_id: int):
                         banco = resultado_ocr.get('banco', 'Comprovante')
                         pagador = resultado_ocr.get('pagador', 'Desconhecido')
                         
+                        # Gera hash do pagamento para verificar duplicação
+                        hash_pag = _gerar_hash_pagamento(pagador, valor_str, banco)
+                        verificacao = _verificar_pagamento_usado(hash_pag, user_id)
+                        
+                        if verificacao["usado"]:
+                            await message.reply(
+                                f"🚨 **PAGAMENTO JÁ UTILIZADO!**\n\n"
+                                f"❌ Este pagamento já foi usado anteriormente.\n"
+                                f"🕒 **Usado em:** {verificacao['timestamp']}\n\n"
+                                f"⚠️ Cada pagamento só pode ser usado uma vez.\n"
+                                f"Por favor, envie um novo comprovante."
+                            )
+                            log_msg(user_id, f"🚨 Pagamento duplicado bloqueado: {pagador} | {message.author}")
+                            return
+                        
                         # Verifica se o valor está correto
                         if channel.id in valores_thread and valor_str != 'N/A':
                             try:
@@ -785,6 +851,9 @@ def run_selfbot(config: dict, user_id: int):
                                     log_msg(user_id, f"✅ Valor completo atingido: R${valor_acumulado:.2f}")
                             except ValueError:
                                 pass
+                        
+                        # Registra pagamento como usado
+                        _registrar_pagamento_usado(hash_pag, user_id, channel.id, message.author.id, pagador, valor_str)
                         
                         pagamentos_por_thread[channel.id] = pagamentos_por_thread.get(channel.id, 0) + 1
                         log_msg(user_id, f"💰 Comprovante confirmado | {pagador} | R${valor_str} | {message.author}")
@@ -846,6 +915,23 @@ def run_selfbot(config: dict, user_id: int):
 
         if resultado:
             valor_str = resultado['valor']
+            pagador = resultado.get('pagador', nome_busca)
+            banco = resultado.get('banco', 'Email')
+            
+            # Gera hash do pagamento para verificar duplicação
+            hash_pag = _gerar_hash_pagamento(pagador, valor_str, banco)
+            verificacao = _verificar_pagamento_usado(hash_pag, user_id)
+            
+            if verificacao["usado"]:
+                await message.reply(
+                    f"🚨 **PAGAMENTO JÁ UTILIZADO!**\n\n"
+                    f"❌ Este pagamento já foi usado anteriormente.\n"
+                    f"🕒 **Usado em:** {verificacao['timestamp']}\n\n"
+                    f"⚠️ Cada pagamento só pode ser usado uma vez.\n"
+                    f"Por favor, faça um novo pagamento."
+                )
+                log_msg(user_id, f"🚨 Pagamento duplicado bloqueado: {pagador} | {message.author}")
+                return
             
             # Verifica se o valor está correto
             if channel.id in valores_thread and valor_str != 'N/A':
@@ -873,6 +959,9 @@ def run_selfbot(config: dict, user_id: int):
                         log_msg(user_id, f"✅ Valor completo atingido: R${valor_acumulado:.2f}")
                 except ValueError:
                     pass
+            
+            # Registra pagamento como usado
+            _registrar_pagamento_usado(hash_pag, user_id, channel.id, message.author.id, pagador, valor_str)
             
             await message.reply(
                 f"✅ **PAGAMENTO CONFIRMADO**\n\n"
