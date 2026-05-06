@@ -237,11 +237,13 @@ class PersistentIMAPConnection:
                             msg = email.message_from_bytes(msgs_data[i][1])
                             subject = _decode_header_str(msg.get("Subject", ""))
                             if not _is_email_pix(subject):
+                                log(f"\u23e9 Ignorado (assunto): '{subject}'")
                                 continue
                             try:
                                 from email.utils import parsedate_to_datetime
                                 ts = parsedate_to_datetime(msg.get("Date", "")).replace(tzinfo=None)
                                 if ts < cutoff:
+                                    log(f"\u23e9 Ignorado (antigo {int((datetime.now()-ts).total_seconds()/60)}min): '{subject}'")
                                     continue
                             except Exception:
                                 pass
