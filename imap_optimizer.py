@@ -89,7 +89,7 @@ def _extrair_pagador(content):
         m = re.search(padrao, corpo, flags=re.IGNORECASE)
         if m:
             nome = m.group(1).strip()
-            nome = re.split(r'\s+e\s+o\s+|\s+via\s+|\s+no\s+valor|[,;\.]', nome, flags=re.IGNORECASE)[0].strip()
+            nome = re.split(r'\s+e\s+o\s+|\s+via\s+|\s+no\s+valor|\s+valor\s+enviado|\s+enviou|[,;\.]', nome, flags=re.IGNORECASE)[0].strip()
             palavras = [p for p in nome.split() if re.match(r'^[A-Za-z\u00C0-\u00FF\-]+$', p) and len(p) >= 2]
             if len(palavras) >= 2:
                 return ' '.join(palavras).title()
