@@ -243,6 +243,10 @@ def cliente_start_bot(user_id: int):
         # Limpa processos mortos antes de criar novo
         _limpar_processos_mortos()
         
+        log_path = os.path.join(os.path.dirname(__file__), "logs", f"user_{user_id}.log")
+        with open(log_path, "w", encoding="utf-8"):
+            pass
+        
         p = multiprocessing.Process(
             target=run_selfbot, 
             args=(config_dict, user_id), 
@@ -1214,6 +1218,9 @@ def start_bot(user_id: int):
             keys=LicenseKey.query.order_by(LicenseKey.criado_em.desc()).all(),
             status={uid: p.is_alive() for uid, p in processos.items()},
             msg="SELFBOT NÃO CONFIGURADO", msg_tipo="danger")
+    log_path = os.path.join(os.path.dirname(__file__), "logs", f"user_{user_id}.log")
+    with open(log_path, "w", encoding="utf-8"):
+        pass
     p = multiprocessing.Process(target=run_selfbot, args=(_config_dict(user.config), user_id), daemon=True)
     p.start()
     processos[user_id] = p
