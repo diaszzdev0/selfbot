@@ -254,6 +254,7 @@ class PersistentIMAPConnection:
                             banco = _detectar_banco(content)
                             uid_str = uids_sorted[i//2].decode() if isinstance(uids_sorted[i//2], bytes) else str(uids_sorted[i//2])
                             if uid_str in self._uids_usados:
+                                log(f"\u23e9 Ignorado (ja usado): UID {uid_str}")
                                 continue
                             log(f"\U0001f4dd Assunto: '{subject}' | pagador='{pagador_norm}' | R${valor}")
                             emails_parsed.append((pagador, pagador_norm, valor, banco, uid_str))
@@ -264,7 +265,6 @@ class PersistentIMAPConnection:
                     log(f"\U0001f4b0 pagador='{pagador_norm}' | R${valor} | {banco}")
                     if pagador_norm and nome_busca and (nome_busca in pagador_norm or _match_nomes(nome_busca, pagador_norm)):
                         log(f"\u2705 MATCH: '{pagador_norm}'")
-                        # Marca UID como usado
                         self._uids_usados.add(uid)
                         return {"valor": valor, "banco": banco, "pagador": pagador}
 
