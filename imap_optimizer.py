@@ -225,7 +225,7 @@ class PersistentIMAPConnection:
 
             try:
                 hoje = date.today().strftime("%d-%b-%Y")
-                cutoff = datetime.now() - timedelta(minutes=30)
+                cutoff = datetime.now() - timedelta(hours=3)
 
                 _, data = self._mail.search(None, f'(SINCE "{hoje}" FROM "nubank.com.br")')
                 uids_nubank = data[0].split() if data and data[0] else []

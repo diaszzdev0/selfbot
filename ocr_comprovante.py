@@ -47,6 +47,8 @@ MESES = {
     'jul':7,'ago':8,'set':9,'out':10,'nov':11,'dez':12
 }
 
+LIMITE_SEGUNDOS = 24 * 3600  # 24 horas
+
 
 def _normalizar(text):
     return unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii").lower().strip()
@@ -111,8 +113,8 @@ def _validar_data(text):
                 dt = datetime(int(m.group(3)), mes, int(m.group(1)),
                               int(m.group(4)), int(m.group(5)))
                 diff = abs((agora - dt).total_seconds())
-                if diff > 180:
-                    return False, f"Comprovante de {int(diff/60)} minutos atr\u00e1s"
+                if diff > LIMITE_SEGUNDOS:
+                    return False, f"Comprovante de {int(diff/3600)} horas atr\u00e1s"
                 return True, None
         except Exception:
             pass
@@ -124,8 +126,8 @@ def _validar_data(text):
             dt = datetime(int(m.group(3)), int(m.group(2)), int(m.group(1)),
                           int(m.group(4)), int(m.group(5)))
             diff = abs((agora - dt).total_seconds())
-            if diff > 180:
-                return False, f"Comprovante de {int(diff/60)} minutos atr\u00e1s"
+            if diff > LIMITE_SEGUNDOS:
+                return False, f"Comprovante de {int(diff/3600)} horas atr\u00e1s"
             return True, None
         except Exception:
             pass
@@ -139,8 +141,8 @@ def _validar_data(text):
                 dt = datetime(int(m.group(3)), mes, int(m.group(1)),
                               int(m.group(4)), int(m.group(5)))
                 diff = abs((agora - dt).total_seconds())
-                if diff > 180:
-                    return False, f"Comprovante de {int(diff/60)} minutos atr\u00e1s"
+                if diff > LIMITE_SEGUNDOS:
+                    return False, f"Comprovante de {int(diff/3600)} horas atr\u00e1s"
                 return True, None
         except Exception:
             pass
