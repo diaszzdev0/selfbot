@@ -395,6 +395,7 @@ def run_selfbot(config: dict, user_id: int):
         log_msg(user_id, f"❌ Token inválido: {validation['error']}")
         return
     
+    expiry_check = check_token_expiry(TOKEN)
     log_msg(user_id, f"🔑 Token válido | User ID: {validation['user_id']} | Tipo: {expiry_check['type']}")
 
     SERVER_ID = int(config["server_id"])
@@ -754,59 +755,6 @@ def run_selfbot(config: dict, user_id: int):
             msg_req = await channel.send("Criando sala...")
             await _enviar_sala(channel, salaid)
             await msg_req.delete()
-            return
-
-        if message.author == client.user:
-            log_msg(user_id, f"\U0001f916 Mensagem propria: '{cmd[:30]}'")
-            if cmd in ("!normal", "!infinito"):
-                log_msg(user_id, f"Comando {cmd} detectado")
-                salaid = SALA_INF if cmd == "!infinito" else SALA_GN
-                log_msg(user_id, f"Comando {cmd} detectado")
-                msg_req = await channel.send("Criando sala...")
-                await _enviar_sala(channel, salaid)
-                await msg_req.delete()
-            elif cmd.startswith("!very "):
-                nome_very = conteudo[6:].strip()
-                palavras = [p for p in nome_very.split() if len(p) >= 2 and re.match(r'^[a-zA-Z\u00C0-\u00FF]+$', p)]
-                if len(palavras) < 2:
-                    await message.reply("⚠️ Use: `!very Nome Sobrenome`")
-                    return
-                nome_very = ' '.join(palavras)
-                log_msg(user_id, f"🔍 !very: {nome_very}")
-                msg_very = await channel.send(f"⏳ Verificando pagamento de **{nome_very}**...")
-                try:
-                    resultado = await asyncio.wait_for(
-                        asyncio.get_running_loop().run_in_executor(None, lambda: _buscar_pagamento_otimizado(config, nome_very, user_id)),
-                        timeout=120
-                    )
-                except asyncio.TimeoutError:
-                    resultado = None
-                try:
-                    await msg_very.delete()
-                except Exception:
-                    pass
-                if resultado:
-                    await channel.send(
-                        f"✅ **Pagamento confirmado** ({resultado['banco']}) para {nome_very}!\n"
-                        f"Valor: {resultado['valor']} (BRL)\n"
-                        f"ID: {random.randint(100, 999)}"
-                    )
-                    log_msg(user_id, f"✅ !very confirmado: {nome_very}")
-                else:
-                    await channel.send(f"❌ Pagamento não encontrado para **{nome_very}**.")
-                    log_msg(user_id, f"❌ !very não encontrado: {nome_very}")
-            return
-
-        if re.fullmatch(r"go+[!.]*", cmd.strip()) and channel.id in salas_ativas:
-            if message.author != client.user:
-                go_set = go_por_thread.setdefault(channel.id, set())
-                go_set.add(message.author.id)
-                count = len(go_set)
-                await message.add_reaction("✅")
-                log_msg(user_id, f"🎮 Go de {message.author} ({count}/2)")
-                if count >= 2:
-                    log_msg(user_id, "🎮 Dois usuários diferentes deram go - iniciando sala...")
-                    await _dar_go(channel, salas_ativas[channel.id])
             return
 
         if message.author == client.user:
