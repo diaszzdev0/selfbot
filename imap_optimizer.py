@@ -249,12 +249,13 @@ class PersistentIMAPConnection:
                             pagador_norm = _normalizar(pagador).lower().strip()
                             valor = _extrair_valor(content)
                             banco = _detectar_banco(content)
+                            log(f"\U0001f4dd Assunto: '{subject}' | pagador='{pagador_norm}' | R${valor}")
                             emails_parsed.append((pagador, pagador_norm, valor, banco))
                     except Exception:
                         continue
 
                 for pagador, pagador_norm, valor, banco in emails_parsed:
-                    log(f"\U0001f4b0 pagador='{pagador_norm}' | R${valor}")
+                    log(f"\U0001f4b0 pagador='{pagador_norm}' | R${valor} | {banco}")
                     if pagador_norm and nome_busca and (nome_busca in pagador_norm or _match_nomes(nome_busca, pagador_norm)):
                         log(f"\u2705 MATCH: '{pagador_norm}'")
                         return {"valor": valor, "banco": banco, "pagador": pagador}
