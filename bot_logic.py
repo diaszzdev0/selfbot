@@ -33,19 +33,41 @@ os.makedirs(LOG_DIR, exist_ok=True)
 
 
 def log_msg(user_id: int, text: str):
-    ts = datetime.now().strftime("%H:%M:%S")
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     path = os.path.join(LOG_DIR, f"user_{user_id}.log")
     
     # Remove informações sensíveis dos logs
     safe_text = text
     safe_text = re.sub(r'\b[A-Za-z0-9._-]{59,}\b', '[TOKEN_REDACTED]', safe_text)
-    # Remove emails
     safe_text = re.sub(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', '[EMAIL_REDACTED]', safe_text)
-    # Remove senhas (após "senha", "password", "pass")
     safe_text = re.sub(r'(senha|password|pass)\s*[:=]\s*\S+', r'\1: [REDACTED]', safe_text, flags=re.IGNORECASE)
     
+    # Categoriza e formata a mensagem
+    categoria = "INFO"
+    if "❌" in text or "Erro" in text or "erro" in text:
+        categoria = "ERRO"
+    elif "⚠️" in text or "Timeout" in text:
+        categoria = "AVISO"
+    elif "✅" in text or "confirmado" in text.lower() or "sucesso" in text.lower():
+        categoria = "OK"
+    elif "🔍" in text or "Buscando" in text:
+        categoria = "BUSCA"
+    elif "💰" in text or "Pagamento" in text:
+        categoria = "PGTO"
+    elif "🎮" in text or "Sala" in text:
+        categoria = "SALA"
+    elif "🧵" in text or "Thread" in text:
+        categoria = "THREAD"
+    elif "🚀" in text or "Iniciando" in text:
+        categoria = "INIT"
+    elif "🔒" in text or "🚨" in text:
+        categoria = "SEGUR"
+    
+    # Formata linha com separador visual
+    linha = f"[{ts}] [{categoria:6}] {safe_text}"
+    
     with open(path, "a", encoding="utf-8", errors="replace") as f:
-        f.write(f"[{ts}] {safe_text}\n")
+        f.write(f"{linha}\n")
         f.flush()
 
 
@@ -356,7 +378,9 @@ def run_selfbot(config: dict, user_id: int):
     except Exception:
         pass
 
-    log_msg(user_id, "🚀 Iniciando selfbot...")
+    log_msg(user_id, "="*70)
+    log_msg(user_id, "🚀 INICIANDO SELFBOT")
+    log_msg(user_id, "="*70)
     
     TOKEN = config.get("discord_token", "").strip()
     if not TOKEN:
@@ -371,12 +395,12 @@ def run_selfbot(config: dict, user_id: int):
         log_msg(user_id, f"❌ Token inválido: {validation['error']}")
         return
     
-    expiry_check = check_token_expiry(TOKEN)
-    log_msg(user_id, f"🔑 Token válido (User ID: {validation['user_id']}, Tipo: {expiry_check['type']})")
+    log_msg(user_id, f"🔑 Token válido | User ID: {validation['user_id']} | Tipo: {expiry_check['type']}")
 
     SERVER_ID = int(config["server_id"])
     CATEGORIA_ID = int(config["categoria_id"])
-    log_msg(user_id, f"🏠 Servidor: {SERVER_ID}, Categoria: {CATEGORIA_ID}")
+    log_msg(user_id, f"🏠 Servidor ID: {SERVER_ID}")
+    log_msg(user_id, f"📂 Categoria ID: {CATEGORIA_ID}")
     
     MENSAGEM_ENTRADA = config.get("mensagem_entrada", "Ola! Use pg Nome Sobrenome para verificar seu pagamento.")
     IMAGEM_ENTRADA = config.get("imagem_entrada", "").strip()
@@ -399,7 +423,9 @@ def run_selfbot(config: dict, user_id: int):
 
     threads_com_mensagem: set[int] = _carregar_threads(user_id)
     threads_em_processamento: set[int] = set()  # guard contra race condition
-    log_msg(user_id, f"🧵 {len(threads_com_mensagem)} thread(s) carregada(s).")
+    log_msg(user_id, "-"*70)
+    log_msg(user_id, f"🧵 Threads carregadas: {len(threads_com_mensagem)}")
+    log_msg(user_id, "-"*70)
     pagamentos_por_thread: dict[int, int] = {}
     salas_ativas: dict[int, str] = {}       # channel_id -> pedidoid
     go_por_thread: dict[int, set] = {}       # channel_id -> set de user_ids
@@ -509,7 +535,11 @@ def run_selfbot(config: dict, user_id: int):
             pedidoid = data.get("pedidoid", "")
             salas_ativas[channel.id] = pedidoid
             go_por_thread[channel.id] = set()
-            log_msg(user_id, f"🎮 Sala enviada: {msg_sala}")
+            log_msg(user_id, "="*70)
+            log_msg(user_id, f"🎮 SALA CRIADA E ENVIADA")
+            log_msg(user_id, f"   └─ ID e Senha: {msg_sala}")
+            log_msg(user_id, f"   └─ Modo: {modo_config}")
+            log_msg(user_id, "="*70)
             await channel.send(msg_sala)
             await asyncio.sleep(4)
             await channel.send("⚡ **IMPORTANTE:** Após ambos entrarem, digitem `go` aqui no chat para iniciar! A sala dá go automático em **5 minutos**.")
@@ -535,11 +565,15 @@ def run_selfbot(config: dict, user_id: int):
         threads_em_processamento.add(thread.id)
         threads_com_mensagem.add(thread.id)
         _salvar_thread(user_id, thread.id)
-        log_msg(user_id, f"🧵 Thread detectada: '{thread.name}' (ID: {thread.id})")
+        log_msg(user_id, "-"*70)
+        log_msg(user_id, f"🧵 NOVA THREAD DETECTADA")
+        log_msg(user_id, f"   └─ Nome: {thread.name}")
+        log_msg(user_id, f"   └─ ID: {thread.id}")
         try:
             await asyncio.sleep(9)
             await _enviar_mensagem_entrada(thread)
-            log_msg(user_id, f"✅ Mensagem enviada: {thread.name}")
+            log_msg(user_id, f"✅ Mensagem de entrada enviada")
+            log_msg(user_id, "-"*70)
         except discord.NotFound:
             log_msg(user_id, f"⚠️ Thread {thread.name} deletada")
         except discord.Forbidden:
@@ -567,7 +601,9 @@ def run_selfbot(config: dict, user_id: int):
     @client.event
     async def on_ready():
         nonlocal _monitor_iniciado
-        log_msg(user_id, f"✅ Sessao: {client.user} (ID: {client.user.id})")
+        log_msg(user_id, "="*70)
+        log_msg(user_id, f"✅ CONECTADO | {client.user} (ID: {client.user.id})")
+        log_msg(user_id, "="*70)
         guild = client.get_guild(SERVER_ID)
         if guild:
             cat = guild.get_channel(CATEGORIA_ID)
@@ -822,7 +858,12 @@ def run_selfbot(config: dict, user_id: int):
                                 f"⚠️ Cada pagamento só pode ser usado uma vez.\n"
                                 f"Por favor, envie um novo comprovante."
                             )
-                            log_msg(user_id, f"🚨 Pagamento duplicado bloqueado: {pagador} | {message.author}")
+                            log_msg(user_id, "="*70)
+                            log_msg(user_id, f"🚨 PAGAMENTO DUPLICADO BLOQUEADO")
+                            log_msg(user_id, f"   └─ Nome: {pagador}")
+                            log_msg(user_id, f"   └─ User: {message.author}")
+                            log_msg(user_id, f"   └─ Hash: {hash_pag[:16]}...")
+                            log_msg(user_id, "="*70)
                             return
                         
                         # Verifica se o valor está correto
@@ -856,9 +897,13 @@ def run_selfbot(config: dict, user_id: int):
                         _registrar_pagamento_usado(hash_pag, user_id, channel.id, message.author.id, pagador, valor_str)
                         
                         pagamentos_por_thread[channel.id] = pagamentos_por_thread.get(channel.id, 0) + 1
-                        log_msg(user_id, f"💰 Comprovante confirmado | {pagador} | R${valor_str} | {message.author}")
-                        log_msg(user_id, f"📝 Texto OCR: {resultado_ocr.get('texto', '')[:200]}")
-                        log_msg(user_id, f"💰 Pagamentos: {pagamentos_por_thread[channel.id]}/2")
+                        log_msg(user_id, "-"*70)
+                        log_msg(user_id, f"💰 COMPROVANTE CONFIRMADO")
+                        log_msg(user_id, f"   └─ Nome: {pagador}")
+                        log_msg(user_id, f"   └─ Valor: R${valor_str}")
+                        log_msg(user_id, f"   └─ User: {message.author}")
+                        log_msg(user_id, f"   └─ Progresso: {pagamentos_por_thread[channel.id]}/2 pagamentos")
+                        log_msg(user_id, "-"*70)
                         await message.reply(
                             f"✅ **PAGAMENTO CONFIRMADO**\n\n"
                             f"👤 **Cliente:** {message.author.mention}\n"
@@ -890,7 +935,8 @@ def run_selfbot(config: dict, user_id: int):
         if chave_pg in pg_em_processamento:
             return
         pg_em_processamento.add(chave_pg)
-        log_msg(user_id, f"💰 pg detectado: {nome_busca} | {message.author}")
+        log_msg(user_id, "-"*70)
+        log_msg(user_id, f"💰 COMANDO PG | Nome: {nome_busca} | User: {message.author}")
 
         msg_fila = await message.reply(
             "⏳ **Verificação na fila!**\n"
@@ -930,7 +976,12 @@ def run_selfbot(config: dict, user_id: int):
                     f"⚠️ Cada pagamento só pode ser usado uma vez.\n"
                     f"Por favor, faça um novo pagamento."
                 )
-                log_msg(user_id, f"🚨 Pagamento duplicado bloqueado: {pagador} | {message.author}")
+                log_msg(user_id, "="*70)
+                log_msg(user_id, f"🚨 PAGAMENTO DUPLICADO BLOQUEADO")
+                log_msg(user_id, f"   └─ Nome: {pagador}")
+                log_msg(user_id, f"   └─ User: {message.author}")
+                log_msg(user_id, f"   └─ Hash: {hash_pag[:16]}...")
+                log_msg(user_id, "="*70)
                 return
             
             # Verifica se o valor está correto
@@ -972,7 +1023,8 @@ def run_selfbot(config: dict, user_id: int):
                 f"🎉 **Sua vaga está garantida! A sala será enviada aqui.**"
             )
             pagamentos_por_thread[channel.id] = pagamentos_por_thread.get(channel.id, 0) + 1
-            log_msg(user_id, f"💰 Pagamentos: {pagamentos_por_thread[channel.id]}/2")
+            log_msg(user_id, f"💰 Progresso: {pagamentos_por_thread[channel.id]}/2 pagamentos confirmados")
+            log_msg(user_id, "-"*70)
 
             if pagamentos_por_thread[channel.id] >= 2:
                 pagamentos_por_thread[channel.id] = 0
