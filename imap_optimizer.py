@@ -224,8 +224,8 @@ class PersistentIMAPConnection:
                 return None
 
             try:
-                hoje = date.today().strftime("%d-%b-%Y")
-                cutoff = datetime.now() - timedelta(hours=3)
+                hoje = (date.today() - timedelta(days=1)).strftime("%d-%b-%Y")
+                cutoff = datetime.now() - timedelta(hours=24)
 
                 _, data = self._mail.search(None, f'(SINCE "{hoje}" FROM "nubank.com.br")')
                 uids_nubank = data[0].split() if data and data[0] else []
@@ -257,7 +257,7 @@ class PersistentIMAPConnection:
                                 from email.utils import parsedate_to_datetime
                                 ts = parsedate_to_datetime(msg.get("Date", "")).replace(tzinfo=None)
                                 if ts < cutoff:
-                                    log(f"\u23e9 Ignorado (antigo {int((datetime.now()-ts).total_seconds()/60)}min): '{subject}'")
+                                    log(f"\u23e9 Ignorado (antigo {int((datetime.now()-ts).total_seconds()/3600)}h): '{subject}'")
                                     continue
                             except Exception:
                                 pass
