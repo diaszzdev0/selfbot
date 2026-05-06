@@ -104,6 +104,21 @@ def _match_nomes(nome_cmd, nome_email):
     ignorar = {'de', 'da', 'do', 'dos', 'das', 'e'}
     partes_cmd = [p for p in nome_cmd.split() if p not in ignorar and len(p) >= 3]
     partes_email = nome_email.split()
+
+    if not partes_cmd:
+        return False
+
+    # Tenta match pelo primeiro e ultimo nome do comando
+    primeiro = partes_cmd[0]
+    ultimo = partes_cmd[-1]
+
+    tem_primeiro = any(primeiro in pe or pe.startswith(primeiro) for pe in partes_email)
+    tem_ultimo = any(ultimo in pe or pe.startswith(ultimo) for pe in partes_email)
+
+    if tem_primeiro and tem_ultimo:
+        return True
+
+    # Fallback: todas as partes presentes
     return all(any(p in pe or pe.startswith(p) for pe in partes_email) for p in partes_cmd)
 
 
