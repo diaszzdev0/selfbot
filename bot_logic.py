@@ -80,16 +80,16 @@ def _extrair_nome(conteudo: str):
     cl = c.lower()
 
     prefixos = [
-        "pg ", "pago ", "paguei ", "pagou ", "pag ",
-        "pg: ", "pago: ", "paguei: ", "pagou: ",
-        "pg- ", "pago- ", "paguei- ", "pagou- ",
-        "pg.", "pago.", "paguei.", "pagou.",
-        "verificar ", "check ", "buscar ", "consultar "
+        "pago ", "pago: ", "pago- ", "pago.",
+        "pg ", "pg: ", "pg- ", "pg.",
+        "paguei ", "paguei: ", "paguei- ",
+        "pagou ", "pagou: ", "pagou- ",
+        "pag ", "verificar ", "check ", "buscar ", "consultar "
     ]
     sufixos = [
-        " pg", " pago", " paguei", " pagou", " pag",
-        " :pg", " :pago", " :paguei", " :pagou",
-        " -pg", " -pago", " -paguei", " -pagou"
+        " pago", " pg", " paguei", " pagou", " pag",
+        " :pago", " :pg", " :paguei", " :pagou",
+        " -pago", " -pg", " -paguei", " -pagou"
     ]
 
     nome = None
@@ -110,9 +110,8 @@ def _extrair_nome(conteudo: str):
     if not nome:
         return None
 
-    # Validações: nome precisa ter pelo menos 2 palavras com 2+ letras cada
     palavras = [p for p in nome.split() if len(p) >= 2 and re.match(r'^[a-zA-ZÀ-ÿ]+$', p)]
-    if len(palavras) < 2:
+    if not palavras:
         return None
 
     return ' '.join(palavras)
