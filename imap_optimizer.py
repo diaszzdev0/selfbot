@@ -215,18 +215,8 @@ class PersistentIMAPConnection:
                 _, data = self._mail.search(None, f'(SINCE "{hoje}" FROM "nubank.com.br")')
                 uids_nubank = data[0].split() if data and data[0] else []
 
-                _, data = self._mail.search(None, f'(SINCE "{hoje}" FROM "nao-responder@picpay.com")')
+                _, data = self._mail.search(None, f'(SINCE "{hoje}" FROM "picpay.com")')
                 uids_picpay = data[0].split() if data and data[0] else []
-
-                # Debug: mostra todos emails de hoje para descobrir remetente PicPay
-                _, data_all = self._mail.search(None, f'(SINCE "{hoje}")')
-                uids_all = data_all[0].split() if data_all and data_all[0] else []
-                uids_debug = sorted(uids_all, key=lambda x: int(x), reverse=True)[:10]
-                for uid in uids_debug:
-                    _, md = self._mail.fetch(uid, "(BODY[HEADER.FIELDS (FROM SUBJECT)])")
-                    if md and md[0] and isinstance(md[0], tuple):
-                        header = md[0][1].decode('utf-8', errors='ignore')
-                        log(f"\U0001f4e7 Header: {header.strip()[:150]}")
 
                 uids = list(set(uids_nubank + uids_picpay))
                 uids_sorted = sorted(uids, key=lambda x: int(x), reverse=True)[:20]
