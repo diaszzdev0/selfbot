@@ -236,7 +236,7 @@ class PersistentIMAPConnection:
                                     pagador = _extrair_pagador(content)
                                     valor = _extrair_valor(content)
                                     banco = _detectar_banco(content)
-                                    self._log(f"📬 NOVO PIX RECEBIDO | {pagador} | R${valor} | {banco}")
+                                    print(f"📬 NOVO PIX RECEBIDO | {pagador} | R${valor} | {banco}", flush=True)
                             except Exception:
                                 continue
                     uids_vistos.update(uids_all)
