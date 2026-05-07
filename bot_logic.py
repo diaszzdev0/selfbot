@@ -476,6 +476,9 @@ def run_selfbot(config: dict, user_id: int):
             async for msg in canal.history(limit=20):
                 if msg.author == client.user:
                     continue
+                # Só detecta se a mensagem tiver padrão explícito de valor esperado
+                if not re.search(r'(?:valor|cobran[çc]a|total|pagar)[:\s]*R?\$?\s*[\d]+[.,][\d]{2}', msg.content, re.IGNORECASE):
+                    continue
                 valor = _extrair_valor_mensagem(msg.content)
                 if valor > 0:
                     valores_thread[canal.id] = valor
