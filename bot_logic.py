@@ -198,12 +198,12 @@ def _salvar_thread(user_id: int, thread_id: int):
 
 
 def _gerar_hash_pagamento(nome: str, valor: str, banco: str) -> str:
-    """Gera hash único para identificar pagamento"""
     import hashlib
     nome_norm = _normalizar(nome)
     valor_norm = valor.replace(',', '.').replace('R$', '').strip()
     banco_norm = _normalizar(banco)
-    chave = f"{nome_norm}_{valor_norm}_{banco_norm}"
+    hoje = date.today().strftime("%Y-%m-%d") if False else __import__('datetime').date.today().strftime("%Y-%m-%d")
+    chave = f"{nome_norm}_{valor_norm}_{banco_norm}_{hoje}"
     return hashlib.md5(chave.encode()).hexdigest()
 
 def _verificar_pagamento_usado(hash_pag: str, user_id: int) -> dict:
@@ -466,20 +466,7 @@ def run_selfbot(config: dict, user_id: int):
         return 0.0
 
     async def _ler_valor_thread(canal):
-        try:
-            async for msg in canal.history(limit=20):
-                if msg.author == client.user:
-                    continue
-                # Só detecta se a mensagem tiver padrão explícito de valor esperado
-                if not re.search(r'(?:valor|cobran[çc]a|total|pagar)[:\s]*R?\$?\s*[\d]+[.,][\d]{2}', msg.content, re.IGNORECASE):
-                    continue
-                valor = _extrair_valor_mensagem(msg.content)
-                if valor > 0:
-                    valores_thread[canal.id] = valor
-                    log_msg(user_id, f"💰 Valor esperado detectado: R${valor:.2f}")
-                    return
-        except Exception as e:
-            log_msg(user_id, f"⚠️ Erro ao ler histórico: {type(e).__name__}")
+        pass  # desabilitado - causava falsos positivos com mensagens do bot
 
     async def _enviar_mensagem_entrada(canal):
         import io
@@ -669,9 +656,16 @@ def run_selfbot(config: dict, user_id: int):
                 engine = _get_db_engine()
                 with engine.begin() as con:
                     con.execute(text("DELETE FROM threads_enviadas WHERE user_id=:uid"), {"uid": user_id})
+                    con.execute(text("DELETE FROM pagamentos_usados WHERE user_id=:uid"), {"uid": user_id})
             except Exception as e:
                 log_msg(user_id, f"⚠️ Erro ao limpar threads no banco: {type(e).__name__}")
-            log_msg(user_id, "🔄 Threads resetadas à meia-noite (horário de SP)")
+            # Limpa UIDs usados no cache IMAP
+            for conn in imap_manager.connections.values():
+                if conn.config.get("email_user") == config.get("email_user"):
+                    conn._uids_usados.clear()
+                    with conn._cache_lock:
+                        conn._cache.clear()
+            log_msg(user_id, "🔄 Threads e pagamentos resetados à meia-noite (horário de SP)")
 
     async def health_check():
         while not _stop_flags.get(user_id, False):
