@@ -232,19 +232,23 @@ class PersistentIMAPConnection:
                     if novos:
                         uid_set = b",".join(novos)
                         _, msgs_data = self._mail.fetch(uid_set, "(RFC822)")
+                        idx = 0
                         for i in range(0, len(msgs_data), 2):
                             try:
                                 if not isinstance(msgs_data[i], tuple):
                                     continue
                                 msg = email.message_from_bytes(msgs_data[i][1])
                                 subject = _decode_header_str(msg.get("Subject", ""))
+                                uid_str = novos[idx].decode()
+                                idx += 1
                                 if not _is_email_pix(subject):
+                                    with self._cache_lock:
+                                        self._cache[uid_str] = None  # marca como visto mas nao PIX
                                     continue
                                 content = f"{subject} {_get_body(msg)}"
                                 pagador = _extrair_pagador(content)
                                 valor = _extrair_valor(content)
                                 banco = _detectar_banco(content)
-                                uid_str = novos[i // 2].decode()
                                 with self._cache_lock:
                                     self._cache[uid_str] = {
                                         "pagador": pagador,
@@ -253,10 +257,11 @@ class PersistentIMAPConnection:
                                         "banco": banco,
                                     }
                                 print(f"\U0001f4ec NOVO PIX | {pagador} | R${valor} | {banco}", flush=True)
-                            except Exception:
+                            except Exception as e:
+                                print(f"[MONITOR ERR] {type(e).__name__}: {e}", flush=True)
                                 continue
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"[MONITOR LOOP ERR] {type(e).__name__}: {e}", flush=True)
             time.sleep(5)
 
     def _garantir_conexao(self):
@@ -283,6 +288,8 @@ class PersistentIMAPConnection:
         log(f"\U0001f4ec {len(cache_snapshot)} emails no cache")
 
         for uid, entry in cache_snapshot:
+            if entry is None:
+                continue
             if uid in self._uids_usados:
                 log(f"\u23e9 Ignorado (ja usado): UID {uid}")
                 continue
