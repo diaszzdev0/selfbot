@@ -449,13 +449,9 @@ def run_selfbot(config: dict, user_id: int):
     log_msg(user_id, "📝 Definindo eventos do Discord...")
 
     async def _digitar_e_enviar(canal, texto: str, **kwargs):
-        async with canal.typing():
-            await asyncio.sleep(7)
         return await canal.send(texto, **kwargs)
 
     async def _digitar_e_reply(message, texto: str, **kwargs):
-        async with message.channel.typing():
-            await asyncio.sleep(7)
         return await message.reply(texto, **kwargs)
 
     def _extrair_valor_mensagem(texto: str) -> float:
@@ -502,12 +498,16 @@ def run_selfbot(config: dict, user_id: int):
                             dados = await resp.read()
                             log_msg(user_id, f"Imagem baixada: {len(dados)} bytes")
                             arquivo = discord.File(io.BytesIO(dados), filename="imagem.png")
-                            await _digitar_e_enviar(canal, MENSAGEM_ENTRADA, file=arquivo)
+                            async with canal.typing():
+                                await asyncio.sleep(7)
+                            await canal.send(MENSAGEM_ENTRADA, file=arquivo)
                             log_msg(user_id, "Imagem enviada com sucesso")
                             return
             except Exception as exc:
                 log_msg(user_id, f"Erro ao enviar imagem: {type(exc).__name__}: {exc}")
-        await _digitar_e_enviar(canal, MENSAGEM_ENTRADA)
+        async with canal.typing():
+            await asyncio.sleep(7)
+        await canal.send(MENSAGEM_ENTRADA)
 
     async def _dar_go(channel, pedidoid: str):
         # Cancela o timer automático se ainda estiver rodando
