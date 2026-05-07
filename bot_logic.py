@@ -472,9 +472,10 @@ def run_selfbot(config: dict, user_id: int):
         return 0.0
 
     async def _ler_valor_thread(canal):
-        """Lê as mensagens da thread para encontrar o valor esperado"""
         try:
             async for msg in canal.history(limit=20):
+                if msg.author == client.user:
+                    continue
                 valor = _extrair_valor_mensagem(msg.content)
                 if valor > 0:
                     valores_thread[canal.id] = valor
