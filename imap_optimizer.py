@@ -164,6 +164,8 @@ class PersistentIMAPConnection:
         self._uids_usados = set()
         self._keepalive_thread = threading.Thread(target=self._keepalive_loop, daemon=True)
         self._keepalive_thread.start()
+        self._monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
+        self._monitor_thread.start()
 
     def _log(self, msg):
         if self.log_fn:
@@ -188,7 +190,7 @@ class PersistentIMAPConnection:
     def _keepalive_loop(self):
         """Mantém a conexão viva com NOOP a cada 5 minutos."""
         while not self._stop:
-            time.sleep(300)  # 5 minutos
+            time.sleep(300)
             if self._stop:
                 break
             with self._lock:
@@ -199,6 +201,48 @@ class PersistentIMAPConnection:
                         self._connected = False
                         self._log("\u26a0\ufe0f Conexao IMAP perdida, reconectando...")
                         self._conectar()
+
+    def _monitor_loop(self):
+        """Monitora novos e-mails PIX e loga quando chegar um."""
+        uids_vistos = set()
+        time.sleep(10)  # aguarda conexao inicial
+        while not self._stop:
+            try:
+                with self._lock:
+                    if not self._garantir_conexao():
+                        time.sleep(30)
+                        continue
+                    hoje = (date.today() - timedelta(days=1)).strftime("%d-%b-%Y")
+                    uids_all = []
+                    for remetente in ["nubank.com.br", "picpay.com", "itau.com.br", "bradesco.com.br", "santander.com.br", "mercadopago.com"]:
+                        try:
+                            _, data = self._mail.search(None, f'(SINCE "{hoje}" FROM "{remetente}")')
+                            if data and data[0]:
+                                uids_all += data[0].split()
+                        except Exception:
+                            pass
+                    novos = [u for u in uids_all if u not in uids_vistos]
+                    if novos:
+                        uid_set = b",".join(novos)
+                        _, msgs_data = self._mail.fetch(uid_set, "(RFC822)")
+                        for i in range(0, len(msgs_data), 2):
+                            try:
+                                if isinstance(msgs_data[i], tuple):
+                                    msg = email.message_from_bytes(msgs_data[i][1])
+                                    subject = _decode_header_str(msg.get("Subject", ""))
+                                    if not _is_email_pix(subject):
+                                        continue
+                                    content = f"{subject} {_get_body(msg)}"
+                                    pagador = _extrair_pagador(content)
+                                    valor = _extrair_valor(content)
+                                    banco = _detectar_banco(content)
+                                    self._log(f"📬 NOVO PIX RECEBIDO | {pagador} | R${valor} | {banco}")
+                            except Exception:
+                                continue
+                    uids_vistos.update(uids_all)
+            except Exception:
+                pass
+            time.sleep(30)
 
     def _garantir_conexao(self):
         """Garante que a conexão está ativa, reconecta se necessário."""
