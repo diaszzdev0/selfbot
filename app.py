@@ -214,7 +214,22 @@ def cliente_salvar_config():
     db.session.add(cfg)
     db.session.commit()
     
-    # Redireciona para a mesma página com mensagem de sucesso
+    # Se bot estiver rodando, reinicia para pegar nova config
+    if user.id in processos and processos[user.id].is_alive():
+        from bot_logic import parar_selfbot
+        parar_selfbot(user.id)
+        p = processos.pop(user.id, None)
+        if p and p.is_alive():
+            p.terminate()
+            p.join(timeout=3)
+        db.session.expire_all()
+        user = db.session.get(User, session["cliente_id"])
+        np = multiprocessing.Process(target=run_selfbot, args=(_config_dict(user.config), user.id), daemon=True)
+        np.start()
+        processos[user.id] = np
+        cfg = user.config
+        return _render_cliente(user, cfg, True, "Configuração salva e bot reiniciado!", "success")
+
     user = db.session.get(User, session["cliente_id"])
     cfg = user.config
     ativo = user.id in processos and processos[user.id].is_alive()
