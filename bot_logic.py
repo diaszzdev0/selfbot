@@ -449,15 +449,13 @@ def run_selfbot(config: dict, user_id: int):
     log_msg(user_id, "📝 Definindo eventos do Discord...")
 
     async def _digitar_e_enviar(canal, texto: str, **kwargs):
-        delay = min(max(len(texto) * random.uniform(0.1, 0.3), 1.5), 10.0)
         async with canal.typing():
-            await asyncio.sleep(delay)
+            await asyncio.sleep(7)
         return await canal.send(texto, **kwargs)
 
     async def _digitar_e_reply(message, texto: str, **kwargs):
-        delay = min(max(len(texto) * random.uniform(0.1, 0.3), 1.5), 10.0)
         async with message.channel.typing():
-            await asyncio.sleep(delay)
+            await asyncio.sleep(7)
         return await message.reply(texto, **kwargs)
 
     def _extrair_valor_mensagem(texto: str) -> float:
