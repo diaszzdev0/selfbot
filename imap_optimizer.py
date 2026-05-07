@@ -108,19 +108,28 @@ def _match_nomes(nome_cmd, nome_email):
     if not partes_cmd or not partes_email:
         return False
 
+    def _batem(a, b):
+        if a == b:
+            return True
+        # so aceita prefixo se a palavra menor tiver pelo menos 5 chars
+        menor, maior = (a, b) if len(a) <= len(b) else (b, a)
+        if len(menor) < 5:
+            return False
+        return maior.startswith(menor)
+
     primeiro = partes_cmd[0]
     ultimo = partes_cmd[-1]
 
-    tem_primeiro = any(pe.startswith(primeiro) or primeiro.startswith(pe) for pe in partes_email)
+    tem_primeiro = any(_batem(primeiro, pe) for pe in partes_email)
 
     if len(partes_cmd) == 1:
         return tem_primeiro
 
-    tem_ultimo = any(pe.startswith(ultimo) or ultimo.startswith(pe) for pe in partes_email)
+    tem_ultimo = any(_batem(ultimo, pe) for pe in partes_email)
     if tem_primeiro and tem_ultimo:
         return True
 
-    matches = sum(1 for pc in partes_cmd if any(pe.startswith(pc) or pc.startswith(pe) for pe in partes_email))
+    matches = sum(1 for pc in partes_cmd if any(_batem(pc, pe) for pe in partes_email))
     return matches >= 2
 
 
