@@ -595,7 +595,6 @@ def run_selfbot(config: dict, user_id: int):
         log_msg(user_id, f"   └─ Nome: {thread.name}")
         log_msg(user_id, f"   └─ ID: {thread.id}")
         try:
-            await asyncio.sleep(9)
             await _enviar_mensagem_entrada(thread)
             log_msg(user_id, f"✅ Mensagem de entrada enviada")
             log_msg(user_id, "-"*70)
