@@ -120,7 +120,6 @@ def _match_nomes(nome_cmd, nome_email):
     if tem_primeiro and tem_ultimo:
         return True
 
-    # fallback: qualquer 2 palavras do cmd batem com o email
     matches = sum(1 for pc in partes_cmd if any(pe.startswith(pc) or pc.startswith(pe) for pe in partes_email))
     return matches >= 2
 
@@ -156,7 +155,6 @@ def _get_body(msg):
 
 
 class PersistentIMAPConnection:
-    """Mantém uma conexão IMAP aberta permanentemente com keepalive."""
 
     def __init__(self, config, log_fn=None):
         self.config = config
@@ -166,6 +164,9 @@ class PersistentIMAPConnection:
         self._stop = False
         self._connected = False
         self._uids_usados = set()
+        # Cache em memoria: uid -> {pagador, pagador_norm, valor, banco}
+        self._cache = {}
+        self._cache_lock = threading.Lock()
         self._keepalive_thread = threading.Thread(target=self._keepalive_loop, daemon=True)
         self._keepalive_thread.start()
         self._monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
@@ -192,7 +193,6 @@ class PersistentIMAPConnection:
             return False
 
     def _keepalive_loop(self):
-        """Mantém a conexão viva com NOOP a cada 5 minutos."""
         while not self._stop:
             time.sleep(300)
             if self._stop:
@@ -207,8 +207,7 @@ class PersistentIMAPConnection:
                         self._conectar()
 
     def _monitor_loop(self):
-        """Monitora novos e-mails PIX e loga quando chegar um."""
-        uids_vistos = set()
+        """Atualiza cache de e-mails PIX do dia a cada 5s."""
         time.sleep(10)
         while not self._stop:
             try:
@@ -217,39 +216,41 @@ class PersistentIMAPConnection:
                         time.sleep(5)
                         continue
                     hoje = date.today().strftime("%d-%b-%Y")
-                    uids_all = []
-                    for remetente in ["nubank.com.br", "picpay.com", "itau.com.br", "bradesco.com.br", "santander.com.br", "mercadopago.com"]:
-                        try:
-                            _, data = self._mail.search(None, f'(SINCE "{hoje}" FROM "{remetente}")')
-                            if data and data[0]:
-                                uids_all += data[0].split()
-                        except Exception:
-                            pass
-                    novos = [u for u in uids_all if u not in uids_vistos]
+                    _, data = self._mail.search(None, f'(SINCE "{hoje}")')
+                    uids_all = data[0].split() if data and data[0] else []
+                    with self._cache_lock:
+                        novos = [u for u in uids_all if u.decode() not in self._cache]
                     if novos:
                         uid_set = b",".join(novos)
                         _, msgs_data = self._mail.fetch(uid_set, "(RFC822)")
                         for i in range(0, len(msgs_data), 2):
                             try:
-                                if isinstance(msgs_data[i], tuple):
-                                    msg = email.message_from_bytes(msgs_data[i][1])
-                                    subject = _decode_header_str(msg.get("Subject", ""))
-                                    if not _is_email_pix(subject):
-                                        continue
-                                    content = f"{subject} {_get_body(msg)}"
-                                    pagador = _extrair_pagador(content)
-                                    valor = _extrair_valor(content)
-                                    banco = _detectar_banco(content)
-                                    print(f"📬 NOVO PIX RECEBIDO | {pagador} | R${valor} | {banco}", flush=True)
+                                if not isinstance(msgs_data[i], tuple):
+                                    continue
+                                msg = email.message_from_bytes(msgs_data[i][1])
+                                subject = _decode_header_str(msg.get("Subject", ""))
+                                if not _is_email_pix(subject):
+                                    continue
+                                content = f"{subject} {_get_body(msg)}"
+                                pagador = _extrair_pagador(content)
+                                valor = _extrair_valor(content)
+                                banco = _detectar_banco(content)
+                                uid_str = novos[i // 2].decode()
+                                with self._cache_lock:
+                                    self._cache[uid_str] = {
+                                        "pagador": pagador,
+                                        "pagador_norm": _normalizar(pagador),
+                                        "valor": valor,
+                                        "banco": banco,
+                                    }
+                                print(f"\U0001f4ec NOVO PIX | {pagador} | R${valor} | {banco}", flush=True)
                             except Exception:
                                 continue
-                    uids_vistos.update(uids_all)
             except Exception:
                 pass
             time.sleep(5)
 
     def _garantir_conexao(self):
-        """Garante que a conexão está ativa, reconecta se necessário."""
         if not self._connected or self._mail is None:
             return self._conectar()
         try:
@@ -266,72 +267,25 @@ class PersistentIMAPConnection:
 
         nome_busca = _normalizar(nome).lower().strip()
 
-        with self._lock:
-            if not self._garantir_conexao():
-                log("\u26a0\ufe0f Sem conexao IMAP")
-                return None
+        # Busca instantanea no cache
+        with self._cache_lock:
+            cache_snapshot = list(self._cache.items())
 
-            try:
-                hoje = (date.today() - timedelta(days=1)).strftime("%d-%b-%Y")
-                cutoff = datetime.now() - timedelta(hours=24)
+        log(f"\U0001f4ec {len(cache_snapshot)} emails no cache")
 
-                _, data = self._mail.search(None, f'(SINCE "{hoje}")')
-                uids_todos = data[0].split() if data and data[0] else []
-                uids_sorted = sorted(uids_todos, key=lambda x: int(x), reverse=True)[:50]
-                log(f"\U0001f4ec {len(uids_sorted)} emails recentes")
+        for uid, entry in cache_snapshot:
+            if uid in self._uids_usados:
+                log(f"\u23e9 Ignorado (ja usado): UID {uid}")
+                continue
+            pagador_norm = entry["pagador_norm"]
+            log(f"\U0001f4b0 pagador='{pagador_norm}' | R${entry['valor']} | {entry['banco']}")
+            if pagador_norm and nome_busca and (nome_busca in pagador_norm or _match_nomes(nome_busca, pagador_norm)):
+                log(f"\u2705 MATCH: '{pagador_norm}'")
+                self._uids_usados.add(uid)
+                return {"valor": entry["valor"], "banco": entry["banco"], "pagador": entry["pagador"]}
 
-                if not uids_sorted:
-                    log(f"\u274c Nenhum pix de '{nome_busca}' encontrado")
-                    return None
-
-                uid_set = b",".join(uids_sorted)
-                _, msgs_data = self._mail.fetch(uid_set, "(RFC822)")
-
-                emails_parsed = []
-                for i in range(0, len(msgs_data), 2):
-                    try:
-                        if isinstance(msgs_data[i], tuple):
-                            msg = email.message_from_bytes(msgs_data[i][1])
-                            subject = _decode_header_str(msg.get("Subject", ""))
-                            if not _is_email_pix(subject):
-                                log(f"\u23e9 Ignorado (assunto): '{subject}'")
-                                continue
-                            try:
-                                from email.utils import parsedate_to_datetime
-                                ts = parsedate_to_datetime(msg.get("Date", "")).replace(tzinfo=None)
-                                if ts < cutoff:
-                                    log(f"\u23e9 Ignorado (antigo {int((datetime.now()-ts).total_seconds()/3600)}h): '{subject}'")
-                                    continue
-                            except Exception:
-                                pass
-                            content = f"{subject} {_get_body(msg)}"
-                            pagador = _extrair_pagador(content)
-                            pagador_norm = _normalizar(pagador).lower().strip()
-                            valor = _extrair_valor(content)
-                            banco = _detectar_banco(content)
-                            uid_str = uids_sorted[i//2].decode() if isinstance(uids_sorted[i//2], bytes) else str(uids_sorted[i//2])
-                            if uid_str in self._uids_usados:
-                                log(f"\u23e9 Ignorado (ja usado): UID {uid_str}")
-                                continue
-                            log(f"\U0001f4dd Assunto: '{subject}' | pagador='{pagador_norm}' | R${valor}")
-                            emails_parsed.append((pagador, pagador_norm, valor, banco, uid_str))
-                    except Exception:
-                        continue
-
-                for pagador, pagador_norm, valor, banco, uid in emails_parsed:
-                    log(f"\U0001f4b0 pagador='{pagador_norm}' | R${valor} | {banco}")
-                    if pagador_norm and nome_busca and (nome_busca in pagador_norm or _match_nomes(nome_busca, pagador_norm)):
-                        log(f"\u2705 MATCH: '{pagador_norm}'")
-                        self._uids_usados.add(uid)
-                        return {"valor": valor, "banco": banco, "pagador": pagador}
-
-                log(f"\u274c Nenhum pix de '{nome_busca}' encontrado")
-                return None
-
-            except Exception as e:
-                log(f"\u26a0\ufe0f Erro busca: {type(e).__name__}: {str(e)[:150]}")
-                self._connected = False
-                return None
+        log(f"\u274c Nenhum pix de '{nome_busca}' encontrado")
+        return None
 
     def stop(self):
         self._stop = True
@@ -383,14 +337,12 @@ imap_manager = IMAPManager()
 
 
 def buscar_pagamento_imap(config, nome, log_fn=None):
-    """Busca usando conexão persistente."""
     for conn in imap_manager.connections.values():
         if conn.config.get("email_user") == config.get("email_user"):
             return conn.buscar(nome, log_fn)
 
-    # Fallback: cria conexão temporária
     conn_temp = PersistentIMAPConnection(config)
-    time.sleep(2)  # aguarda conectar
+    time.sleep(2)
     resultado = conn_temp.buscar(nome, log_fn)
     conn_temp.stop()
     return resultado
