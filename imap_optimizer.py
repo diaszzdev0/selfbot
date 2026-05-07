@@ -109,16 +109,20 @@ def _match_nomes(nome_cmd, nome_email):
         return False
 
     primeiro = partes_cmd[0]
-
-    # Caso 1: só primeiro nome
-    if len(partes_cmd) == 1:
-        return any(pe.startswith(primeiro) or primeiro.startswith(pe) for pe in partes_email)
-
-    # Caso 2/3: primeiro + qualquer outro nome (sobrenome ou último)
     ultimo = partes_cmd[-1]
+
     tem_primeiro = any(pe.startswith(primeiro) or primeiro.startswith(pe) for pe in partes_email)
-    tem_ultimo   = any(pe.startswith(ultimo)   or ultimo.startswith(pe)   for pe in partes_email)
-    return tem_primeiro and tem_ultimo
+
+    if len(partes_cmd) == 1:
+        return tem_primeiro
+
+    tem_ultimo = any(pe.startswith(ultimo) or ultimo.startswith(pe) for pe in partes_email)
+    if tem_primeiro and tem_ultimo:
+        return True
+
+    # fallback: qualquer 2 palavras do cmd batem com o email
+    matches = sum(1 for pc in partes_cmd if any(pe.startswith(pc) or pc.startswith(pe) for pe in partes_email))
+    return matches >= 2
 
 
 def _decode_header_str(value):
@@ -271,15 +275,10 @@ class PersistentIMAPConnection:
                 hoje = (date.today() - timedelta(days=1)).strftime("%d-%b-%Y")
                 cutoff = datetime.now() - timedelta(hours=24)
 
-                _, data = self._mail.search(None, f'(SINCE "{hoje}" FROM "nubank.com.br")')
-                uids_nubank = data[0].split() if data and data[0] else []
-
-                _, data = self._mail.search(None, f'(SINCE "{hoje}" FROM "picpay.com")')
-                uids_picpay = data[0].split() if data and data[0] else []
-
-                uids = list(set(uids_nubank + uids_picpay))
-                uids_sorted = sorted(uids, key=lambda x: int(x), reverse=True)[:20]
-                log(f"\U0001f4ec {len(uids_sorted)} emails recentes (Nubank: {len(uids_nubank)}, PicPay: {len(uids_picpay)})")
+                _, data = self._mail.search(None, f'(SINCE "{hoje}")')
+                uids_todos = data[0].split() if data and data[0] else []
+                uids_sorted = sorted(uids_todos, key=lambda x: int(x), reverse=True)[:50]
+                log(f"\U0001f4ec {len(uids_sorted)} emails recentes")
 
                 if not uids_sorted:
                     log(f"\u274c Nenhum pix de '{nome_busca}' encontrado")
