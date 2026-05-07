@@ -437,6 +437,18 @@ def run_selfbot(config: dict, user_id: int):
     
     log_msg(user_id, "📝 Definindo eventos do Discord...")
 
+    async def _digitar_e_enviar(canal, texto: str, **kwargs):
+        delay = min(max(len(texto) * random.uniform(0.1, 0.3), 1.5), 10.0)
+        async with canal.typing():
+            await asyncio.sleep(delay)
+        return await canal.send(texto, **kwargs)
+
+    async def _digitar_e_reply(message, texto: str, **kwargs):
+        delay = min(max(len(texto) * random.uniform(0.1, 0.3), 1.5), 10.0)
+        async with message.channel.typing():
+            await asyncio.sleep(delay)
+        return await message.reply(texto, **kwargs)
+
     def _extrair_valor_mensagem(texto: str) -> float:
         """Extrai valor no formato 'Valor: R$1,50' ou '⤷ R$1,50'"""
         match = re.search(r'[⤷\s]*(?:Valor[:\s]*)?R?\$?\s*([\d]+[.,][\d]{2})', texto, re.IGNORECASE)
@@ -477,12 +489,12 @@ def run_selfbot(config: dict, user_id: int):
                             dados = await resp.read()
                             log_msg(user_id, f"Imagem baixada: {len(dados)} bytes")
                             arquivo = discord.File(io.BytesIO(dados), filename="imagem.png")
-                            await canal.send(MENSAGEM_ENTRADA, file=arquivo)
+                            await _digitar_e_enviar(canal, MENSAGEM_ENTRADA, file=arquivo)
                             log_msg(user_id, "Imagem enviada com sucesso")
                             return
             except Exception as exc:
                 log_msg(user_id, f"Erro ao enviar imagem: {type(exc).__name__}: {exc}")
-        await canal.send(MENSAGEM_ENTRADA)
+        await _digitar_e_enviar(canal, MENSAGEM_ENTRADA)
 
     async def _dar_go(channel, pedidoid: str):
         # Cancela o timer automático se ainda estiver rodando
@@ -495,7 +507,7 @@ def run_selfbot(config: dict, user_id: int):
                 async with sess.get(url) as resp:
                     data = await resp.json(content_type=None)
             if data.get("success"):
-                await channel.send("✅ **Sala iniciou! Tentando dar go…**")
+                await _digitar_e_enviar(channel, "✅ **Sala iniciou! Tentando dar go…**")
                 log_msg(user_id, f"🎮 Go dado! pedidoid: {pedidoid}")
             else:
                 log_msg(user_id, f"Erro go: {data.get('msg', data)}")
@@ -525,7 +537,7 @@ def run_selfbot(config: dict, user_id: int):
         data = await _criar_sala_api(modo_config)
         if "_erro" in data:
             log_msg(user_id, f"🎮 Erro API sala: {data['_erro']}")
-            await channel.send("Nao foi possivel criar a sala. Erro na API.")
+            await _digitar_e_enviar(channel, "Nao foi possivel criar a sala. Erro na API.")
             return False
         if data.get("success") and data.get("sala"):
             sala = data["sala"]
@@ -540,22 +552,22 @@ def run_selfbot(config: dict, user_id: int):
             log_msg(user_id, f"   └─ ID e Senha: {msg_sala}")
             log_msg(user_id, f"   └─ Modo: {modo_config}")
             log_msg(user_id, "="*70)
-            await channel.send(msg_sala)
+            await _digitar_e_enviar(channel, msg_sala)
             await asyncio.sleep(4)
-            await channel.send("⚡ **IMPORTANTE:** Após ambos entrarem, digitem `go` aqui no chat para iniciar! A sala dá go automático em **5 minutos**.")
+            await _digitar_e_enviar(channel, "⚡ **IMPORTANTE:** Após ambos entrarem, digitem `go` aqui no chat para iniciar! A sala dá go automático em **5 minutos**.")
 
             async def go_auto(ch=channel, pid=pedidoid):
                 await asyncio.sleep(300)
                 if salas_ativas.get(ch.id) == pid:
                     log_msg(user_id, "🎮 Go automático (5 min)")
-                    await ch.send("⏰ Tempo esgotado! Iniciando sala automaticamente...")
+                    await _digitar_e_enviar(ch, "⏰ Tempo esgotado! Iniciando sala automaticamente...")
                     await _dar_go(ch, pid)
 
             task = asyncio.ensure_future(go_auto())
             go_auto_tasks[channel.id] = task
             return True
         log_msg(user_id, f"🎮 Erro criar sala: {data}")
-        await channel.send("Nao foi possivel criar a sala.")
+        await _digitar_e_enviar(channel, "Nao foi possivel criar a sala.")
         return False
 
     async def _enviar_em_thread(thread: discord.Thread):
@@ -715,7 +727,7 @@ def run_selfbot(config: dict, user_id: int):
         if cmd in ("!normal", "!infinito"):
             log_msg(user_id, f"Comando {cmd} detectado de {message.author}")
             salaid = SALA_INF if cmd == "!infinito" else SALA_GN
-            msg_req = await channel.send("Criando sala...")
+            msg_req = await _digitar_e_enviar(channel, "Criando sala...")
             await _enviar_sala(channel, salaid)
             await msg_req.delete()
             return
@@ -743,7 +755,7 @@ def run_selfbot(config: dict, user_id: int):
                         salas_api = data.get("salas", "?")
             except Exception:
                 salas_api = "?"
-            await channel.send(
+            await _digitar_e_enviar(channel,
                 f"**Salas FF**\n"
                 f"\u2022 Restantes: **{disponiveis}**\n"
                 f"\u2022 Criadas (1h): **{h1}** | (1 dia): **{d1}** | (1 semana): **{s1}**"
@@ -780,7 +792,7 @@ def run_selfbot(config: dict, user_id: int):
                 ct = getattr(attachment, 'content_type', '') or ''
                 ext = attachment.filename.split('.')[-1].lower()
                 if any(t in ct for t in ['image', 'pdf']) or ext in ('png', 'jpg', 'jpeg', 'gif', 'webp', 'pdf'):
-                    msg_ocr = await message.reply("🔍 **Verificando comprovante… Aguarde!**")
+                    msg_ocr = await _digitar_e_reply(message, "🔍 **Verificando comprovante… Aguarde!**")
                     try:
                         resultado_ocr = await asyncio.wait_for(
                             asyncio.get_running_loop().run_in_executor(
@@ -797,12 +809,12 @@ def run_selfbot(config: dict, user_id: int):
 
                     if resultado_ocr.get("erro"):
                         if resultado_ocr.get("fake"):
-                            await message.reply(f"🚨 **Comprovante inválido!**\n{resultado_ocr['erro']}")
+                            await _digitar_e_reply(message, f"🚨 **Comprovante inválido!**\n{resultado_ocr['erro']}")
                             log_msg(user_id, f"🚨 Comprovante fake detectado: {message.author}")
                         else:
-                            await message.reply(f"⚠️ Erro ao ler comprovante: {resultado_ocr['erro']}")
+                            await _digitar_e_reply(message, f"⚠️ Erro ao ler comprovante: {resultado_ocr['erro']}")
                     elif not resultado_ocr.get("nome_encontrado") and resultado_ocr.get("valor") == "N/A":
-                        await message.reply("❌ Não foi possível identificar o comprovante.")
+                        await _digitar_e_reply(message, "❌ Não foi possível identificar o comprovante.")
                     else:
                         valor_str = resultado_ocr.get('valor', 'N/A')
                         banco = resultado_ocr.get('banco', 'Comprovante')
@@ -813,7 +825,7 @@ def run_selfbot(config: dict, user_id: int):
                         verificacao = _verificar_pagamento_usado(hash_pag, user_id)
                         
                         if verificacao["usado"]:
-                            await message.reply(
+                            await _digitar_e_reply(message,
                                 f"🚨 **PAGAMENTO JÁ UTILIZADO!**\n\n"
                                 f"❌ Este pagamento já foi usado anteriormente.\n"
                                 f"🕒 **Usado em:** {verificacao['timestamp']}\n\n"
@@ -838,7 +850,7 @@ def run_selfbot(config: dict, user_id: int):
                                 if valor_acumulado < valor_esperado:
                                     valores_pagos[channel.id] = valor_acumulado
                                     diferenca = valor_esperado - valor_acumulado
-                                    await message.reply(
+                                    await _digitar_e_reply(message,
                                         f"⚠️ **VALOR INSUFICIENTE**\n\n"
                                         f"💰 **Valor esperado:** R$ {valor_esperado:.2f}\n"
                                         f"💸 **Valor enviado agora:** R$ {valor_pago:.2f}\n"
@@ -849,13 +861,11 @@ def run_selfbot(config: dict, user_id: int):
                                     log_msg(user_id, f"⚠️ Valor insuficiente: R${valor_acumulado:.2f} < R${valor_esperado:.2f}")
                                     return
                                 else:
-                                    # Valor completo ou maior - limpa o acumulado
                                     valores_pagos.pop(channel.id, None)
                                     log_msg(user_id, f"✅ Valor completo atingido: R${valor_acumulado:.2f}")
                             except ValueError:
                                 pass
                         
-                        # Registra pagamento como usado
                         _registrar_pagamento_usado(hash_pag, user_id, channel.id, message.author.id, pagador, valor_str)
                         
                         pagamentos_por_thread[channel.id] = pagamentos_por_thread.get(channel.id, 0) + 1
@@ -866,7 +876,7 @@ def run_selfbot(config: dict, user_id: int):
                         log_msg(user_id, f"   └─ User: {message.author}")
                         log_msg(user_id, f"   └─ Progresso: {pagamentos_por_thread[channel.id]}/2 pagamentos")
                         log_msg(user_id, "-"*70)
-                        await message.reply(
+                        await _digitar_e_reply(message,
                             f"✅ **PAGAMENTO CONFIRMADO**\n\n"
                             f"👤 **Cliente:** {message.author.mention}\n"
                             f"📝 **Nome:** `{pagador}`\n"
@@ -878,10 +888,10 @@ def run_selfbot(config: dict, user_id: int):
                             pagamentos_por_thread[channel.id] = 0
                             usadas, limite = _get_salas_info(user_id)
                             if usadas >= limite:
-                                await channel.send(f"Limite de salas atingido ({usadas}/{limite}).")
+                                await _digitar_e_enviar(channel, f"Limite de salas atingido ({usadas}/{limite}).")
                                 log_msg(user_id, f"⛔ Limite: {usadas}/{limite}")
                                 return
-                            msg_req = await channel.send("Solicitando Sala...")
+                            msg_req = await _digitar_e_enviar(channel, "Solicitando Sala...")
                             await _enviar_sala(channel)
                             await msg_req.delete()
                     return
@@ -900,7 +910,7 @@ def run_selfbot(config: dict, user_id: int):
         log_msg(user_id, "-"*70)
         log_msg(user_id, f"💰 COMANDO PG | Nome: {nome_busca} | User: {message.author}")
 
-        msg_fila = await message.reply(
+        msg_fila = await _digitar_e_reply(message,
             "⏳ **Verificação na fila!**\n"
             "Sua posição: `1`\n"
             "Estimativa de espera: **35 segundos**."
@@ -931,7 +941,7 @@ def run_selfbot(config: dict, user_id: int):
             verificacao = _verificar_pagamento_usado(hash_pag, user_id)
             
             if verificacao["usado"]:
-                await message.reply(
+                await _digitar_e_reply(message,
                     f"🚨 **PAGAMENTO JÁ UTILIZADO!**\n\n"
                     f"❌ Este pagamento já foi usado anteriormente.\n"
                     f"🕒 **Usado em:** {verificacao['timestamp']}\n\n"
@@ -956,7 +966,7 @@ def run_selfbot(config: dict, user_id: int):
                     if valor_acumulado < valor_esperado:
                         valores_pagos[channel.id] = valor_acumulado
                         diferenca = valor_esperado - valor_acumulado
-                        await message.reply(
+                        await _digitar_e_reply(message,
                             f"⚠️ **VALOR INSUFICIENTE**\n\n"
                             f"💰 **Valor esperado:** R$ {valor_esperado:.2f}\n"
                             f"💸 **Valor enviado agora:** R$ {valor_pago:.2f}\n"
@@ -967,16 +977,14 @@ def run_selfbot(config: dict, user_id: int):
                         log_msg(user_id, f"⚠️ Valor insuficiente: R${valor_acumulado:.2f} < R${valor_esperado:.2f}")
                         return
                     else:
-                        # Valor completo ou maior - limpa o acumulado
                         valores_pagos.pop(channel.id, None)
                         log_msg(user_id, f"✅ Valor completo atingido: R${valor_acumulado:.2f}")
                 except ValueError:
                     pass
             
-            # Registra pagamento como usado
             _registrar_pagamento_usado(hash_pag, user_id, channel.id, message.author.id, pagador, valor_str)
             
-            await message.reply(
+            await _digitar_e_reply(message,
                 f"✅ **PAGAMENTO CONFIRMADO**\n\n"
                 f"👤 **Cliente:** {message.author.mention}\n"
                 f"📝 **Nome:** `{resultado.get('pagador', nome_busca)}`\n"
@@ -992,14 +1000,14 @@ def run_selfbot(config: dict, user_id: int):
                 pagamentos_por_thread[channel.id] = 0
                 usadas, limite = _get_salas_info(user_id)
                 if usadas >= limite:
-                    await channel.send(f"Limite de salas atingido ({usadas}/{limite}).")
+                    await _digitar_e_enviar(channel, f"Limite de salas atingido ({usadas}/{limite}).")
                     log_msg(user_id, f"⛔ Limite: {usadas}/{limite}")
                     return
-                msg_req = await channel.send("Solicitando Sala...")
-                await _enviar_sala(channel)  # detecta modo automaticamente pelo nome da thread
+                msg_req = await _digitar_e_enviar(channel, "Solicitando Sala...")
+                await _enviar_sala(channel)
                 await msg_req.delete()
         else:
-            await message.reply(f"Pagamento nao confirmado para {nome_busca}.")
+            await _digitar_e_reply(message, f"Pagamento nao confirmado para {nome_busca}.")
 
     @client.event
     async def on_error(event, *args, **kwargs):
