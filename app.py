@@ -82,10 +82,17 @@ def _config_dict(cfg: BotConfig) -> dict:
         if not getattr(cfg, field, None):
             raise ValueError(f"Campo obrigatório '{field}' não configurado")
     
+    def _clean_id(val):
+        """Strips accidental 'key: value' prefixes, keeps only the numeric part."""
+        s = str(val).strip()
+        if ":" in s:
+            s = s.split(":", 1)[-1].strip()
+        return s
+
     return {
         "discord_token": str(cfg.discord_token).strip(),
-        "server_id": str(cfg.server_id).strip(),
-        "categoria_id": str(cfg.categoria_id).strip(),
+        "server_id": _clean_id(cfg.server_id),
+        "categoria_id": _clean_id(cfg.categoria_id),
         "email_user": str(cfg.email_user or "").strip(),
         "email_pass": str(cfg.email_pass or "").strip(),
         "imap_server": str(cfg.imap_server or "imap.gmail.com").strip(),
