@@ -205,14 +205,14 @@ class PersistentIMAPConnection:
     def _monitor_loop(self):
         """Monitora novos e-mails PIX e loga quando chegar um."""
         uids_vistos = set()
-        time.sleep(10)  # aguarda conexao inicial
+        time.sleep(10)
         while not self._stop:
             try:
                 with self._lock:
                     if not self._garantir_conexao():
-                        time.sleep(30)
+                        time.sleep(5)
                         continue
-                    hoje = (date.today() - timedelta(days=1)).strftime("%d-%b-%Y")
+                    hoje = date.today().strftime("%d-%b-%Y")
                     uids_all = []
                     for remetente in ["nubank.com.br", "picpay.com", "itau.com.br", "bradesco.com.br", "santander.com.br", "mercadopago.com"]:
                         try:
@@ -242,7 +242,7 @@ class PersistentIMAPConnection:
                     uids_vistos.update(uids_all)
             except Exception:
                 pass
-            time.sleep(30)
+            time.sleep(5)
 
     def _garantir_conexao(self):
         """Garante que a conexão está ativa, reconecta se necessário."""
