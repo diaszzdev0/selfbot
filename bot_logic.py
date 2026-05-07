@@ -642,12 +642,36 @@ def run_selfbot(config: dict, user_id: int):
             asyncio.ensure_future(monitorar_threads())
             asyncio.ensure_future(iniciar_imap())
             asyncio.ensure_future(health_check())
+            asyncio.ensure_future(reset_diario())
 
     async def iniciar_imap():
         log_msg(user_id, "📬 Iniciando conexão IMAP persistente...")
         imap_manager.get_cache(user_id, config)
         imap_manager.set_log(user_id, log_msg)
         log_msg(user_id, "✅ IMAP persistente ativo")
+
+    async def reset_diario():
+        import pytz
+        tz = pytz.timezone("America/Sao_Paulo")
+        while not _stop_flags.get(user_id, False):
+            agora = datetime.now(tz)
+            # Calcula segundos até meia-noite
+            meia_noite = agora.replace(hour=0, minute=0, second=0, microsecond=0)
+            from datetime import timedelta
+            proximo = meia_noite + timedelta(days=1)
+            espera = (proximo - agora).total_seconds()
+            await asyncio.sleep(espera)
+            if _stop_flags.get(user_id, False):
+                break
+            threads_com_mensagem.clear()
+            try:
+                from sqlalchemy import text
+                engine = _get_db_engine()
+                with engine.begin() as con:
+                    con.execute(text("DELETE FROM threads_enviadas WHERE user_id=:uid"), {"uid": user_id})
+            except Exception as e:
+                log_msg(user_id, f"⚠️ Erro ao limpar threads no banco: {type(e).__name__}")
+            log_msg(user_id, "🔄 Threads resetadas à meia-noite (horário de SP)")
 
     async def health_check():
         while not _stop_flags.get(user_id, False):
