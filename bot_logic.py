@@ -402,7 +402,15 @@ def run_selfbot(config: dict, user_id: int):
     log_msg(user_id, f"🏠 Servidor ID: {SERVER_ID}")
     log_msg(user_id, f"📂 Categoria ID: {CATEGORIA_ID}")
     
-    MENSAGEM_ENTRADA = config.get("mensagem_entrada", "Ola! Use pg Nome Sobrenome para verificar seu pagamento.")
+    MENSAGEM_ENTRADA = config.get("mensagem_entrada", (
+        "🤖 **INSTRUÇÕES DE PAGAMENTO**\n\n"
+        "⚠️ **ATENÇÃO:** Bancos como **Inter, PicPay e Mercado Pago** podem atrasar. "
+        "Se usar um deles, envie **1 centavo a mais** (ex: R$ 10,01).\n\n"
+        "⚡ **AUTO-VERIFICAÇÃO:** Nosso sistema é 100% automático. "
+        "Basta enviar a foto do comprovante ou digitar `pg Nome Completo`.\n\n"
+        "──────────────────────────────\n"
+        "🔍 *Aguardando seu pagamento para liberar a sala...*"
+    ))
     IMAGEM_ENTRADA = config.get("imagem_entrada", "").strip()
 
     # Configurações para reduzir desconexões
