@@ -422,7 +422,7 @@ def run_selfbot(config: dict, user_id: int):
     try:
         client = discord.Client(
             chunk_guilds_at_startup=False,
-            heartbeat_timeout=60.0,
+            heartbeat_timeout=150.0,
             max_messages=100,
             self_bot=True,
         )
@@ -1044,14 +1044,23 @@ def run_selfbot(config: dict, user_id: int):
             if len(TOKEN) < 50:
                 log_msg(user_id, "Token muito curto - provavelmente inválido")
                 return
-            try:
-                await client.start(TOKEN)
-            except discord.LoginFailure as e:
-                log_msg(user_id, f"Token inválido ou expirado: {e}")
-            except discord.HTTPException as e:
-                log_msg(user_id, f"Erro HTTP Discord: {e}")
-            except Exception as e:
-                log_msg(user_id, f"Erro na conexão: {type(e).__name__}: {str(e)[:100]}")
+            while not _stop_flags.get(user_id, False):
+                try:
+                    await client.start(TOKEN)
+                except discord.LoginFailure as e:
+                    log_msg(user_id, f"Token inválido ou expirado: {e}")
+                    return
+                except discord.HTTPException as e:
+                    log_msg(user_id, f"Erro HTTP Discord: {e}")
+                except Exception as e:
+                    log_msg(user_id, f"Erro na conexão: {type(e).__name__}: {str(e)[:100]}")
+                if _stop_flags.get(user_id, False):
+                    break
+                log_msg(user_id, "🔄 Reconectando em 10s...")
+                await asyncio.sleep(10)
+                if not client.is_closed():
+                    await client.close()
+                await asyncio.sleep(2)
         
         log_msg(user_id, "🚀 Executando loop principal...")
         try:
