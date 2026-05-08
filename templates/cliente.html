@@ -458,6 +458,17 @@
                   </div>
                 </div>
 
+                <!-- Rate Limite (oculto visualmente, mas no mesmo form) -->
+                <div style="display:none">
+                  <input type="range" name="max_threads" min="1" max="10"
+                    value="{{ cfg.max_threads if cfg and cfg.max_threads else 3 }}">
+                  {% if cfg and cfg.rate_limit_categorias %}
+                    {% for cat in cfg.rate_limit_categorias | from_json %}
+                    <input name="rate_limit_cat" value="{{ cat }}">
+                    {% endfor %}
+                  {% endif %}
+                </div>
+
                 <button class="btn w-100" style="background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border:none;border-radius:8px;font-weight:500;padding:10px">
                   <i class="bi bi-floppy me-1"></i> Salvar Configurações
                 </button>
@@ -627,57 +638,42 @@
           <div class="col-lg-7">
             <div class="card p-4 mb-3">
               <div class="section-title"><i class="bi bi-speedometer"></i> Rate Limite de Threads</div>
-              <form method="POST" action="/cliente/salvar_config" autocomplete="off">
-                <!-- campos ocultos para não perder config existente -->
-                <input type="hidden" name="discord_token" value="{{ cfg.discord_token if cfg else '' }}">
-                <input type="hidden" name="server_id" value="{{ cfg.server_id if cfg else '' }}">
-                <input type="hidden" name="categoria_id" value="{{ cfg.categoria_id if cfg else '' }}">
-                <input type="hidden" name="email_user" value="{{ cfg.email_user if cfg else '' }}">
-                <input type="hidden" name="email_pass" value="{{ cfg.email_pass if cfg else '' }}">
-                <input type="hidden" name="imap_server" value="{{ cfg.imap_server if cfg else 'imap.gmail.com' }}">
-                <input type="hidden" name="mensagem_entrada" value="{{ cfg.mensagem_entrada if cfg else '' }}">
-                <input type="hidden" name="imagem_entrada" value="{{ cfg.imagem_entrada if cfg and cfg.imagem_entrada else '' }}">
-                {% if cfg and cfg.prefixo_sala %}<input type="hidden" name="usar_prefixo" value="on">{% endif %}
-                <input type="hidden" name="prefixo_sala" value="{{ cfg.prefixo_sala if cfg and cfg.prefixo_sala else '' }}">
-                <input type="hidden" name="modo_sala_id" value="{{ cfg.modo_sala_id if cfg and cfg.modo_sala_id else '' }}">
 
-                <div class="mb-4">
-                  <label>Máximo de Threads Simultâneas</label>
-                  <div class="d-flex align-items-center gap-3">
-                    <input type="range" id="threads-range" name="max_threads" min="1" max="10"
-                      value="{{ cfg.max_threads if cfg and cfg.max_threads else 3 }}"
-                      oninput="document.getElementById('threads-val').textContent=this.value"
-                      style="flex:1;accent-color:#7c3aed">
-                    <span id="threads-val" style="min-width:28px;text-align:center;font-weight:700;color:#a78bfa;font-size:1.1rem">{{ cfg.max_threads if cfg and cfg.max_threads else 3 }}</span>
-                  </div>
-                  <div class="form-text">Quantas threads o bot processa ao mesmo tempo (1 a 10). Valores altos podem causar rate limit no Discord.</div>
+              <div class="mb-4">
+                <label>Máximo de Threads Simultâneas</label>
+                <div class="d-flex align-items-center gap-3">
+                  <input type="range" id="threads-range-vis" min="1" max="10"
+                    value="{{ cfg.max_threads if cfg and cfg.max_threads else 3 }}"
+                    oninput="syncThreads(this.value)"
+                    style="flex:1;accent-color:#7c3aed">
+                  <span id="threads-val" style="min-width:28px;text-align:center;font-weight:700;color:#a78bfa;font-size:1.1rem">{{ cfg.max_threads if cfg and cfg.max_threads else 3 }}</span>
                 </div>
+                <div class="form-text">Quantas threads o bot processa ao mesmo tempo (1 a 10).</div>
+              </div>
 
-                <div class="mb-3">
-                  <label>Categorias Monitoradas (além da principal)</label>
-                  <div class="form-text mb-2">Adicione o <strong>nome exato</strong> de cada categoria extra que o bot deve monitorar. Máximo 10.</div>
-                  <div id="cats-container">
-                    {% if cfg and cfg.rate_limit_categorias %}
-                      {% for cat in cfg.rate_limit_categorias | from_json %}
-                      <div class="d-flex gap-2 mb-2 cat-row">
-                        <input name="rate_limit_cat" class="form-control" placeholder="Nome da categoria" value="{{ cat }}">
-                        <button type="button" onclick="removerCat(this)" class="btn btn-sm" style="background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.25);color:#f87171;border-radius:8px;white-space:nowrap"><i class="bi bi-trash"></i></button>
-                      </div>
-                      {% endfor %}
-                    {% endif %}
-                  </div>
-                  <button type="button" id="btn-add-cat" onclick="adicionarCat()" class="btn btn-sm mt-1" style="background:rgba(124,58,237,.12);border:1px solid rgba(124,58,237,.25);color:#a78bfa;border-radius:8px;font-size:.8rem">
-                    <i class="bi bi-plus-circle me-1"></i> Adicionar Categoria
-                  </button>
+              <div class="mb-3">
+                <label>Categorias Monitoradas (além da principal)</label>
+                <div class="form-text mb-2">Adicione o <strong>nome exato</strong> de cada categoria extra. Máximo 10.</div>
+                <div id="cats-container">
+                  {% if cfg and cfg.rate_limit_categorias %}
+                    {% for cat in cfg.rate_limit_categorias | from_json %}
+                    <div class="d-flex gap-2 mb-2 cat-row">
+                      <input class="form-control cat-input" placeholder="Nome da categoria" value="{{ cat }}" oninput="syncCats()">
+                      <button type="button" onclick="removerCat(this)" class="btn btn-sm" style="background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.25);color:#f87171;border-radius:8px;white-space:nowrap"><i class="bi bi-trash"></i></button>
+                    </div>
+                    {% endfor %}
+                  {% endif %}
                 </div>
-
-                <button class="btn w-100 mt-3" style="background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border:none;border-radius:8px;font-weight:500;padding:10px">
-                  <i class="bi bi-floppy me-1"></i> Salvar Rate Limite
+                <button type="button" id="btn-add-cat" onclick="adicionarCat()" class="btn btn-sm mt-1" style="background:rgba(124,58,237,.12);border:1px solid rgba(124,58,237,.25);color:#a78bfa;border-radius:8px;font-size:.8rem">
+                  <i class="bi bi-plus-circle me-1"></i> Adicionar Categoria
                 </button>
-              </form>
+              </div>
+
+              <button type="button" onclick="salvarRateLimit()" class="btn w-100 mt-3" style="background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border:none;border-radius:8px;font-weight:500;padding:10px">
+                <i class="bi bi-floppy me-1"></i> Salvar Rate Limite
+              </button>
             </div>
 
-            <!-- Info card -->
             <div class="card p-4">
               <div class="section-title"><i class="bi bi-info-circle"></i> Como funciona</div>
               <ul style="color:#6b7280;font-size:.82rem;line-height:1.8;padding-left:1.2rem">
@@ -708,18 +704,48 @@
   </div>
 
   <script>
+    function syncThreads(val) {
+      document.getElementById('threads-val').textContent = val;
+      // sincroniza com o campo hidden no form de configuracoes
+      const hidden = document.querySelector('input[name="max_threads"]');
+      if (hidden) hidden.value = val;
+    }
+
+    function syncCats() {
+      // recria os inputs hidden name=rate_limit_cat no form de configuracoes
+      const form = document.querySelector('form[action="/cliente/salvar_config"]');
+      if (!form) return;
+      form.querySelectorAll('input[name="rate_limit_cat"]').forEach(e => e.remove());
+      document.querySelectorAll('.cat-input').forEach(inp => {
+        const v = inp.value.trim();
+        if (!v) return;
+        const h = document.createElement('input');
+        h.type = 'hidden';
+        h.name = 'rate_limit_cat';
+        h.value = v;
+        form.appendChild(h);
+      });
+    }
+
+    function salvarRateLimit() {
+      syncCats();
+      const form = document.querySelector('form[action="/cliente/salvar_config"]');
+      if (form) form.submit();
+    }
+
     function adicionarCat() {
       const container = document.getElementById('cats-container');
       if (container.querySelectorAll('.cat-row').length >= 10) return;
       const div = document.createElement('div');
       div.className = 'd-flex gap-2 mb-2 cat-row';
-      div.innerHTML = '<input name="rate_limit_cat" class="form-control" placeholder="Nome da categoria"><button type="button" onclick="removerCat(this)" class="btn btn-sm" style="background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.25);color:#f87171;border-radius:8px;white-space:nowrap"><i class="bi bi-trash"></i></button>';
+      div.innerHTML = '<input class="form-control cat-input" placeholder="Nome da categoria" oninput="syncCats()"><button type="button" onclick="removerCat(this)" class="btn btn-sm" style="background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.25);color:#f87171;border-radius:8px;white-space:nowrap"><i class="bi bi-trash"></i></button>';
       container.appendChild(div);
       const btn = document.getElementById('btn-add-cat');
       if (btn) btn.style.display = container.querySelectorAll('.cat-row').length >= 10 ? 'none' : '';
     }
     function removerCat(el) {
       el.closest('.cat-row').remove();
+      syncCats();
       const btn = document.getElementById('btn-add-cat');
       if (btn) btn.style.display = '';
     }
