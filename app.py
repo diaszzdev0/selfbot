@@ -47,6 +47,29 @@ def _from_json_filter(s):
         return []
 app.jinja_env.filters['from_json'] = _from_json_filter
 
+
+def _run_migrations():
+    """Roda migrações de colunas novas — seguro de chamar múltiplas vezes."""
+    try:
+        import sqlite3 as _sq
+        _path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "selfbot.db")
+        with _sq.connect(_path) as con:
+            cols = [r[1] for r in con.execute("PRAGMA table_info(bot_config)").fetchall()]
+            if "modo_sala_id" not in cols:
+                con.execute("ALTER TABLE bot_config ADD COLUMN modo_sala_id VARCHAR(30)")
+            if "rate_limit_categorias" not in cols:
+                con.execute("ALTER TABLE bot_config ADD COLUMN rate_limit_categorias TEXT")
+            if "max_threads" not in cols:
+                con.execute("ALTER TABLE bot_config ADD COLUMN max_threads INTEGER DEFAULT 3")
+            con.commit()
+    except Exception as _e:
+        print(f"[migration] {_e}")
+
+
+with app.app_context():
+    db.create_all()
+    _run_migrations()
+
 # Dicionário para controlar processos com limite
 MAX_PROCESSOS = 50
 processos: dict[int, multiprocessing.Process] = {}
@@ -1324,16 +1347,6 @@ def restart_bot(user_id: int):
 
 if __name__ == "__main__":
     with app.app_context():
-        db.create_all()
-        import sqlite3 as _sqlite3
-        _db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "selfbot.db")
-        with _sqlite3.connect(_db_path) as con:
-            cols_cfg = [r[1] for r in con.execute("PRAGMA table_info(bot_config)").fetchall()]
-            if "modo_sala_id" not in cols_cfg:
-                con.execute("ALTER TABLE bot_config ADD COLUMN modo_sala_id VARCHAR(30) DEFAULT '826526295161871655'")
-            if "max_threads" not in cols_cfg:
-                con.execute("ALTER TABLE bot_config ADD COLUMN max_threads INTEGER DEFAULT 3")
-            con.commit()
         if not User.query.filter_by(is_admin=True).first():
             u = User(
                 username="DiasDev",
