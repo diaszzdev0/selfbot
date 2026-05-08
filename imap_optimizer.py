@@ -111,7 +111,6 @@ def _match_nomes(nome_cmd, nome_email):
     def _batem(a, b):
         if a == b:
             return True
-        # so aceita prefixo se a palavra menor tiver pelo menos 5 chars
         menor, maior = (a, b) if len(a) <= len(b) else (b, a)
         if len(menor) < 5:
             return False
@@ -163,116 +162,130 @@ def _get_body(msg):
     return body
 
 
+def _nova_conexao_imap(config):
+    mail = imaplib.IMAP4_SSL(config["imap_server"])
+    mail.socket().settimeout(30)
+    mail.login(config["email_user"], config["email_pass"])
+    mail.select("INBOX")
+    return mail
+
+
 class PersistentIMAPConnection:
 
     def __init__(self, config, log_fn=None):
         self.config = config
         self.log_fn = log_fn
-        self._mail = None
-        self._lock = threading.Lock()
+        # Conexao dedicada para o monitor (thread separada)
+        self._monitor_mail = None
+        self._monitor_connected = False
+        # Conexao dedicada para buscas
+        self._search_mail = None
+        self._search_connected = False
+        self._search_lock = threading.Lock()
         self._stop = False
-        self._connected = False
         self._uids_usados = set()
-        # Cache em memoria: uid -> {pagador, pagador_norm, valor, banco}
-        self._cache = {}
+        self._cache = {}  # uid -> {pagador, pagador_norm, valor, banco} ou None
         self._cache_lock = threading.Lock()
-        self._keepalive_thread = threading.Thread(target=self._keepalive_loop, daemon=True)
-        self._keepalive_thread.start()
         self._monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
         self._monitor_thread.start()
 
     def _log(self, msg):
         if self.log_fn:
             self.log_fn(msg)
-        logger.info(msg)
 
-    def _conectar(self):
+    def _conectar_monitor(self):
         try:
-            mail = imaplib.IMAP4_SSL(self.config["imap_server"])
-            mail.socket().settimeout(30)
-            mail.login(self.config["email_user"], self.config["email_pass"])
-            mail.select("INBOX")
-            self._mail = mail
-            self._connected = True
+            self._monitor_mail = _nova_conexao_imap(self.config)
+            self._monitor_connected = True
+            print("\u2705 IMAP monitor conectado", flush=True)
+            return True
+        except Exception as e:
+            self._monitor_connected = False
+            print(f"\u26a0\ufe0f IMAP monitor falhou: {type(e).__name__}: {e}", flush=True)
+            return False
+
+    def _conectar_search(self):
+        try:
+            self._search_mail = _nova_conexao_imap(self.config)
+            self._search_connected = True
             self._log("\u2705 IMAP conexao persistente estabelecida")
             return True
         except Exception as e:
+            self._search_connected = False
             self._log(f"\u26a0\ufe0f Falha conexao IMAP: {type(e).__name__}: {str(e)[:100]}")
-            self._connected = False
             return False
 
-    def _keepalive_loop(self):
-        while not self._stop:
-            time.sleep(300)
-            if self._stop:
-                break
-            with self._lock:
-                if self._mail and self._connected:
-                    try:
-                        self._mail.noop()
-                    except Exception:
-                        self._connected = False
-                        self._log("\u26a0\ufe0f Conexao IMAP perdida, reconectando...")
-                        self._conectar()
-
     def _monitor_loop(self):
-        """Atualiza cache de e-mails PIX do dia a cada 5s."""
-        time.sleep(10)
+        """Loop independente que atualiza o cache a cada 5s."""
+        time.sleep(5)
         while not self._stop:
             try:
-                with self._lock:
-                    if not self._garantir_conexao():
+                if not self._monitor_connected or self._monitor_mail is None:
+                    if not self._conectar_monitor():
+                        time.sleep(10)
+                        continue
+                hoje = date.today().strftime("%d-%b-%Y")
+                try:
+                    _, data = self._monitor_mail.search(None, f'(SINCE "{hoje}")')
+                except Exception:
+                    self._monitor_connected = False
+                    time.sleep(5)
+                    continue
+                uids_all = data[0].split() if data and data[0] else []
+                with self._cache_lock:
+                    novos = [u for u in uids_all if u.decode() not in self._cache]
+                if novos:
+                    uid_set = b",".join(novos)
+                    try:
+                        _, msgs_data = self._monitor_mail.fetch(uid_set, "(RFC822)")
+                    except Exception:
+                        self._monitor_connected = False
                         time.sleep(5)
                         continue
-                    hoje = date.today().strftime("%d-%b-%Y")
-                    _, data = self._mail.search(None, f'(SINCE "{hoje}")')
-                    uids_all = data[0].split() if data and data[0] else []
-                    with self._cache_lock:
-                        novos = [u for u in uids_all if u.decode() not in self._cache]
-                    if novos:
-                        uid_set = b",".join(novos)
-                        _, msgs_data = self._mail.fetch(uid_set, "(RFC822)")
-                        idx = 0
-                        for i in range(0, len(msgs_data), 2):
-                            try:
-                                if not isinstance(msgs_data[i], tuple):
-                                    continue
-                                msg = email.message_from_bytes(msgs_data[i][1])
-                                subject = _decode_header_str(msg.get("Subject", ""))
-                                uid_str = novos[idx].decode()
-                                idx += 1
-                                if not _is_email_pix(subject):
-                                    with self._cache_lock:
-                                        self._cache[uid_str] = None  # marca como visto mas nao PIX
-                                    continue
-                                content = f"{subject} {_get_body(msg)}"
-                                pagador = _extrair_pagador(content)
-                                valor = _extrair_valor(content)
-                                banco = _detectar_banco(content)
-                                with self._cache_lock:
-                                    self._cache[uid_str] = {
-                                        "pagador": pagador,
-                                        "pagador_norm": _normalizar(pagador),
-                                        "valor": valor,
-                                        "banco": banco,
-                                    }
-                                print(f"\U0001f4ec NOVO PIX | {pagador} | R${valor} | {banco}", flush=True)
-                            except Exception as e:
-                                print(f"[MONITOR ERR] {type(e).__name__}: {e}", flush=True)
+                    idx = 0
+                    for i in range(0, len(msgs_data), 2):
+                        try:
+                            if not isinstance(msgs_data[i], tuple):
                                 continue
+                            if idx >= len(novos):
+                                break
+                            uid_str = novos[idx].decode()
+                            idx += 1
+                            msg = email.message_from_bytes(msgs_data[i][1])
+                            subject = _decode_header_str(msg.get("Subject", ""))
+                            if not _is_email_pix(subject):
+                                with self._cache_lock:
+                                    self._cache[uid_str] = None
+                                continue
+                            content = f"{subject} {_get_body(msg)}"
+                            pagador = _extrair_pagador(content)
+                            valor = _extrair_valor(content)
+                            banco = _detectar_banco(content)
+                            with self._cache_lock:
+                                self._cache[uid_str] = {
+                                    "pagador": pagador,
+                                    "pagador_norm": _normalizar(pagador),
+                                    "valor": valor,
+                                    "banco": banco,
+                                }
+                            print(f"\U0001f4ec NOVO PIX | {pagador} | R${valor} | {banco}", flush=True)
+                        except Exception as e:
+                            print(f"[MONITOR ERR] {type(e).__name__}: {e}", flush=True)
+                            continue
             except Exception as e:
                 print(f"[MONITOR LOOP ERR] {type(e).__name__}: {e}", flush=True)
+                self._monitor_connected = False
             time.sleep(5)
 
-    def _garantir_conexao(self):
-        if not self._connected or self._mail is None:
-            return self._conectar()
+    def _garantir_search(self):
+        if not self._search_connected or self._search_mail is None:
+            return self._conectar_search()
         try:
-            self._mail.noop()
+            self._search_mail.noop()
             return True
         except Exception:
-            self._connected = False
-            return self._conectar()
+            self._search_connected = False
+            return self._conectar_search()
 
     def buscar(self, nome, log_fn=None):
         def log(msg):
@@ -281,7 +294,6 @@ class PersistentIMAPConnection:
 
         nome_busca = _normalizar(nome).lower().strip()
 
-        # Busca instantanea no cache
         with self._cache_lock:
             cache_snapshot = list(self._cache.items())
 
@@ -305,11 +317,12 @@ class PersistentIMAPConnection:
 
     def stop(self):
         self._stop = True
-        try:
-            if self._mail:
-                self._mail.logout()
-        except Exception:
-            pass
+        for conn in [self._monitor_mail, self._search_mail]:
+            try:
+                if conn:
+                    conn.logout()
+            except Exception:
+                pass
 
 
 class IMAPManager:
