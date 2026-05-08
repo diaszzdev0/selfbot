@@ -217,6 +217,7 @@ class PersistentIMAPConnection:
 
     def _monitor_loop(self):
         """Loop independente que atualiza o cache a cada 5s."""
+        print("[MONITOR] Thread iniciada", flush=True)
         time.sleep(5)
         while not self._stop:
             try:
@@ -227,11 +228,13 @@ class PersistentIMAPConnection:
                 hoje = date.today().strftime("%d-%b-%Y")
                 try:
                     _, data = self._monitor_mail.search(None, f'(SINCE "{hoje}")')
-                except Exception:
+                except Exception as e:
+                    print(f"[MONITOR] Erro search: {e}", flush=True)
                     self._monitor_connected = False
                     time.sleep(5)
                     continue
                 uids_all = data[0].split() if data and data[0] else []
+                print(f"[MONITOR] {len(uids_all)} emails hoje, cache={len(self._cache)}", flush=True)
                 with self._cache_lock:
                     novos = [u for u in uids_all if u.decode() not in self._cache]
                 if novos:
