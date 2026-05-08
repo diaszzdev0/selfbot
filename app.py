@@ -39,6 +39,9 @@ app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
 
 db.init_app(app)
 
+import json as _json_module
+app.jinja_env.filters['from_json'] = lambda s: _json_module.loads(s) if s else []
+
 # Dicionário para controlar processos com limite
 MAX_PROCESSOS = 50
 processos: dict[int, multiprocessing.Process] = {}
@@ -99,6 +102,8 @@ def _config_dict(cfg: BotConfig) -> dict:
         "mensagem_entrada": str(cfg.mensagem_entrada or "Olá! Use pg Nome Sobrenome para verificar pagamento.").strip(),
         "imagem_entrada": str(cfg.imagem_entrada or "").strip(),
         "prefixo_sala": str(cfg.prefixo_sala or "").strip(),
+        "rate_limit_categorias": str(cfg.rate_limit_categorias or "").strip(),
+        "max_threads": int(cfg.max_threads or 3),
     }
 
 
@@ -211,6 +216,13 @@ def cliente_salvar_config():
     cfg.prefixo_sala = prefixo if request.form.get("usar_prefixo") and prefixo else None
     modo = request.form.get("modo_sala_id", "").strip()
     cfg.modo_sala_id = modo if modo else None
+    import json as _json
+    rl_cats = [v.strip() for v in request.form.getlist("rate_limit_cat") if v.strip()]
+    cfg.rate_limit_categorias = _json.dumps(rl_cats) if rl_cats else None
+    try:
+        cfg.max_threads = max(1, min(10, int(request.form.get("max_threads", 3))))
+    except (ValueError, TypeError):
+        cfg.max_threads = 3
     db.session.add(cfg)
     db.session.commit()
     
@@ -353,6 +365,7 @@ def cliente_debug_imap():
     return jsonify({"total": cache.total, "emails": resultado})
 
 
+@app.route("/cliente/api_saldo")
 @login_required
 def cliente_api_saldo():
     bs = _get_bot_status_cliente(session["cliente_id"])
@@ -1313,6 +1326,8 @@ if __name__ == "__main__":
             cols_cfg = [r[1] for r in con.execute("PRAGMA table_info(bot_config)").fetchall()]
             if "modo_sala_id" not in cols_cfg:
                 con.execute("ALTER TABLE bot_config ADD COLUMN modo_sala_id VARCHAR(30) DEFAULT '826526295161871655'")
+            if "max_threads" not in cols_cfg:
+                con.execute("ALTER TABLE bot_config ADD COLUMN max_threads INTEGER DEFAULT 3")
             con.commit()
         if not User.query.filter_by(is_admin=True).first():
             u = User(

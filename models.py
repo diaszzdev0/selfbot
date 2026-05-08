@@ -52,6 +52,8 @@ class BotConfig(db.Model):
     imagem_entrada = db.Column(db.String(500), nullable=True)
     prefixo_sala = db.Column(db.String(20), nullable=True)  # ex: !sala — se None envia só id+senha
     modo_sala_id = db.Column(db.String(30), nullable=True)  # salaid do modo escolhido
+    rate_limit_categorias = db.Column(db.Text, nullable=True)  # JSON: lista de nomes de categorias
+    max_threads = db.Column(db.Integer, default=3)  # máximo de threads simultâneas (1-10)
 
 
 class BotStatus(db.Model):
