@@ -40,7 +40,12 @@ app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
 db.init_app(app)
 
 import json as _json_module
-app.jinja_env.filters['from_json'] = lambda s: _json_module.loads(s) if s else []
+def _from_json_filter(s):
+    try:
+        return _json_module.loads(s) if s else []
+    except Exception:
+        return []
+app.jinja_env.filters['from_json'] = _from_json_filter
 
 # Dicionário para controlar processos com limite
 MAX_PROCESSOS = 50
