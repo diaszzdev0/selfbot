@@ -1,9 +1,7 @@
+ID=f33ab80b5c2c4a698466f3daafc85a2d
 DISPLAY_NAME=Selfbot Manager
 DESCRIPTION=Selfbot Discord com painel Flask
 MAIN=app.py
-MEMORY=512
 VERSION=recommended
+MEMORY=512
 START=python app.py
-PORT=80
-ID=67188c49ce2042fabe286376f92bf9f2
-WORKERS=1
