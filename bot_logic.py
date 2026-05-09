@@ -8,6 +8,7 @@ import unicodedata
 from datetime import datetime
 import discord
 from imap_optimizer import imap_manager
+from imap_optimizer import _match_nomes
 MAX_THREADS_CACHE = 10000
 MAX_PAGAMENTOS_CACHE = 1000
 MAX_RATE_LIMITERS = 100
@@ -197,12 +198,14 @@ def _salvar_thread(user_id: int, thread_id: int):
         pass
 
 
-def _gerar_hash_pagamento(nome: str, valor: str, banco: str) -> str:
+def _gerar_hash_pagamento(nome: str, valor: str, banco: str, uid: str = None) -> str:
     import hashlib
+    if uid:
+        return hashlib.md5(f"uid_{uid}".encode()).hexdigest()
     nome_norm = _normalizar(nome)
     valor_norm = valor.replace(',', '.').replace('R$', '').strip()
     banco_norm = _normalizar(banco)
-    hoje = date.today().strftime("%Y-%m-%d") if False else __import__('datetime').date.today().strftime("%Y-%m-%d")
+    hoje = __import__('datetime').date.today().strftime("%Y-%m-%d")
     chave = f"{nome_norm}_{valor_norm}_{banco_norm}_{hoje}"
     return hashlib.md5(chave.encode()).hexdigest()
 
@@ -233,7 +236,7 @@ def _verificar_pagamento_usado(hash_pag: str, user_id: int) -> dict:
         log_msg(user_id, f"⚠️ Erro ao verificar pagamento: {type(e).__name__}")
         return {"usado": False}
 
-def _registrar_pagamento_usado(hash_pag: str, user_id: int, thread_id: int, discord_user_id: int, nome: str, valor: str):
+def _registrar_pagamento_usado(hash_pag: str, user_id: int, thread_id: int, discord_user_id: int, nome: str, valor: str, uid: str = None):
     """Registra pagamento como usado no banco de dados"""
     try:
         from sqlalchemy import text
@@ -243,6 +246,10 @@ def _registrar_pagamento_usado(hash_pag: str, user_id: int, thread_id: int, disc
                 "INSERT INTO pagamentos_usados (hash, user_id, thread_id, discord_user_id, nome, valor) "
                 "VALUES (:hash, :uid, :tid, :duid, :nome, :valor) ON CONFLICT DO NOTHING"
             ), {"hash": hash_pag, "uid": user_id, "tid": thread_id, "duid": discord_user_id, "nome": nome, "valor": valor})
+        # Marca o UID do email como usado no cache IMAP
+        if uid:
+            for conn in imap_manager.connections.values():
+                conn._uids_usados.add(uid)
         log_msg(user_id, f"🔒 Pagamento registrado: {hash_pag[:8]}...")
     except Exception as e:
         log_msg(user_id, f"⚠️ Erro ao registrar pagamento: {type(e).__name__}")
@@ -481,10 +488,24 @@ def run_selfbot(config: dict, user_id: int):
         return False
 
     async def _digitar_e_enviar(canal, texto: str, **kwargs):
-        return await canal.send(texto, **kwargs)
+        for tentativa in range(3):
+            try:
+                return await canal.send(texto, **kwargs)
+            except discord.HTTPException as e:
+                if e.status == 429:
+                    await asyncio.sleep(e.retry_after if hasattr(e, 'retry_after') else 5)
+                else:
+                    raise
 
     async def _digitar_e_reply(message, texto: str, **kwargs):
-        return await message.reply(texto, **kwargs)
+        for tentativa in range(3):
+            try:
+                return await message.reply(texto, **kwargs)
+            except discord.HTTPException as e:
+                if e.status == 429:
+                    await asyncio.sleep(e.retry_after if hasattr(e, 'retry_after') else 5)
+                else:
+                    raise
 
     def _extrair_valor_mensagem(texto: str) -> float:
         """Extrai valor no formato 'Valor: R$1,50' ou '⤷ R$1,50'"""
@@ -507,26 +528,22 @@ def run_selfbot(config: dict, user_id: int):
         # Lê mensagens da thread para extrair valor esperado
         await _ler_valor_thread(canal)
         
+        await asyncio.sleep(7)
         if IMAGEM_ENTRADA:
-            log_msg(user_id, "Tentando enviar imagem...")
             try:
                 async with _aiohttp.ClientSession() as sess:
                     async with sess.get(IMAGEM_ENTRADA, timeout=_aiohttp.ClientTimeout(total=15)) as resp:
-                        log_msg(user_id, f"Imagem status HTTP: {resp.status}")
                         if resp.status == 200:
                             dados = await resp.read()
-                            log_msg(user_id, f"Imagem baixada: {len(dados)} bytes")
                             arquivo = discord.File(io.BytesIO(dados), filename="imagem.png")
-                            async with canal.typing():
-                                await asyncio.sleep(7)
-                            await canal.send(MENSAGEM_ENTRADA, file=arquivo)
+                            await _digitar_e_enviar(canal, MENSAGEM_ENTRADA, file=arquivo)
                             log_msg(user_id, "Imagem enviada com sucesso")
                             return
+                        else:
+                            log_msg(user_id, f"Imagem indisponivel (HTTP {resp.status}), enviando so texto")
             except Exception as exc:
                 log_msg(user_id, f"Erro ao enviar imagem: {type(exc).__name__}: {exc}")
-        async with canal.typing():
-            await asyncio.sleep(7)
-        await canal.send(MENSAGEM_ENTRADA)
+        await _digitar_e_enviar(canal, MENSAGEM_ENTRADA)
 
     async def _dar_go(channel, pedidoid: str):
         # Cancela o timer automático se ainda estiver rodando
@@ -668,7 +685,82 @@ def run_selfbot(config: dict, user_id: int):
         log_msg(user_id, "📬 Iniciando conexão IMAP persistente...")
         imap_manager.get_cache(user_id, config)
         imap_manager.set_log(user_id, log_msg)
-        log_msg(user_id, "✅ IMAP persistente ativo")
+
+        def _on_novo_pix(entry: dict):
+            """Chamado pela thread do monitor IMAP quando novo PIX chega."""
+            pagador = entry.get("pagador", "")
+            valor = entry.get("valor", "N/A")
+            banco = entry.get("banco", "")
+            uid = entry.get("uid", "")
+            log_msg(user_id, f"🔔 PIX em tempo real: {pagador} | R${valor} | {banco}")
+
+            loop = _loops.get(user_id)
+            if not loop or loop.is_closed():
+                return
+
+            async def _notificar():
+                guild = client.get_guild(SERVER_ID)
+                if not guild:
+                    return
+                pagador_norm = _normalizar(pagador)
+                # Percorre todas as threads monitoradas abertas
+                for canal in guild.channels:
+                    for thread in getattr(canal, "threads", []):
+                        if not _thread_monitorada(thread):
+                            continue
+                        if thread.id not in threads_com_mensagem:
+                            continue
+                        # Verifica se já foi usado
+                        hash_pag = _gerar_hash_pagamento(pagador, valor, banco, uid)
+                        if _verificar_pagamento_usado(hash_pag, user_id)["usado"]:
+                            continue
+                        # Busca mensagens recentes da thread para tentar associar ao nome
+                        try:
+                            msgs_recentes = [m async for m in thread.history(limit=20)]
+                        except Exception:
+                            continue
+                        nome_encontrado = None
+                        autor_encontrado = None
+                        for m in msgs_recentes:
+                            if m.author == client.user:
+                                continue
+                            nome_cmd = _extrair_nome(m.content)
+                            if nome_cmd and _match_nomes(_normalizar(nome_cmd), pagador_norm):
+                                nome_encontrado = nome_cmd
+                                autor_encontrado = m.author
+                                break
+                        if not nome_encontrado:
+                            continue
+                        # Registra e notifica
+                        _registrar_pagamento_usado(hash_pag, user_id, thread.id,
+                                                   autor_encontrado.id if autor_encontrado else 0,
+                                                   pagador, valor, uid)
+                        pagamentos_por_thread[thread.id] = pagamentos_por_thread.get(thread.id, 0) + 1
+                        log_msg(user_id, f"🔔 Notificando thread {thread.name} | {pagador} | R${valor}")
+                        try:
+                            mention = autor_encontrado.mention if autor_encontrado else ""
+                            await _digitar_e_enviar(thread,
+                                f"✅ **PAGAMENTO CONFIRMADO**\n\n"
+                                f"👤 **Cliente:** {mention}\n"
+                                f"📝 **Nome:** `{pagador}`\n"
+                                f"💰 **Valor:** `R$ {valor} (BRL)`\n"
+                                f"🔍 **Destino:** `e-mail {banco}`\n"
+                                f"🎉 **Sua vaga está garantida! A sala será enviada aqui.**"
+                            )
+                            if pagamentos_por_thread[thread.id] >= 2:
+                                pagamentos_por_thread[thread.id] = 0
+                                usadas, limite = _get_salas_info(user_id)
+                                if usadas < limite:
+                                    msg_req = await _digitar_e_enviar(thread, "Solicitando Sala...")
+                                    await _enviar_sala(thread)
+                                    await msg_req.delete()
+                        except Exception as exc:
+                            log_msg(user_id, f"⚠️ Erro ao notificar thread: {exc}")
+
+            asyncio.run_coroutine_threadsafe(_notificar(), loop)
+
+        imap_manager.set_pix_callback(user_id, _on_novo_pix)
+        log_msg(user_id, "✅ IMAP persistente ativo com notificação em tempo real")
 
     async def reset_diario():
         import pytz
@@ -917,8 +1009,7 @@ def run_selfbot(config: dict, user_id: int):
                             except ValueError:
                                 pass
                         
-                        _registrar_pagamento_usado(hash_pag, user_id, channel.id, message.author.id, pagador, valor_str)
-                        
+                        _registrar_pagamento_usado(hash_pag, user_id, channel.id, message.author.id, pagador, valor_str, resultado_ocr.get('uid'))
                         pagamentos_por_thread[channel.id] = pagamentos_por_thread.get(channel.id, 0) + 1
                         log_msg(user_id, "-"*70)
                         log_msg(user_id, f"💰 COMPROVANTE CONFIRMADO")
@@ -988,9 +1079,9 @@ def run_selfbot(config: dict, user_id: int):
             banco = resultado.get('banco', 'Email')
             
             # Gera hash do pagamento para verificar duplicação
-            hash_pag = _gerar_hash_pagamento(pagador, valor_str, banco)
+            hash_pag = _gerar_hash_pagamento(pagador, valor_str, banco, resultado.get('uid'))
             verificacao = _verificar_pagamento_usado(hash_pag, user_id)
-            
+
             if verificacao["usado"]:
                 await _digitar_e_reply(message,
                     f"🚨 **PAGAMENTO JÁ UTILIZADO!**\n\n"
@@ -999,14 +1090,9 @@ def run_selfbot(config: dict, user_id: int):
                     f"⚠️ Cada pagamento só pode ser usado uma vez.\n"
                     f"Por favor, faça um novo pagamento."
                 )
-                log_msg(user_id, "="*70)
-                log_msg(user_id, f"🚨 PAGAMENTO DUPLICADO BLOQUEADO")
-                log_msg(user_id, f"   └─ Nome: {pagador}")
-                log_msg(user_id, f"   └─ User: {message.author}")
-                log_msg(user_id, f"   └─ Hash: {hash_pag[:16]}...")
-                log_msg(user_id, "="*70)
+                log_msg(user_id, f"🚨 PAGAMENTO DUPLICADO BLOQUEADO | {pagador} | {message.author}")
                 return
-            
+
             # Verifica se o valor está correto
             if channel.id in valores_thread and valor_str != 'N/A':
                 try:
@@ -1033,7 +1119,7 @@ def run_selfbot(config: dict, user_id: int):
                 except ValueError:
                     pass
             
-            _registrar_pagamento_usado(hash_pag, user_id, channel.id, message.author.id, pagador, valor_str)
+            _registrar_pagamento_usado(hash_pag, user_id, channel.id, message.author.id, pagador, valor_str, resultado.get('uid'))
             
             await _digitar_e_reply(message,
                 f"✅ **PAGAMENTO CONFIRMADO**\n\n"

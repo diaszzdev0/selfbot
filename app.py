@@ -425,6 +425,36 @@ def cliente_api_modos():
         return jsonify({"status": "error", "modos": []})
 
 
+@app.route("/cliente/imap_pix")
+@login_required
+def cliente_imap_pix():
+    import re
+    user_id = session["cliente_id"]
+    log_path = os.path.join(os.path.dirname(__file__), "logs", f"user_{user_id}.log")
+    pix = []
+    try:
+        with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+            for linha in f:
+                # Detecta linhas de PIX encontrado: "💰 pagador='nome' | R$valor | banco"
+                m = re.search(r"pagador='([^']+)'\s*\|\s*R\$([\d,\.]+)\s*\|\s*(\S+)", linha)
+                if m:
+                    # Extrai hora da linha [2026-05-09 00:31:56]
+                    hora_m = re.match(r"\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\]", linha)
+                    hora = hora_m.group(1)[11:] if hora_m else "--:--:--"
+                    pix.append({
+                        "hora": hora,
+                        "pagador": m.group(1).title(),
+                        "valor": f"R$ {m.group(2)}",
+                        "banco": m.group(3),
+                        "usado": "MATCH" in linha or "confirmado" in linha.lower()
+                    })
+    except FileNotFoundError:
+        pass
+    # Retorna os 50 mais recentes
+    return jsonify({"pix": pix[-50:][::-1], "total": len(pix)})
+
+
+
 @app.route("/cliente/stream_logs/<int:user_id>")
 @login_required
 def cliente_stream_logs(user_id: int):

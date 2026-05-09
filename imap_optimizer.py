@@ -175,6 +175,7 @@ class PersistentIMAPConnection:
     def __init__(self, config, log_fn=None):
         self.config = config
         self.log_fn = log_fn
+        self._on_novo_pix = None  # callback(entry: dict) chamado ao detectar novo PIX
         # Conexao dedicada para o monitor (thread separada)
         self._monitor_mail = None
         self._monitor_connected = False
@@ -216,7 +217,7 @@ class PersistentIMAPConnection:
             return False
 
     def _monitor_loop(self):
-        """Loop independente que atualiza o cache a cada 5s."""
+        """Polling a cada 3s para detectar emails novos."""
         time.sleep(5)
         while not self._stop:
             try:
@@ -226,6 +227,7 @@ class PersistentIMAPConnection:
                         continue
                 hoje = date.today().strftime("%d-%b-%Y")
                 try:
+                    self._monitor_mail.select("INBOX")
                     _, data = self._monitor_mail.search(None, f'(SINCE "{hoje}")')
                 except Exception as e:
                     print(f"[MONITOR] Erro search: {e}", flush=True)
@@ -235,45 +237,51 @@ class PersistentIMAPConnection:
                 uids_all = data[0].split() if data and data[0] else []
                 with self._cache_lock:
                     novos = [u for u in uids_all if u.decode() not in self._cache]
-                if novos:
-                    for uid_bytes in novos:
-                        uid_str = uid_bytes.decode()
-                        try:
-                            _, msgs_data = self._monitor_mail.fetch(uid_bytes, "(RFC822)")
-                        except Exception:
-                            self._monitor_connected = False
-                            break
-                        try:
-                            raw = next((x[1] for x in msgs_data if isinstance(x, tuple)), None)
-                            if raw is None:
-                                with self._cache_lock:
-                                    self._cache[uid_str] = None
-                                continue
-                            msg = email.message_from_bytes(raw)
-                            subject = _decode_header_str(msg.get("Subject", ""))
-                            if not _is_email_pix(subject):
-                                with self._cache_lock:
-                                    self._cache[uid_str] = None
-                                continue
-                            content = f"{subject} {_get_body(msg)}"
-                            pagador = _extrair_pagador(content)
-                            valor = _extrair_valor(content)
-                            banco = _detectar_banco(content)
+                for uid_bytes in novos:
+                    uid_str = uid_bytes.decode()
+                    try:
+                        _, msgs_data = self._monitor_mail.fetch(uid_bytes, "(RFC822)")
+                    except Exception:
+                        self._monitor_connected = False
+                        break
+                    try:
+                        raw = next((x[1] for x in msgs_data if isinstance(x, tuple)), None)
+                        if raw is None:
                             with self._cache_lock:
-                                self._cache[uid_str] = {
-                                    "pagador": pagador,
-                                    "pagador_norm": _normalizar(pagador),
-                                    "valor": valor,
-                                    "banco": banco,
-                                }
-                            print(f"\U0001f4ec NOVO PIX | {pagador} | R${valor} | {banco}", flush=True)
-                        except Exception as e:
-                            print(f"[MONITOR ERR] {type(e).__name__}: {e}", flush=True)
+                                self._cache[uid_str] = None
                             continue
+                        msg = email.message_from_bytes(raw)
+                        subject = _decode_header_str(msg.get("Subject", ""))
+                        if not _is_email_pix(subject):
+                            print(f"[IGNORADO] Assunto: '{subject}'", flush=True)
+                            with self._cache_lock:
+                                self._cache[uid_str] = None
+                            continue
+                        content = f"{subject} {_get_body(msg)}"
+                        pagador = _extrair_pagador(content)
+                        valor = _extrair_valor(content)
+                        banco = _detectar_banco(content)
+                        entry = {
+                            "pagador": pagador,
+                            "pagador_norm": _normalizar(pagador),
+                            "valor": valor,
+                            "banco": banco,
+                            "uid": uid_str,
+                        }
+                        with self._cache_lock:
+                            self._cache[uid_str] = entry
+                        print(f"\U0001f4ec NOVO PIX | {pagador} | R${valor} | {banco}", flush=True)
+                        if self._on_novo_pix:
+                            try:
+                                self._on_novo_pix(entry)
+                            except Exception as _cb_err:
+                                print(f"[CALLBACK ERR] {_cb_err}", flush=True)
+                    except Exception as e:
+                        print(f"[MONITOR ERR] {type(e).__name__}: {e}", flush=True)
             except Exception as e:
                 print(f"[MONITOR LOOP ERR] {type(e).__name__}: {e}", flush=True)
                 self._monitor_connected = False
-            time.sleep(5)
+            time.sleep(3)
 
     def _garantir_search(self):
         if not self._search_connected or self._search_mail is None:
@@ -307,8 +315,7 @@ class PersistentIMAPConnection:
             log(f"\U0001f4b0 pagador='{pagador_norm}' | R${entry['valor']} | {entry['banco']}")
             if pagador_norm and nome_busca and (nome_busca in pagador_norm or _match_nomes(nome_busca, pagador_norm)):
                 log(f"\u2705 MATCH: '{pagador_norm}'")
-                self._uids_usados.add(uid)
-                return {"valor": entry["valor"], "banco": entry["banco"], "pagador": entry["pagador"]}
+                return {"valor": entry["valor"], "banco": entry["banco"], "pagador": entry["pagador"], "uid": uid}
 
         log(f"\u274c Nenhum pix de '{nome_busca}' encontrado")
         return None
@@ -337,6 +344,11 @@ class IMAPManager:
     def set_log(self, user_id, log_fn):
         if user_id in self.connections:
             self.connections[user_id].log_fn = lambda msg: log_fn(user_id, msg)
+
+    def set_pix_callback(self, user_id, callback):
+        """Registra callback chamado quando novo PIX é detectado: callback(entry)"""
+        if user_id in self.connections:
+            self.connections[user_id]._on_novo_pix = callback
 
     def stop_cache(self, user_id):
         if user_id in self.connections:
