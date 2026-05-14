@@ -76,6 +76,13 @@ def _normalizar(texto: str) -> str:
     return unicodedata.normalize("NFKD", texto).encode("ascii", "ignore").decode("ascii").lower().strip()
 
 
+# Compatibilidade: algumas rotinas chamam _normalizar_cat
+# (manter _normalizar_cat como alias de _normalizar)
+def _normalizar_cat(texto: str) -> str:
+    return _normalizar(texto)
+
+
+
 def _extrair_nome(conteudo: str):
     c = conteudo.strip()
     cl = c.lower()
@@ -445,9 +452,10 @@ def run_selfbot(config: dict, user_id: int):
     import json as _json
     _rl_raw = config.get("rate_limit_categorias", "")
     try:
-        CATEGORIAS_EXTRA = [s.strip().lower() for s in _json.loads(_rl_raw) if s.strip()] if _rl_raw else []
+        CATEGORIAS_EXTRA = set(_normalizar(s) for s in _json.loads(_rl_raw) if s.strip()) if _rl_raw else set()
     except Exception:
-        CATEGORIAS_EXTRA = []
+        CATEGORIAS_EXTRA = set()
+    log_msg(user_id, f"📂 Categorias extras: {list(CATEGORIAS_EXTRA) if CATEGORIAS_EXTRA else 'nenhuma'}")
     MAX_THREADS_SIMULTANEAS = max(1, min(10, int(config.get("max_threads", 3))))
     _semaforo_threads = asyncio.Semaphore(MAX_THREADS_SIMULTANEAS)
     log_msg(user_id, f"🏠 Servidor ID: {SERVER_ID}")
@@ -509,32 +517,52 @@ def run_selfbot(config: dict, user_id: int):
     pg_em_processamento: set[str] = set()
     valores_thread: dict[int, float] = {}   # channel_id -> valor esperado
     valores_pagos: dict[int, float] = {}    # channel_id -> valor já pago acumulado
-    pagamentos_usados_global: dict[str, dict] = {}  # hash_pagamento -> {"thread_id", "user_id", "timestamp"}
-    
-    def _canal_monitorado(channel) -> bool:
-        parent = getattr(channel, 'parent', channel)
-        cat = getattr(parent, 'category', None)
-        if not cat:
-            return False
-        if cat.id == CATEGORIA_ID:
-            return True
-        if CATEGORIAS_EXTRA and cat.name.strip().lower() in CATEGORIAS_EXTRA:
-            return True
-        return False
+    pagamentos_usados_global: dict[str, dict] = {}
 
-    def _thread_monitorada(thread: discord.Thread) -> bool:
-        if not thread.guild or thread.guild.id != SERVER_ID:
-            return False
-        parent = thread.parent
-        if not parent:
-            return False
-        cat = getattr(parent, 'category', None)
-        if not cat:
-            return False
-        if cat.id == CATEGORIA_ID:
-            return True
-        if CATEGORIAS_EXTRA and cat.name.strip().lower() in CATEGORIAS_EXTRA:
-            return True
+    async def _get_cat_id_name(channel):
+        """Retorna (cat_id, cat_name_norm) de qualquer canal ou thread."""
+        guild = channel.guild
+        # Thread: busca canal pai pelo parent_id
+        parent_id = getattr(channel, 'parent_id', None)
+        if parent_id:
+            parent = guild.get_channel(parent_id)
+            if parent is None:
+                try:
+                    parent = await guild.fetch_channel(parent_id)
+                except Exception:
+                    return 0, ""
+        else:
+            parent = channel
+        cat_id = getattr(parent, 'category_id', None)
+        if not cat_id:
+            return 0, ""
+        cat_ch = guild.get_channel(cat_id)
+        if cat_ch is None:
+            try:
+                cat_ch = await guild.fetch_channel(cat_id)
+            except Exception:
+                return cat_id, ""
+        return cat_id, _normalizar_cat(cat_ch.name)
+
+    def _canal_monitorado(channel) -> bool:
+        """Versao sincrona — so usa cache, para mensagens em canais ja conhecidos."""
+        guild = getattr(channel, 'guild', None)
+        parent_id = getattr(channel, 'parent_id', None)
+        if parent_id and guild:
+            parent = guild.get_channel(parent_id)
+            if parent is None:
+                return False
+            cat_id = getattr(parent, 'category_id', None)
+            if not cat_id:
+                return False
+            if cat_id == CATEGORIA_ID:
+                return True
+            cat_ch = guild.get_channel(cat_id)
+            cat_name = _normalizar_cat(cat_ch.name) if cat_ch else ""
+            return bool(CATEGORIAS_EXTRA) and cat_name in CATEGORIAS_EXTRA
+        cat = getattr(channel, 'category', None)
+        if cat:
+            return cat.id == CATEGORIA_ID or (bool(CATEGORIAS_EXTRA) and _normalizar_cat(cat.name) in CATEGORIAS_EXTRA)
         return False
 
     async def _digitar_e_enviar(canal, texto: str, **kwargs):
@@ -550,10 +578,13 @@ def run_selfbot(config: dict, user_id: int):
     async def _digitar_e_reply(message, texto: str, **kwargs):
         for tentativa in range(3):
             try:
-                return await message.reply(texto, **kwargs)
+                return await message.reply(texto, allowed_mentions=discord.AllowedMentions.none(), **kwargs)
             except discord.HTTPException as e:
                 if e.status == 429:
                     await asyncio.sleep(e.retry_after if hasattr(e, 'retry_after') else 5)
+                elif e.code == 200000:
+                    # servidor bloqueia mencoes, envia sem reply
+                    return await message.channel.send(texto, allowed_mentions=discord.AllowedMentions.none(), **kwargs)
                 else:
                     raise
 
@@ -574,11 +605,19 @@ def run_selfbot(config: dict, user_id: int):
     async def _enviar_mensagem_entrada(canal):
         import io
         import aiohttp as _aiohttp
-        
-        # Lê mensagens da thread para extrair valor esperado
-        await _ler_valor_thread(canal)
-        
-        await asyncio.sleep(7)
+
+        # Delay de sincronizacao apos join na thread
+        await asyncio.sleep(2)
+
+        # Leitura dinamica do slowmode: thread primeiro, depois canal pai
+        slowmode = getattr(canal, 'slowmode_delay', 0) or 0
+        if not slowmode:
+            parent = getattr(canal, 'parent', None)
+            slowmode = getattr(parent, 'slowmode_delay', 0) or 0
+        if slowmode > 0:
+            log_msg(user_id, f"⏳ Slowmode detectado: {slowmode}s — aguardando antes de enviar")
+            await asyncio.sleep(slowmode)
+
         if IMAGEM_ENTRADA:
             try:
                 async with _aiohttp.ClientSession() as sess:
@@ -715,13 +754,32 @@ def run_selfbot(config: dict, user_id: int):
         log_msg(user_id, "="*70)
         log_msg(user_id, f"✅ CONECTADO | {client.user} (ID: {client.user.id})")
         log_msg(user_id, "="*70)
+
+        # Força cache dos canais via HTTP
+        guild = client.get_guild(SERVER_ID)
+        if guild:
+            try:
+                canais = await guild.fetch_channels()
+                log_msg(user_id, f"📡 {len(canais)} canais carregados no cache")
+            except Exception as e:
+                log_msg(user_id, f"⚠️ fetch_channels falhou: {e}")
+
         guild = client.get_guild(SERVER_ID)
         if guild:
             cat = guild.get_channel(CATEGORIA_ID)
+            if cat is None:
+                try:
+                    cat = await client.fetch_channel(CATEGORIA_ID)
+                except Exception:
+                    pass
             log_msg(user_id, f"🌐 Servidor: {guild.name}")
-            log_msg(user_id, f"📂 Categoria: {cat.name if cat else 'NAO ENCONTRADA'}")
+            log_msg(user_id, f"📂 Categoria principal: {cat.name if cat else 'NAO ENCONTRADA'}")
+            for nome_extra in CATEGORIAS_EXTRA:
+                encontrada = next((c for c in guild.channels if _normalizar(c.name) == nome_extra), None)
+                log_msg(user_id, f"📂 Extra '{nome_extra}': {'✅ ' + encontrada.name if encontrada else '❌ NAO ENCONTRADA'}")
         else:
             log_msg(user_id, f"❌ Servidor {SERVER_ID} nao encontrado.")
+
         if not _monitor_iniciado:
             _monitor_iniciado = True
             await asyncio.sleep(3)
@@ -774,7 +832,7 @@ def run_selfbot(config: dict, user_id: int):
                 # Percorre todas as threads monitoradas abertas
                 for canal in guild.channels:
                     for thread in getattr(canal, "threads", []):
-                        if not _thread_monitorada(thread):
+                        if not _canal_monitorado(thread):
                             continue
                         if thread.id not in threads_com_mensagem:
                             continue
@@ -876,7 +934,7 @@ def run_selfbot(config: dict, user_id: int):
                 return
             for canal in guild.channels:
                 for thread in getattr(canal, "threads", []):
-                    if _thread_monitorada(thread) and thread.id not in threads_com_mensagem:
+                    if thread.id not in threads_com_mensagem:
                         asyncio.ensure_future(_enviar_em_thread(thread))
             log_msg(user_id, "✅ Verificação inicial concluída")
         except Exception as exc:
@@ -890,7 +948,7 @@ def run_selfbot(config: dict, user_id: int):
                 if guild:
                     for canal in guild.channels:
                         for thread in getattr(canal, "threads", []):
-                            if _thread_monitorada(thread) and thread.id not in threads_com_mensagem:
+                            if thread.id not in threads_com_mensagem:
                                 asyncio.ensure_future(_enviar_em_thread(thread))
                 agora = datetime.now()
                 if (agora - ultima_verificacao).total_seconds() > 300:
@@ -902,14 +960,10 @@ def run_selfbot(config: dict, user_id: int):
 
     @client.event
     async def on_thread_create(thread: discord.Thread):
-        if not _thread_monitorada(thread):
-            return
         asyncio.ensure_future(_enviar_em_thread(thread))
 
     @client.event
     async def on_thread_join(thread: discord.Thread):
-        if not _thread_monitorada(thread):
-            return
         asyncio.ensure_future(_enviar_em_thread(thread))
 
     @client.event
@@ -917,9 +971,22 @@ def run_selfbot(config: dict, user_id: int):
         if not message.guild or message.guild.id != SERVER_ID:
             return
         channel = message.channel
-        if not _canal_monitorado(channel):
-            return
 
+        # Para threads nao processadas, usa fetch para garantir deteccao
+        if isinstance(channel, discord.Thread):
+            if channel.id not in threads_com_mensagem and channel.id not in threads_em_processamento:
+                cat_id, cat_name = await _get_cat_id_name(channel)
+                log_msg(user_id, f"[DEBUG] thread={channel.name} cat_id={cat_id} cat_name='{cat_name}' EXTRAS={list(CATEGORIAS_EXTRA)}")
+                monitorada = (cat_id == CATEGORIA_ID) or (bool(CATEGORIAS_EXTRA) and cat_name in CATEGORIAS_EXTRA)
+                if monitorada:
+                    log_msg(user_id, f"\U0001f9f5 Nova thread: {channel.name} | cat: {cat_name}")
+                    asyncio.ensure_future(_enviar_em_thread(channel))
+                else:
+                    return
+            elif not _canal_monitorado(channel):
+                return
+        elif not _canal_monitorado(channel):
+            return
         # Verifica se a mensagem contém o valor esperado e atualiza
         if channel.id not in valores_thread:
             valor = _extrair_valor_mensagem(message.content)
