@@ -636,53 +636,65 @@
       <div class="page" id="page-ratelimit">
         <div class="row justify-content-center">
           <div class="col-lg-7">
-            <div class="card p-4 mb-3">
-              <div class="section-title"><i class="bi bi-speedometer"></i> Rate Limite de Threads</div>
 
-              <div class="mb-4">
+            <!-- Categorias do Discord -->
+            <div class="card p-4 mb-3">
+              <div class="section-title"><i class="bi bi-folder2-open"></i> Categorias do Discord</div>
+              <p style="color:#6b7280;font-size:.82rem;margin-bottom:16px">
+                Adicione os <strong style="color:#a78bfa">nomes exatos</strong> das categorias do seu servidor onde o bot deve monitorar threads.
+                O nome deve ser igual ao que aparece no Discord (ex: <code style="color:#60a5fa">partidas</code>, <code style="color:#60a5fa">apostas</code>).
+              </p>
+
+              <div id="cats-container">
+                {% if cfg and cfg.rate_limit_categorias %}
+                  {% for cat in cfg.rate_limit_categorias | from_json %}
+                  <div class="d-flex gap-2 mb-2 cat-row">
+                    <div class="input-group">
+                      <span class="input-group-text" style="background:rgba(124,58,237,.1);border:1px solid rgba(255,255,255,.08);border-right:none;color:#7c3aed;font-size:.85rem">
+                        <i class="bi bi-hash"></i>
+                      </span>
+                      <input class="form-control cat-input" placeholder="Nome da categoria (ex: partidas)" value="{{ cat }}" oninput="syncCats()">
+                    </div>
+                    <button type="button" onclick="removerCat(this)" class="btn btn-sm" style="background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.25);color:#f87171;border-radius:8px;white-space:nowrap">
+                      <i class="bi bi-trash"></i>
+                    </button>
+                  </div>
+                  {% endfor %}
+                {% endif %}
+              </div>
+
+              <button type="button" id="btn-add-cat" onclick="adicionarCat()" class="btn btn-sm mt-2" style="background:rgba(124,58,237,.12);border:1px solid rgba(124,58,237,.25);color:#a78bfa;border-radius:8px;font-size:.8rem">
+                <i class="bi bi-plus-circle me-1"></i> Adicionar Categoria
+              </button>
+
+              <div class="mt-3 p-3" style="background:rgba(96,165,250,.05);border:1px solid rgba(96,165,250,.15);border-radius:10px">
+                <div style="font-size:.75rem;color:#60a5fa;font-weight:600;margin-bottom:6px"><i class="bi bi-lightbulb me-1"></i> Dica</div>
+                <div style="font-size:.75rem;color:#4b5563;line-height:1.6">
+                  O nome é <strong style="color:#9ca3af">case-insensitive</strong> (maiúsculas/minúsculas não importam).<br>
+                  A <strong style="color:#9ca3af">Categoria Principal</strong> (configurada em Configurações → Categoria ID) já é monitorada automaticamente.
+                </div>
+              </div>
+            </div>
+
+            <!-- Threads simultâneas -->
+            <div class="card p-4 mb-3">
+              <div class="section-title"><i class="bi bi-speedometer"></i> Processamento de Threads</div>
+              <div class="mb-2">
                 <label>Máximo de Threads Simultâneas</label>
-                <div class="d-flex align-items-center gap-3">
+                <div class="d-flex align-items-center gap-3 mt-1">
                   <input type="range" id="threads-range-vis" min="1" max="10"
                     value="{{ cfg.max_threads if cfg and cfg.max_threads else 3 }}"
                     oninput="syncThreads(this.value)"
                     style="flex:1;accent-color:#7c3aed">
-                  <span id="threads-val" style="min-width:28px;text-align:center;font-weight:700;color:#a78bfa;font-size:1.1rem">{{ cfg.max_threads if cfg and cfg.max_threads else 3 }}</span>
+                  <span id="threads-val" style="min-width:32px;text-align:center;font-weight:700;color:#a78bfa;font-size:1.2rem">{{ cfg.max_threads if cfg and cfg.max_threads else 3 }}</span>
                 </div>
-                <div class="form-text">Quantas threads o bot processa ao mesmo tempo (1 a 10).</div>
+                <div class="form-text">Quantas threads o bot processa ao mesmo tempo quando várias salas são criadas simultaneamente.</div>
               </div>
-
-              <div class="mb-3">
-                <label>Categorias Monitoradas (além da principal)</label>
-                <div class="form-text mb-2">Adicione o <strong>nome exato</strong> de cada categoria extra. Máximo 10.</div>
-                <div id="cats-container">
-                  {% if cfg and cfg.rate_limit_categorias %}
-                    {% for cat in cfg.rate_limit_categorias | from_json %}
-                    <div class="d-flex gap-2 mb-2 cat-row">
-                      <input class="form-control cat-input" placeholder="Nome da categoria" value="{{ cat }}" oninput="syncCats()">
-                      <button type="button" onclick="removerCat(this)" class="btn btn-sm" style="background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.25);color:#f87171;border-radius:8px;white-space:nowrap"><i class="bi bi-trash"></i></button>
-                    </div>
-                    {% endfor %}
-                  {% endif %}
-                </div>
-                <button type="button" id="btn-add-cat" onclick="adicionarCat()" class="btn btn-sm mt-1" style="background:rgba(124,58,237,.12);border:1px solid rgba(124,58,237,.25);color:#a78bfa;border-radius:8px;font-size:.8rem">
-                  <i class="bi bi-plus-circle me-1"></i> Adicionar Categoria
-                </button>
-              </div>
-
-              <button type="button" onclick="salvarRateLimit()" class="btn w-100 mt-3" style="background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border:none;border-radius:8px;font-weight:500;padding:10px">
-                <i class="bi bi-floppy me-1"></i> Salvar Rate Limite
-              </button>
             </div>
 
-            <div class="card p-4">
-              <div class="section-title"><i class="bi bi-info-circle"></i> Como funciona</div>
-              <ul style="color:#6b7280;font-size:.82rem;line-height:1.8;padding-left:1.2rem">
-                <li>O bot monitora a <strong style="color:#a78bfa">Categoria Principal</strong> (configurada em Configurações).</li>
-                <li>Adicione categorias extras pelo <strong style="color:#a78bfa">nome exato</strong> como aparece no Discord.</li>
-                <li>O limite de threads controla quantas salas são processadas ao mesmo tempo.</li>
-                <li>Recomendado: <strong style="color:#10b981">3 threads</strong> para evitar rate limit do Discord.</li>
-              </ul>
-            </div>
+            <button type="button" onclick="salvarRateLimit()" class="btn w-100" style="background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border:none;border-radius:8px;font-weight:500;padding:10px">
+              <i class="bi bi-floppy me-1"></i> Salvar
+            </button>
           </div>
         </div>
       </div>
@@ -738,8 +750,9 @@
       if (container.querySelectorAll('.cat-row').length >= 10) return;
       const div = document.createElement('div');
       div.className = 'd-flex gap-2 mb-2 cat-row';
-      div.innerHTML = '<input class="form-control cat-input" placeholder="Nome da categoria" oninput="syncCats()"><button type="button" onclick="removerCat(this)" class="btn btn-sm" style="background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.25);color:#f87171;border-radius:8px;white-space:nowrap"><i class="bi bi-trash"></i></button>';
+      div.innerHTML = '<div class="input-group"><span class="input-group-text" style="background:rgba(124,58,237,.1);border:1px solid rgba(255,255,255,.08);border-right:none;color:#7c3aed;font-size:.85rem"><i class="bi bi-hash"></i></span><input class="form-control cat-input" placeholder="Nome da categoria (ex: partidas)" oninput="syncCats()"></div><button type="button" onclick="removerCat(this)" class="btn btn-sm" style="background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.25);color:#f87171;border-radius:8px;white-space:nowrap"><i class="bi bi-trash"></i></button>';
       container.appendChild(div);
+      div.querySelector('input').focus();
       const btn = document.getElementById('btn-add-cat');
       if (btn) btn.style.display = container.querySelectorAll('.cat-row').length >= 10 ? 'none' : '';
     }
