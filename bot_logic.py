@@ -1142,25 +1142,9 @@ def run_selfbot(config: dict, user_id: int):
             pagador = resultado.get('pagador', nome_busca)
             banco = resultado.get('banco', 'Email')
             
-            # Gera hash do pagamento para verificar duplicação
+            # Se veio com UID, o imap_optimizer já marcou como usado ao retornar
+            # Apenas registra no banco para histórico (ON CONFLICT DO NOTHING evita duplicata)
             hash_pag = _gerar_hash_pagamento(pagador, valor_str, banco, resultado.get('uid'))
-            verificacao = _verificar_pagamento_usado(hash_pag, user_id)
-
-            if verificacao["usado"]:
-                # Marca o UID no cache para não verificar de novo
-                uid_resultado = resultado.get('uid')
-                if uid_resultado:
-                    for conn in imap_manager.connections.values():
-                        conn.marcar_uid_usado(uid_resultado)
-                await _digitar_e_reply(message,
-                    f"🚨 **PAGAMENTO JÁ UTILIZADO!**\n\n"
-                    f"❌ Este pagamento já foi usado anteriormente.\n"
-                    f"🕒 **Usado em:** {verificacao['timestamp']}\n\n"
-                    f"⚠️ Cada pagamento só pode ser usado uma vez.\n"
-                    f"Por favor, faça um novo pagamento."
-                )
-                log_msg(user_id, f"🚨 PAGAMENTO DUPLICADO BLOQUEADO | {pagador} | {message.author}")
-                return
 
             # Verifica se o valor está correto
             if channel.id in valores_thread and valor_str != 'N/A':
