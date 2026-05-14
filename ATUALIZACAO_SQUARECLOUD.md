@@ -90,4 +90,4 @@ Para futuras atualizações, basta:
 3. Aguardar o build
 
 ---
-**Última atualização**: Sistema de detecção de threads melhorado + reconexão automática
+**Última atualização**: 15/01/2025 - Correções de limite de salas (0→10) + detecção threads + reconexão automática
