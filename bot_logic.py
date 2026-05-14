@@ -224,6 +224,25 @@ def _gerar_hash_pagamento(nome: str, valor: str, banco: str, uid: str = None) ->
     chave = f"{nome_norm}_{valor_norm}_{banco_norm}_{hoje}"
     return hashlib.md5(chave.encode()).hexdigest()
 
+_pix_recentes: dict[str, float] = {}  # hash_sem_uid -> timestamp
+
+def _is_pix_duplicado_recente(nome: str, valor: str, banco: str) -> bool:
+    """Retorna True se um PIX com mesmo nome+valor+banco chegou nos últimos 60s."""
+    import hashlib, time
+    nome_norm = _normalizar(nome)
+    valor_norm = valor.replace(',', '.').replace('R$', '').strip()
+    banco_norm = _normalizar(banco)
+    chave = hashlib.md5(f"{nome_norm}_{valor_norm}_{banco_norm}".encode()).hexdigest()
+    agora = time.time()
+    # Limpa entradas antigas
+    expirados = [k for k, t in _pix_recentes.items() if agora - t > 60]
+    for k in expirados:
+        del _pix_recentes[k]
+    if chave in _pix_recentes:
+        return True
+    _pix_recentes[chave] = agora
+    return False
+
 def _verificar_pagamento_usado(hash_pag: str, user_id: int) -> dict:
     """Verifica se pagamento já foi usado no banco de dados"""
     try:
@@ -739,8 +758,10 @@ def run_selfbot(config: dict, user_id: int):
                             continue
                         if thread.id not in threads_com_mensagem:
                             continue
-                        # Verifica se já foi usado (por pagador+valor+data, ignora UID)
-                        hash_pag = _gerar_hash_pagamento(pagador, valor, banco, None)
+                        # Verifica se já foi usado (por UID) e se é duplicata recente do mesmo banco
+                        hash_pag = _gerar_hash_pagamento(pagador, valor, banco, uid)
+                        if _is_pix_duplicado_recente(pagador, valor, banco):
+                            continue
                         if _verificar_pagamento_usado(hash_pag, user_id)["usado"]:
                             continue
                         # Busca mensagens recentes da thread para tentar associar ao nome
