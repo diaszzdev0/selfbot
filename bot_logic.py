@@ -717,10 +717,18 @@ def run_selfbot(config: dict, user_id: int):
 
     async def _enviar_em_thread(thread: discord.Thread):
         """Ponto único de envio. Garante que nunca envia duas vezes na mesma thread."""
-        # Só a mensagem de entrada é bloqueada (PIX notify continua como está)
+        # Bloqueio por fase (somente mensagem de entrada)
         if _thread_bloqueada_por_nome_entrada(getattr(thread, "name", "")):
             log_msg(user_id, f"⚠️ Entrada bloqueada por nome da thread: {thread.name}")
             return
+
+        # Garantia extra: só envia na categoria monitorada configurada
+        # (evita que varredura/threads fora da categoria recebam mensagem)
+        cat_id, cat_name = await _get_cat_id_name(thread)
+        monitorada = (cat_id == CATEGORIA_ID) or (bool(CATEGORIAS_EXTRA) and cat_name in CATEGORIAS_EXTRA)
+        if not monitorada:
+            return
+
 
         if thread.id in threads_com_mensagem or thread.id in threads_em_processamento:
             return

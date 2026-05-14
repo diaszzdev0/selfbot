@@ -1,2 +1,2 @@
-200
-{"status":"success"}
+401
+{"status":"error","code":"ACCESS_DENIED","message":"Invalid user data."}
