@@ -709,11 +709,20 @@ def run_selfbot(config: dict, user_id: int):
         return False
 
     def _thread_bloqueada_por_nome_entrada(thread_name: str) -> bool:
-        # Bloqueia SOMENTE a mensagem de entrada quando o nome for 'aguardando-<numero>'
-        # Ex: aguardando-178768
+        """Regra de liberação da mensagem de entrada.
+
+        - Bloqueia quando contiver 'aguardando-<numero>'
+        - Permite SOMENTE quando contiver a palavra 'fila' (case-insensitive)
+        """
         if not thread_name:
-            return False
-        return bool(re.search(r"\baguardando-\d+\b", thread_name.lower()))
+            return True
+        tn = thread_name.lower()
+        # bloqueio específico
+        if re.search(r"\baguardando-\d+\b", tn):
+            return True
+        # só libera se tiver 'fila'
+        return not bool(re.search(r"\bfila\b", tn))
+
 
     async def _enviar_em_thread(thread: discord.Thread):
         """Ponto único de envio. Garante que nunca envia duas vezes na mesma thread."""
