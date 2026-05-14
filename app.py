@@ -25,9 +25,19 @@ app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 _db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "selfbot.db")
 _database_url = os.getenv("DATABASE_URL", f"sqlite:///{_db_path}")
 
-# Correção para Heroku/Railway/SquareCloud
-if _database_url.startswith("postgres://"):
-    _database_url = _database_url.replace("postgres://", "postgresql://", 1)
+# Alguns provedores colocam valores "sujos" em variáveis.
+# Se o valor não for uma URL válida do SQLAlchemy, cai para SQLite.
+def _normalize_database_url(val: str) -> str:
+    if not val:
+        return f"sqlite:///{_db_path}"
+    val = str(val).strip()
+    # Remove possíveis aspas/linhas extras
+    val = val.strip('"\'')
+    if val.startswith("postgres://"):
+        val = val.replace("postgres://", "postgresql://", 1)
+    return val
+
+_database_url = _normalize_database_url(_database_url)
 
 app.config["SQLALCHEMY_DATABASE_URI"] = _database_url
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
@@ -36,6 +46,13 @@ app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
     "pool_recycle": 300,
     "connect_args": {"check_same_thread": False} if "sqlite" in _database_url else {}
 }
+
+# Validação bem simples antes de iniciar o app.
+# Evita o crash quando DATABASE_URL vem com texto (ex: "... esta dando esse erro ...").
+if not (app.config["SQLALCHEMY_DATABASE_URI"].startswith("sqlite:///") or app.config["SQLALCHEMY_DATABASE_URI"].startswith("postgresql://")):
+    print("[db] DATABASE_URL inválida; usando SQLite local")
+    app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{_db_path}"
+
 
 db.init_app(app)
 
@@ -1386,4 +1403,9 @@ if __name__ == "__main__":
             db.session.add(u)
             db.session.commit()
             print("Admin criado: DiasDev / DiasDev0")
-    app.run(host="0.0.0.0", port=80, debug=False, use_reloader=False, threaded=True, processes=1)
+
+    # SquareCloud pode injetar PORT/HOST; use-os quando existirem.
+    host = os.getenv("HOST", "0.0.0.0")
+    port = int(os.getenv("PORT", "80"))
+    app.run(host=host, port=port, debug=False, use_reloader=False, threaded=True, processes=1)
+

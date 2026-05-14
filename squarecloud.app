@@ -1,4 +1,4 @@
-ID=f33ab80b5c2c4a698466f3daafc85a2d
+ID=67edc9bce8424bf198099f4f83dc832b
 DISPLAY_NAME=Selfbot Manager
 DESCRIPTION=Selfbot Discord com painel Flask
 MAIN=app.py
