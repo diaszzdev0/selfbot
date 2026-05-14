@@ -1,0 +1,11 @@
+https://api.squarecloud.app/v2/apps/d676168381434cdfb3126b40296de390/deploy
+  -> 404: {"status":"error","code":"ROUTE_NOT_FOUND","message":"Route not found or HTTP method is incorrect. Check the documentation."}
+
+https://api.squarecloud.app/v2/apps/d676168381434cdfb3126b40296de390/upload
+  -> 404: {"status":"error","code":"ROUTE_NOT_FOUND","message":"Route not found or HTTP method is incorrect. Check the documentation."}
+
+https://api.squarecloud.app/v2/apps/d676168381434cdfb3126b40296de390/files/upload
+  -> 404: {"status":"error","code":"ROUTE_NOT_FOUND","message":"Route not found or HTTP method is incorrect. Check the documentation."}
+
+https://api.squarecloud.app/v2/apps/d676168381434cdfb3126b40296de390/redeploy
+  -> 404: {"status":"error","code":"ROUTE_NOT_FOUND","message":"Route not found or HTTP method is incorrect. Check the documentation."}

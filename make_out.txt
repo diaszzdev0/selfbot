@@ -1,0 +1,17 @@
++ app.py
++ bot_logic.py
++ bot.py
++ imap_optimizer.py
++ models.py
++ requirements.txt
++ squarecloud.app
++ ocr_comprovante.py
++ token_validator.py
++ .env
++ templates\admin.html
++ templates\login.html
++ templates\login_cliente.html
++ templates\login_manager.html
++ templates\register.html
++ templates\cliente.html
+TOTAL: 64079 bytes

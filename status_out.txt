@@ -1,0 +1,9 @@
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+    import requests; TOKEN='7a9131befcdc938552460cab541b28d56fcfbb2a-e1a28679adb5704fad6875951576563fee84060a1b6d8ecbf7f6a633cbfb5de7'; APP_ID='d676168381434cdfb3126b40296de390'; r=requests.get(f'https://api.squarecloud.app/v2/apps/{APP_ID}/status', headers={'Authorization': TOKEN}); print(r.status_code, r.text[:300])
+                                                                                                                                                                                                                                                                                             ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Usuario\AppData\Local\Programs\Python\Python314\Lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode character '\u2191' in position 145: character maps to <undefined>
+200 
