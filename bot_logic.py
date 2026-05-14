@@ -283,7 +283,7 @@ def _registrar_pagamento_usado(hash_pag: str, user_id: int, thread_id: int, disc
         # Marca o UID do email como usado no cache IMAP
         if uid:
             for conn in imap_manager.connections.values():
-                conn._uids_usados.add(uid)
+                conn.marcar_uid_usado(uid)
         log_msg(user_id, f"🔒 Pagamento registrado: {hash_pag[:8]}...")
     except Exception as e:
         log_msg(user_id, f"⚠️ Erro ao registrar pagamento: {type(e).__name__}")
@@ -1160,7 +1160,7 @@ def run_selfbot(config: dict, user_id: int):
                 uid_resultado = resultado.get('uid')
                 if uid_resultado:
                     for conn in imap_manager.connections.values():
-                        conn._uids_usados.add(uid_resultado)
+                        conn.marcar_uid_usado(uid_resultado)
                 await _digitar_e_reply(message,
                     f"🚨 **PAGAMENTO JÁ UTILIZADO!**\n\n"
                     f"❌ Este pagamento já foi usado anteriormente.\n"

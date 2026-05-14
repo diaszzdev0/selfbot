@@ -185,6 +185,7 @@ class PersistentIMAPConnection:
         self._search_lock = threading.Lock()
         self._stop = False
         self._uids_usados = set()
+        self._carregar_uids_arquivo()
         self._cache = {}  # uid -> {pagador, pagador_norm, valor, banco} ou None
         self._cache_lock = threading.Lock()
         self._monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
@@ -305,24 +306,6 @@ class PersistentIMAPConnection:
 
         log(f"\U0001f4ec {len(cache_snapshot)} emails no cache")
 
-        # Carrega UIDs usados do banco em tempo real
-        try:
-            import os as _os
-            from sqlalchemy import create_engine as _ce, text as _text
-            _db_path = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "selfbot.db")
-            _db_url = _os.getenv("DATABASE_URL", f"sqlite:///{_db_path}")
-            if _db_url.startswith("postgres://"):
-                _db_url = _db_url.replace("postgres://", "postgresql://", 1)
-            _engine = _ce(_db_url, pool_pre_ping=True)
-            with _engine.connect() as _con:
-                _rows = _con.execute(_text("SELECT hash FROM pagamentos_usados")).fetchall()
-            for _row in _rows:
-                _h = _row[0]
-                if _h.startswith("uid_"):
-                    self._uids_usados.add(_h[4:])
-        except Exception:
-            pass
-
         for uid, entry in cache_snapshot:
             if entry is None:
                 continue
@@ -337,6 +320,31 @@ class PersistentIMAPConnection:
 
         log(f"\u274c Nenhum pix de '{nome_busca}' encontrado")
         return None
+
+    def marcar_uid_usado(self, uid: str):
+        """Marca UID como usado em memória e persiste em arquivo."""
+        self._uids_usados.add(uid)
+        try:
+            import os
+            path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uids_usados.txt")
+            with open(path, "a", encoding="utf-8") as f:
+                f.write(uid + "\n")
+        except Exception:
+            pass
+
+    def _carregar_uids_arquivo(self):
+        """Carrega UIDs usados do arquivo ao iniciar."""
+        try:
+            import os
+            path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uids_usados.txt")
+            if os.path.exists(path):
+                with open(path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        uid = line.strip()
+                        if uid:
+                            self._uids_usados.add(uid)
+        except Exception:
+            pass
 
     def stop(self):
         self._stop = True
