@@ -307,12 +307,13 @@ class PersistentIMAPConnection:
 
         for uid, entry in cache_snapshot:
             if entry is None:
+                log(f"\u23e9 Ignorado (nao e pix): UID {uid}")
                 continue
             if uid in self._uids_usados:
                 log(f"\u23e9 Ignorado (ja usado): UID {uid}")
                 continue
             pagador_norm = entry["pagador_norm"]
-            log(f"\U0001f4b0 pagador='{pagador_norm}' | R${entry['valor']} | {entry['banco']}")
+            log(f"\U0001f4b0 Verificando UID {uid} | pagador='{pagador_norm}' | R${entry['valor']} | {entry['banco']}")
             if pagador_norm and nome_busca and (nome_busca in pagador_norm or _match_nomes(nome_busca, pagador_norm)):
                 log(f"\u2705 MATCH: '{pagador_norm}'")
                 return {"valor": entry["valor"], "banco": entry["banco"], "pagador": entry["pagador"], "uid": uid}
