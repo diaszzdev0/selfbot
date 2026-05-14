@@ -1249,18 +1249,40 @@ def resetar_salas(user_id: int):
 @app.route("/admin/deletar_key", methods=["POST"])
 @admin_required
 def deletar_key():
-    key_id = request.form.get("key_id")
-    if key_id:
-        key_id = int(key_id)
-        key = db.session.get(LicenseKey, key_id)
-        if key:
-            # Desvincula usuários antes de deletar
-            User.query.filter_by(key_id=key.id).update({"key_id": None})
-            db.session.delete(key)
-            db.session.commit()
-            session["msg"] = "Key deletada com sucesso!"
-            session["msg_tipo"] = "success"
+    # Pode vir como string vazia/não-numérica dependendo do form/JS.
+    key_id_raw = request.form.get("key_id", "").strip()
+    if not key_id_raw:
+        session["msg"] = "Nenhuma key informada."
+        session["msg_tipo"] = "danger"
+        return redirect(url_for("admin") + "#keys")
+
+    try:
+        key_id = int(key_id_raw)
+    except (TypeError, ValueError):
+        session["msg"] = "key_id inválido."
+        session["msg_tipo"] = "danger"
+        return redirect(url_for("admin") + "#keys")
+
+    key = db.session.get(LicenseKey, key_id)
+    if not key:
+        session["msg"] = "Key não encontrada."
+        session["msg_tipo"] = "warning"
+        return redirect(url_for("admin") + "#keys")
+
+    try:
+        # Desvincula usuários antes de deletar
+        User.query.filter_by(key_id=key.id).update({"key_id": None})
+        db.session.delete(key)
+        db.session.commit()
+        session["msg"] = "Key deletada com sucesso!"
+        session["msg_tipo"] = "success"
+    except Exception:
+        db.session.rollback()
+        session["msg"] = "Erro ao deletar key (verifique dependências no banco)."
+        session["msg_tipo"] = "danger"
+
     return redirect(url_for("admin") + "#keys")
+
 
 
 @app.route("/admin/limpar_seriais")

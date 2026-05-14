@@ -129,8 +129,23 @@ def _get_db_engine():
     if not url:
         _db_path = os.path.join(os.path.dirname(__file__), "selfbot.db")
         url = f"sqlite:///{_db_path}"
-    if url.startswith("postgres://"):
-        url = url.replace("postgres://", "postgresql://", 1)
+
+    # Alguns ambientes (SquareCloud) podem injetar valores "sujos"/quebrados em DATABASE_URL.
+    # Se não parecer uma URL válida do SQLAlchemy, cai para SQLite local.
+    def _normalize_database_url(val: str) -> str:
+        if not val:
+            return f"sqlite:///{os.path.join(os.path.dirname(__file__), 'selfbot.db')}"
+        val = str(val).strip()
+        val = val.strip('"\'')
+        if val.startswith("postgres://"):
+            val = val.replace("postgres://", "postgresql://", 1)
+        return val
+
+    url = _normalize_database_url(url)
+
+    if not (url.startswith("sqlite:///")) and not (url.startswith("postgresql://")):
+        url = f"sqlite:///{os.path.join(os.path.dirname(__file__), 'selfbot.db')}"
+
     _db_engine = create_engine(url, pool_pre_ping=True)
     return _db_engine
 
@@ -428,8 +443,22 @@ def run_selfbot(config: dict, user_id: int):
     )
     _msg_raw = config.get("mensagem_entrada", "").strip()
     _legados = ["", "Ola! Use pg Nome Sobrenome para verificar seu pagamento.", "Ol\u00e1! Use pg Nome Sobrenome para verificar pagamento."]
+
+    # SquareCloud pode quebrar encoding em valores vindos do .env/config.
+    # Se o texto vier “estranho”/quebrado, usa o padrão seguro.
+    def _safe_decode(s: str) -> str:
+        try:
+            if not isinstance(s, str):
+                return s
+            # tenta normalizar como utf-8, removendo bytes inválidos
+            return s.encode("utf-8", "ignore").decode("utf-8", "ignore").strip()
+        except Exception:
+            return s
+
+    _msg_raw = _safe_decode(_msg_raw)
     MENSAGEM_ENTRADA = _msg_raw if _msg_raw and _msg_raw not in _legados else _MSG_PADRAO
     IMAGEM_ENTRADA = config.get("imagem_entrada", "").strip()
+
 
     # Configurações para reduzir desconexões
     log_msg(user_id, "⚙️ Configurando cliente Discord...")
