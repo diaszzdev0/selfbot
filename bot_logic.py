@@ -739,8 +739,8 @@ def run_selfbot(config: dict, user_id: int):
                             continue
                         if thread.id not in threads_com_mensagem:
                             continue
-                        # Verifica se já foi usado
-                        hash_pag = _gerar_hash_pagamento(pagador, valor, banco, uid)
+                        # Verifica se já foi usado (por pagador+valor+data, ignora UID)
+                        hash_pag = _gerar_hash_pagamento(pagador, valor, banco, None)
                         if _verificar_pagamento_usado(hash_pag, user_id)["usado"]:
                             continue
                         # Busca mensagens recentes da thread para tentar associar ao nome
@@ -756,7 +756,7 @@ def run_selfbot(config: dict, user_id: int):
                             if m.author == client.user:
                                 continue
                             idade = (agora_ts - m.created_at.replace(tzinfo=None)).total_seconds()
-                            if idade > 120:  # ignora mensagens com mais de 2 minutos
+                            if idade > 120:
                                 continue
                             nome_cmd = _extrair_nome(m.content)
                             if nome_cmd and _match_nomes(_normalizar(nome_cmd), pagador_norm):
