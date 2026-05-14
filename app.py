@@ -65,8 +65,13 @@ def _from_json_filter(s):
 app.jinja_env.filters['from_json'] = _from_json_filter
 
 
+_migrations_done = False
+
 def _run_migrations():
     """Roda migrações de colunas novas via SQLAlchemy — funciona em qualquer ambiente."""
+    global _migrations_done
+    if _migrations_done:
+        return
     try:
         from sqlalchemy import text
         with db.engine.connect() as con:
@@ -77,14 +82,23 @@ def _run_migrations():
                 ("rate_limit_categorias", "ALTER TABLE bot_config ADD COLUMN rate_limit_categorias TEXT"),
                 ("max_threads",           "ALTER TABLE bot_config ADD COLUMN max_threads INTEGER DEFAULT 3"),
                 ("imagem_entrada",        "ALTER TABLE bot_config ADD COLUMN imagem_entrada TEXT"),
+                ("prefixo_sala",          "ALTER TABLE bot_config ADD COLUMN prefixo_sala VARCHAR(20)"),
             ]
             for col, sql in migrations:
                 if col not in cols:
                     con.execute(text(sql))
                     print(f"[migration] added column {col}")
             con.commit()
+        _migrations_done = True
     except Exception as _e:
         print(f"[migration] {_e}")
+
+@app.before_request
+def _ensure_migrations():
+    try:
+        _run_migrations()
+    except Exception:
+        pass
 
 
 with app.app_context():
