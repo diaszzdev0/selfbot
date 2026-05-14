@@ -305,6 +305,24 @@ class PersistentIMAPConnection:
 
         log(f"\U0001f4ec {len(cache_snapshot)} emails no cache")
 
+        # Carrega UIDs usados do banco em tempo real
+        try:
+            import os as _os
+            from sqlalchemy import create_engine as _ce, text as _text
+            _db_path = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "selfbot.db")
+            _db_url = _os.getenv("DATABASE_URL", f"sqlite:///{_db_path}")
+            if _db_url.startswith("postgres://"):
+                _db_url = _db_url.replace("postgres://", "postgresql://", 1)
+            _engine = _ce(_db_url, pool_pre_ping=True)
+            with _engine.connect() as _con:
+                _rows = _con.execute(_text("SELECT hash FROM pagamentos_usados")).fetchall()
+            for _row in _rows:
+                _h = _row[0]
+                if _h.startswith("uid_"):
+                    self._uids_usados.add(_h[4:])
+        except Exception:
+            pass
+
         for uid, entry in cache_snapshot:
             if entry is None:
                 continue
