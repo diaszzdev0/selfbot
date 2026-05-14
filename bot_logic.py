@@ -708,8 +708,20 @@ def run_selfbot(config: dict, user_id: int):
         await _digitar_e_enviar(channel, "Nao foi possivel criar a sala.")
         return False
 
+    def _thread_bloqueada_por_nome_entrada(thread_name: str) -> bool:
+        # Bloqueia SOMENTE a mensagem de entrada quando o nome for 'aguardando-<numero>'
+        # Ex: aguardando-178768
+        if not thread_name:
+            return False
+        return bool(re.search(r"\baguardando-\d+\b", thread_name.lower()))
+
     async def _enviar_em_thread(thread: discord.Thread):
         """Ponto único de envio. Garante que nunca envia duas vezes na mesma thread."""
+        # Só a mensagem de entrada é bloqueada (PIX notify continua como está)
+        if _thread_bloqueada_por_nome_entrada(getattr(thread, "name", "")):
+            log_msg(user_id, f"⚠️ Entrada bloqueada por nome da thread: {thread.name}")
+            return
+
         if thread.id in threads_com_mensagem or thread.id in threads_em_processamento:
             return
         threads_em_processamento.add(thread.id)
@@ -732,6 +744,7 @@ def run_selfbot(config: dict, user_id: int):
                 log_msg(user_id, f"❌ Erro ao enviar em {thread.name}: {exc}")
             finally:
                 threads_em_processamento.discard(thread.id)
+
 
     _monitor_iniciado = False
 
