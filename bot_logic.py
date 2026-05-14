@@ -727,9 +727,10 @@ def run_selfbot(config: dict, user_id: int):
     async def _enviar_em_thread(thread: discord.Thread):
         """Ponto único de envio. Garante que nunca envia duas vezes na mesma thread."""
         # Bloqueio por fase (somente mensagem de entrada)
+        # (Sem log para não poluir o painel)
         if _thread_bloqueada_por_nome_entrada(getattr(thread, "name", "")):
-            log_msg(user_id, f"⚠️ Entrada bloqueada por nome da thread: {thread.name}")
             return
+
 
         # Garantia extra: só envia na categoria monitorada configurada
         # (evita que varredura/threads fora da categoria recebam mensagem)
