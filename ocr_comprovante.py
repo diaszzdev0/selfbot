@@ -40,6 +40,14 @@ VALIDACOES = {
     "Caixa":  {"campos": [r"caixa", r"R\$", r"\d{2}/\d{2}/\d{4}"]},
 }
 
+PALAVRAS_INVALIDAS = {
+    'buscar', 'sdv', 'pix', 'valor', 'data', 'hora', 'tipo', 'chave', 'banco',
+    'cpf', 'cnpj', 'agencia', 'conta', 'pagamento', 'transferencia', 'recibo',
+    'comprovante', 'autenticacao', 'codigo', 'operacao', 'descricao', 'origem',
+    'destino', 'favorecido', 'beneficiario', 'instituicao', 'nome', 'cancelar',
+    'confirmar', 'voltar', 'continuar', 'enviar', 'receber', 'saldo', 'extrato'
+}
+
 MESES = {
     'janeiro':1,'fevereiro':2,'marco':3,'abril':4,'maio':5,'junho':6,
     'julho':7,'agosto':8,'setembro':9,'outubro':10,'novembro':11,'dezembro':12,
@@ -88,13 +96,17 @@ def _extrair_pagador_texto(text):
         m = re.search(padrao, texto_limpo, flags=re.IGNORECASE)
         if m:
             nome = m.group(1).strip()
-            palavras = [p for p in nome.split() if re.match(r'^[A-Za-z\u00C0-\u00FF]+$', p) and len(p) >= 2]
+            palavras = [p for p in nome.split()
+                        if re.match(r'^[A-Za-z\u00C0-\u00FF]+$', p)
+                        and len(p) >= 3
+                        and _normalizar(p) not in PALAVRAS_INVALIDAS]
             if len(palavras) >= 2:
                 return ' '.join(palavras).title()
 
     m = re.search(r'([A-Z][a-z\u00C0-\u00FF]+(?:\s+[A-Z][a-z\u00C0-\u00FF]+){1,4})', texto_limpo)
     if m:
-        palavras = [p for p in m.group(1).strip().split() if len(p) >= 2]
+        palavras = [p for p in m.group(1).strip().split()
+                    if len(p) >= 3 and _normalizar(p) not in PALAVRAS_INVALIDAS]
         if len(palavras) >= 2:
             return ' '.join(palavras).title()
 
@@ -208,6 +220,9 @@ def ler_comprovante_url(image_url, nome=""):
 
         if valor == "N/A":
             return {"encontrado": False, "erro": "Valor n\u00e3o encontrado no comprovante"}
+
+        if pagador == "Desconhecido":
+            return {"encontrado": False, "erro": "Nome do pagador n\u00e3o identificado no comprovante"}
 
         data_valida, motivo_data = _validar_data(texto)
         if not data_valida:
