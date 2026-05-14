@@ -806,29 +806,18 @@ def run_selfbot(config: dict, user_id: int):
                                 break
                         if not nome_encontrado:
                             continue
-                        # Registra e notifica
-                        _registrar_pagamento_usado(hash_pag, user_id, thread.id,
-                                                   autor_encontrado.id if autor_encontrado else 0,
-                                                   pagador, valor, uid)
-                        pagamentos_por_thread[thread.id] = pagamentos_por_thread.get(thread.id, 0) + 1
+                        # Notifica a thread sem registrar o pagamento como usado
+                        # O registro ocorre apenas quando o usuário usa pg/comprovante
                         log_msg(user_id, f"🔔 Notificando thread {thread.name} | {pagador} | R${valor}")
                         try:
                             mention = autor_encontrado.mention if autor_encontrado else ""
                             await _digitar_e_enviar(thread,
-                                f"✅ **PAGAMENTO CONFIRMADO**\n\n"
-                                f"👤 **Cliente:** {mention}\n"
-                                f"📝 **Nome:** `{pagador}`\n"
-                                f"💰 **Valor:** `R$ {valor} (BRL)`\n"
-                                f"🔍 **Destino:** `e-mail {banco}`\n"
-                                f"🎉 **Sua vaga está garantida! A sala será enviada aqui.**"
+                                f"💰 **PIX DETECTADO!**\n\n"
+                                f"👤 **Pagador:** `{pagador}`\n"
+                                f"💵 **Valor:** `R$ {valor}`\n"
+                                f"🏦 **Banco:** `{banco}`\n\n"
+                                f"{mention} Digite `pg {pagador}` para confirmar!"
                             )
-                            if pagamentos_por_thread[thread.id] >= 2:
-                                pagamentos_por_thread[thread.id] = 0
-                                usadas, limite = _get_salas_info(user_id)
-                                if usadas < limite:
-                                    msg_req = await _digitar_e_enviar(thread, "Solicitando Sala...")
-                                    await _enviar_sala(thread)
-                                    await msg_req.delete()
                         except Exception as exc:
                             log_msg(user_id, f"⚠️ Erro ao notificar thread: {exc}")
 
