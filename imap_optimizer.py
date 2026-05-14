@@ -302,7 +302,7 @@ class PersistentIMAPConnection:
         nome_busca = _normalizar(nome).lower().strip()
 
         with self._cache_lock:
-            cache_snapshot = list(self._cache.items())
+            cache_snapshot = sorted(self._cache.items(), key=lambda x: int(x[0]) if x[0].isdigit() else 0, reverse=True)
 
         log(f"\U0001f4ec {len(cache_snapshot)} emails no cache")
 
