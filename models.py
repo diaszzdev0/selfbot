@@ -54,6 +54,7 @@ class BotConfig(db.Model):
     modo_sala_id = db.Column(db.String(30), nullable=True)  # salaid do modo escolhido
     rate_limit_categorias = db.Column(db.Text, nullable=True)  # JSON: lista de nomes de categorias
     max_threads = db.Column(db.Integer, default=3)  # máximo de threads simultâneas (1-10)
+    formato_sala = db.Column(db.String(20), nullable=True, default="junto")  # junto | separado
 
 
 class BotStatus(db.Model):

@@ -83,6 +83,7 @@ def _run_migrations():
                 ("max_threads",           "ALTER TABLE bot_config ADD COLUMN max_threads INTEGER DEFAULT 3"),
                 ("imagem_entrada",        "ALTER TABLE bot_config ADD COLUMN imagem_entrada TEXT"),
                 ("prefixo_sala",          "ALTER TABLE bot_config ADD COLUMN prefixo_sala VARCHAR(20)"),
+                ("formato_sala",          "ALTER TABLE bot_config ADD COLUMN formato_sala VARCHAR(20) DEFAULT 'junto'"),
             ]
             for col, sql in migrations:
                 if col not in cols:
@@ -167,6 +168,7 @@ def _config_dict(cfg: BotConfig) -> dict:
         "prefixo_sala": str(cfg.prefixo_sala or "").strip(),
         "rate_limit_categorias": str(cfg.rate_limit_categorias or "").strip(),
         "max_threads": int(cfg.max_threads or 3),
+        "formato_sala": str(cfg.formato_sala or "junto").strip().lower(),
     }
 
 
@@ -229,12 +231,15 @@ def logout_cliente():
     return redirect(url_for("login_cliente"))
 
 
+# Default limit is 10 - used when creating new BotStatus records
+_DEFAULT_LIMITE_SALAS = 10
+
 def _get_bot_status_cliente(user_id: int):
     from models import BotStatus
     s = BotStatus.query.filter_by(user_id=user_id).first()
     if not s:
-        # Nunca zera salas_usadas — cria apenas se nao existir
-        s = BotStatus(user_id=user_id, ativo=False, salas_usadas=0, limite_salas=0)
+        # Use default limit of 10 instead of 0 to avoid blocking new users
+        s = BotStatus(user_id=user_id, ativo=False, salas_usadas=0, limite_salas=_DEFAULT_LIMITE_SALAS)
         db.session.add(s)
         db.session.commit()
     return s
@@ -279,6 +284,8 @@ def cliente_salvar_config():
     cfg.prefixo_sala = prefixo if request.form.get("usar_prefixo") and prefixo else None
     modo = request.form.get("modo_sala_id", "").strip()
     cfg.modo_sala_id = modo if modo else None
+    formato = request.form.get("formato_sala", "junto").strip().lower()
+    cfg.formato_sala = formato if formato in ("junto", "separado") else "junto"
     import json as _json
     rl_cats = [v.strip() for v in request.form.getlist("rate_limit_cat") if v.strip()]
     cfg.rate_limit_categorias = _json.dumps(rl_cats) if rl_cats else None
@@ -412,20 +419,37 @@ def cliente_restart_bot(user_id: int):
 def cliente_debug_imap():
     from imap_optimizer import imap_manager
     user_id = session["cliente_id"]
-    if user_id not in imap_manager.caches:
-        return jsonify({"erro": "Cache nao iniciado"})
-    cache = imap_manager.caches[user_id].cache
-    # Retorna os primeiros 5 emails do cache (trecho do texto normalizado)
-    resultado = []
-    for uid, entry in list(cache.data.items())[:5]:
-        resultado.append({
+    user = db.session.get(User, user_id)
+    if not user or not user.config:
+        return jsonify({"erro": "Usuário sem configuração"}), 400
+
+    cfg = _config_dict(user.config)
+    imap_manager.get_cache(user_id, cfg)
+
+    conn = imap_manager.connections.get(user_id)
+    if not conn:
+        return jsonify({"erro": "Conexão IMAP não iniciada"}), 400
+
+    with conn._cache_lock:
+        itens = list(conn._cache.items())[-5:]
+
+    emails = []
+    for uid, entry in itens:
+        if not entry:
+            continue
+        emails.append({
             "uid": uid,
             "banco": entry.get("banco"),
             "valor": entry.get("valor"),
-            "subject": entry.get("subject"),
-            "norm_trecho": entry.get("norm", "")[:300]
+            "pagador": entry.get("pagador"),
+            "data": str(entry.get("data")),
         })
-    return jsonify({"total": cache.total, "emails": resultado})
+
+    return jsonify({
+        "total_cache": len(conn._cache),
+        "uids_usados": len(conn._uids_usados),
+        "emails": emails[::-1]
+    })
 
 
 @app.route("/cliente/api_saldo")
@@ -1133,29 +1157,28 @@ def debug_imap_admin():
     nome = request.args.get("nome", "").strip()
     if not nome:
         return jsonify({"error": "Parâmetro 'nome' obrigatório"}), 400
-    
+
     try:
-        # Get first user for demo (or param user_id)
         user = User.query.filter_by(is_admin=False).first()
         if not user or not user.config:
             return jsonify({"error": "Nenhum usuário com config"}), 404
-        
-        cache = imap_manager.get_cache(user.id, _config_dict(user.config))
-        resultado = cache.search_payment_optimized(nome)
-        
+
+        cfg = _config_dict(user.config)
+        imap_manager.get_cache(user.id, cfg)
+        conn = imap_manager.connections.get(user.id)
+        if not conn:
+            return jsonify({"error": "Conexão IMAP não iniciada"}), 400
+
+        resultado = conn.buscar(nome)
+
         debug = {
             "nome_pesquisado": nome,
-            "total_emails": cache.stats.total_emails,
             "resultado": resultado,
-            "trechos_debug": cache.search_debug(nome),
-            "user_demo": user.username
+            "user_demo": user.username,
+            "total_cache": len(conn._cache),
+            "uids_usados": len(conn._uids_usados)
         }
-        
-        # TEMP mark as used for demo
-        if resultado and 'uid' in resultado:
-            cache.cache.data[resultado['uid']]['usado'] = True
-            cache.cache._save()
-        
+
         return jsonify(debug)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -1227,9 +1250,17 @@ def imap_stats():
 @admin_required
 def imap_stats_user(user_id: int):
     from imap_optimizer import imap_manager
-    if user_id in imap_manager.caches:
-        stats = imap_manager.caches[user_id].get_stats()
-        return jsonify(stats)
+    conn = imap_manager.connections.get(user_id)
+    if conn:
+        with conn._cache_lock:
+            total_cache = len(conn._cache)
+        return jsonify({
+            "user_id": user_id,
+            "connected_monitor": conn._monitor_connected,
+            "connected_search": conn._search_connected,
+            "total_cache": total_cache,
+            "uids_usados": len(conn._uids_usados),
+        })
     return jsonify({"error": "Cache não encontrado para este usuário"})
 
 
@@ -1237,7 +1268,8 @@ def imap_stats_user(user_id: int):
 @admin_required
 def limite_salas(user_id: int):
     from models import BotStatus
-    limite = int(request.form.get("limite", 10))
+    # Default to 10 if not provided (instead of 0 which would block all rooms)
+    limite = int(request.form.get("limite", _DEFAULT_LIMITE_SALAS))
     s = BotStatus.query.filter_by(user_id=user_id).first() or BotStatus(user_id=user_id)
     s.limite_salas = limite
     db.session.add(s)

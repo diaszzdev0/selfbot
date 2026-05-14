@@ -446,6 +446,22 @@
                       Ativado: <code>!sala 123456789 22</code> &nbsp;|&nbsp; Desativado: <code>123456789 22</code>
                     </div>
                   </div>
+
+                  <div class="mt-3">
+                    <label class="mb-1">Ordem de Envio</label>
+                    <div class="btn-group w-100" role="group" aria-label="Formato de envio">
+                      <input type="radio" class="btn-check" name="formato_sala" id="formatoJunto" value="junto"
+                        {{ 'checked' if not cfg or not cfg.formato_sala or cfg.formato_sala == 'junto' }}>
+                      <label class="btn btn-outline-light" for="formatoJunto">Junto (ID + senha)</label>
+
+                      <input type="radio" class="btn-check" name="formato_sala" id="formatoSeparado" value="separado"
+                        {{ 'checked' if cfg and cfg.formato_sala == 'separado' }}>
+                      <label class="btn btn-outline-light" for="formatoSeparado">Separado (ID primeiro, depois senha)</label>
+                    </div>
+                    <div class="form-text text-secondary" style="font-size:.75rem">
+                      Novo modo: enviar primeiro o ID e depois a senha em mensagem separada.
+                    </div>
+                  </div>
                 </div>
 
                 <div class="mb-4">

@@ -6,3 +6,5 @@ __pycache__/
 imap_cache/
 *.zip
 .env
+venv/
+.venv/

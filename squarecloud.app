@@ -8,7 +8,7 @@
 # - Comando de execução: python3 main.py
 # - Nome de exibição: Selfbot RateLimit Python
 
-ID=67edc9bce8424bf198099f4f83dc832b
+ID=d676168381434cdfb3126b40296de390
 DISPLAY_NAME=Selfbot RateLimit Python
 DESCRIPTION=Selfbot Discord com painel Flask (Selfbot RateLimit Python)
 MAIN=main.py

@@ -302,7 +302,7 @@ class PersistentIMAPConnection:
             self._search_connected = False
             return self._conectar_search()
 
-    def buscar(self, nome, log_fn=None):
+    def _buscar_no_cache(self, nome, log_fn=None):
         def log(msg):
             if log_fn:
                 log_fn(msg)
@@ -321,7 +321,6 @@ class PersistentIMAPConnection:
             if uid in self._uids_usados:
                 log(f"\u23e9 Ignorado (ja usado): UID {uid}")
                 continue
-            # Rejeita emails de dias anteriores ou sem data (cache antigo)
             entry_date = entry.get("data")
             if not entry_date or entry_date < hoje:
                 log(f"\u23e9 Ignorado (email antigo {entry_date}): UID {uid}")
@@ -332,8 +331,77 @@ class PersistentIMAPConnection:
                 log(f"\u2705 MATCH: '{pagador_norm}'")
                 self.marcar_uid_usado(uid)
                 return {"valor": entry["valor"], "banco": entry["banco"], "pagador": entry["pagador"], "uid": uid}
+        return None
 
-        log(f"\u274c Nenhum pix de '{nome_busca}' encontrado")
+    def buscar(self, nome, log_fn=None):
+        def log(msg):
+            if log_fn:
+                log_fn(msg)
+
+        # 1) tenta cache primeiro (rápido)
+        res = self._buscar_no_cache(nome, log_fn)
+        if res:
+            return res
+
+        # 2) fallback rápido: força refresh da INBOX uma vez para reduzir atraso entre contas
+        # sem criar conexão temporária nova
+        try:
+            if self._monitor_connected and self._monitor_mail is not None:
+                hoje = date.today().strftime("%d-%b-%Y")
+                self._monitor_mail.select("INBOX")
+                _, data = self._monitor_mail.search(None, f'(SINCE "{hoje}")')
+                uids_all = data[0].split() if data and data[0] else []
+                with self._cache_lock:
+                    faltantes = [u for u in uids_all if u.decode() not in self._cache]
+                for uid_bytes in faltantes[:50]:
+                    uid_str = uid_bytes.decode()
+                    try:
+                        _, msgs_data = self._monitor_mail.fetch(uid_bytes, "(RFC822)")
+                        raw = next((x[1] for x in msgs_data if isinstance(x, tuple)), None)
+                        if raw is None:
+                            with self._cache_lock:
+                                self._cache[uid_str] = None
+                            continue
+                        msg = email.message_from_bytes(raw)
+                        subject = _decode_header_str(msg.get("Subject", ""))
+                        email_date = date.today()
+                        try:
+                            from email.utils import parsedate_to_datetime
+                            date_header = msg.get("Date", "")
+                            if date_header:
+                                email_date = parsedate_to_datetime(date_header).date()
+                        except Exception:
+                            pass
+                        if not _is_email_pix(subject):
+                            with self._cache_lock:
+                                self._cache[uid_str] = None
+                            continue
+                        content = f"{subject} {_get_body(msg)}"
+                        pagador = _extrair_pagador(content)
+                        valor = _extrair_valor(content)
+                        banco = _detectar_banco(content)
+                        entry = {
+                            "pagador": pagador,
+                            "pagador_norm": _normalizar(pagador),
+                            "valor": valor,
+                            "banco": banco,
+                            "uid": uid_str,
+                            "data": email_date,
+                        }
+                        with self._cache_lock:
+                            self._cache[uid_str] = entry
+                    except Exception:
+                        # mantém robusto para não abortar refresh inteiro por 1 email ruim
+                        continue
+        except Exception as e:
+            log(f"\u26a0\ufe0f Refresh rápido IMAP falhou: {type(e).__name__}: {str(e)[:80]}")
+
+        # 3) tenta cache novamente após refresh
+        res = self._buscar_no_cache(nome, log_fn)
+        if res:
+            return res
+
+        log(f"\u274c Nenhum pix de '{_normalizar(nome).lower().strip()}' encontrado")
         return None
 
     def marcar_uid_usado(self, uid: str):
@@ -341,7 +409,7 @@ class PersistentIMAPConnection:
         self._uids_usados.add(uid)
         try:
             import os
-            path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uids_usados.txt")
+            path = os.path.join(os.path.dirname(os.path.abspath(__file__)), f"uids_usados_{self._uid_chave()}.txt")
             with open(path, "a", encoding="utf-8") as f:
                 f.write(uid + "\n")
         except Exception:
@@ -351,7 +419,7 @@ class PersistentIMAPConnection:
         """Carrega UIDs usados do arquivo ao iniciar."""
         try:
             import os
-            path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uids_usados.txt")
+            path = os.path.join(os.path.dirname(os.path.abspath(__file__)), f"uids_usados_{self._uid_chave()}.txt")
             if os.path.exists(path):
                 with open(path, "r", encoding="utf-8") as f:
                     for line in f:
@@ -360,6 +428,13 @@ class PersistentIMAPConnection:
                             self._uids_usados.add(uid)
         except Exception:
             pass
+
+    def _uid_chave(self):
+        email_user = str(self.config.get("email_user", "")).strip().lower()
+        if not email_user:
+            return "default"
+        safe = re.sub(r"[^a-z0-9._-]", "_", email_user)
+        return safe or "default"
 
     def stop(self):
         self._stop = True
@@ -417,12 +492,22 @@ imap_manager = IMAPManager()
 
 
 def buscar_pagamento_imap(config, nome, log_fn=None):
+    target_user = str(config.get("email_user", "")).strip().lower()
+    target_pass = str(config.get("email_pass", "")).strip()
+    target_server = str(config.get("imap_server", "")).strip().lower()
+
     for conn in imap_manager.connections.values():
-        if conn.config.get("email_user") == config.get("email_user"):
+        c_user = str(conn.config.get("email_user", "")).strip().lower()
+        c_pass = str(conn.config.get("email_pass", "")).strip()
+        c_server = str(conn.config.get("imap_server", "")).strip().lower()
+        if c_user == target_user and c_pass == target_pass and c_server == target_server:
             return conn.buscar(nome, log_fn)
 
     conn_temp = PersistentIMAPConnection(config)
-    time.sleep(8)  # aguarda o monitor popular o cache
+    time.sleep(2)
     resultado = conn_temp.buscar(nome, log_fn)
+    if not resultado:
+        time.sleep(2)
+        resultado = conn_temp.buscar(nome, log_fn)
     conn_temp.stop()
     return resultado

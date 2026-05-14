@@ -1,2 +1,11 @@
-401
+STATUS: 401
 {"status":"error","code":"ACCESS_DENIED","message":"Invalid user data."}
+
+LOGS: 401
+{"status":"error","code":"ACCESS_DENIED","message":"Invalid user data."}
+
+POST deploy: 401 {"status":"error","code":"ACCESS_DENIED","message":"Invalid user data."}
+POST upload: 401 {"status":"error","code":"ACCESS_DENIED","message":"Invalid user data."}
+POST files: 401 {"status":"error","code":"ACCESS_DENIED","message":"Invalid user data."}
+POST files/commit: 401 {"status":"error","code":"ACCESS_DENIED","message":"Invalid user data."}
+POST redeploy: 401 {"status":"error","code":"ACCESS_DENIED","message":"Invalid user data."}
