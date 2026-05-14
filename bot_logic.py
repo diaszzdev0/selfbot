@@ -1301,8 +1301,9 @@ def run_selfbot(config: dict, user_id: int):
             log_msg(user_id, f"💰 Progresso: {pagamentos_por_thread[channel.id]}/2 pagamentos confirmados")
             log_msg(user_id, "-"*70)
 
-            if pagamentos_por_thread[channel.id] >= 2:
+            if pagamentos_por_thread.get(channel.id, 0) >= 2:
                 pagamentos_por_thread[channel.id] = 0
+
                 usadas, limite = _get_salas_info(user_id)
                 if usadas >= limite:
                     await _digitar_e_enviar(channel, f"Limite de salas atingido ({usadas}/{limite}).")
