@@ -175,18 +175,16 @@ class PersistentIMAPConnection:
     def __init__(self, config, log_fn=None):
         self.config = config
         self.log_fn = log_fn
-        self._on_novo_pix = None  # callback(entry: dict) chamado ao detectar novo PIX
-        # Conexao dedicada para o monitor (thread separada)
+        self._on_novo_pix = None
         self._monitor_mail = None
         self._monitor_connected = False
-        # Conexao dedicada para buscas
         self._search_mail = None
         self._search_connected = False
         self._search_lock = threading.Lock()
         self._stop = False
         self._uids_usados = set()
         self._carregar_uids_arquivo()
-        self._cache = {}  # uid -> {pagador, pagador_norm, valor, banco} ou None
+        self._cache = {}  # sempre começa vazio, monitor recarrega emails de hoje
         self._cache_lock = threading.Lock()
         self._monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
         self._monitor_thread.start()
