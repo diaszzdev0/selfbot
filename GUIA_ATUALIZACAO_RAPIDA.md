@@ -62,4 +62,4 @@ git push origin main
 
 ---
 **Tempo total**: ~5 minutos
-**Última atualização**: Sistema otimizado com detecção em tempo real
+**Última atualização**: 15/01/2025 - Correções limite + detecção threads
