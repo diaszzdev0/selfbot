@@ -6,4 +6,5 @@
 - [x] Corrigir pontos de compartilhamento global indevido
 - [x] Otimizar latência IMAP no `imap_optimizer.py` (reduzir espera fixa e melhorar busca por conexão persistente)
 - [x] Adicionar logs de tempo de busca de pagamento no `bot_logic.py`
+- [x] Corrigir buscar_pagamento_imap para usar user_id como chave
 - [ ] Deploy na Square Cloud (`squarecloud commit -r`)

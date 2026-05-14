@@ -1,13 +1,9 @@
 # 🚀 Atualização Rápida na SquareCloud
 
 ## ✅ Código Atualizado no GitHub
-- ✅ Sistema de detecção de threads melhorado
-- ✅ Eventos em tempo real (on_thread_create, on_thread_join)
-- ✅ Monitoramento de threads arquivadas
-- ✅ Verificação inicial de threads existentes
-- ✅ Sistema de reconexão automática
-- ✅ Validação de token melhorada
-- ✅ Diagnósticos de conectividade
+- ✅Correção buscar_pagamento_imap para usar user_id como chave primária
+- ✅ Logs de debug mais claros para IMAP
+- ✅Conexões IMAP isoladas por usuário
 
 ## 📋 Passos para Atualizar na SquareCloud:
 
@@ -27,61 +23,11 @@
 - Vá para a aba **"Logs"**
 - Procure por mensagens como:
   ```
-  ✅ Sistema de cache otimizado ativado!
-  🧵 Verificando threads existentes na inicialização...
-  ✅ Verificação inicial concluída: X threads encontradas
+  📬 Usando conexão IMAP do user_id=X
   ```
 
-### 5. Configure Variáveis (SE NECESSÁRIO)
-Se ainda não configurou, adicione estas variáveis em **"Environment Variables"**:
-```
-DISCORD_TOKEN=SEU_TOKEN_DE_USUARIO_REAL
-SERVER_ID=1293459542797062165
-CATEGORIA_ID=1293555181547683923
-EMAIL_USER=seu_email@gmail.com
-EMAIL_PASS=sua_senha_de_app_gmail
-IMAP_SERVER=imap.gmail.com
-MENSAGEM_ENTRADA=👋 Olá! Use pg Nome Sobrenome para verificar pagamento
-```
-
-## 🔍 Verificação de Funcionamento:
-
-### Logs de Sucesso:
-```
-✅ Sessao: SeuUsuario#1234 (ID: 123456789)
-🌐 Servidor: Nome do Servidor
-📂 Categoria: Nome da Categoria
-🧵 X thread(s) carregada(s)
-🚀 Sistema de cache otimizado ativado!
-```
-
-### Logs de Thread Detection:
-```
-🧵 Nova thread detectada: 'Nome da Thread'
-✅ Mensagem enviada para thread: Nome
-🎆 Thread criada em tempo real: 'Nome'
-```
-
-## ⚠️ Troubleshooting:
-
-### Se aparecer "Token inválido":
-1. Obtenha novo token seguindo `COMO_OBTER_TOKEN.md`
-2. Atualize a variável `DISCORD_TOKEN`
-3. Redeploy novamente
-
-### Se não detectar threads:
-1. Verifique se `SERVER_ID` e `CATEGORIA_ID` estão corretos
-2. Verifique se o usuário tem acesso ao servidor
-3. Verifique os logs para erros
-
-### Se der erro de memória:
-1. Aumente a memória para 1GB no painel
-2. Redeploy
-
-## 📊 Monitoramento:
-- **Status Verde**: Tudo funcionando
-- **Status Amarelo**: Problemas menores
-- **Status Vermelho**: Aplicação offline
+## 🔍 Correção de Bug
+O problema era que quando múltiplos usuários usam o mesmo email,um deles não encontrava pagamentos. Agora cada conexão IMAP usa o user_id como chave para evitar conflitos.
 
 ## 🔄 Próximas Atualizações:
 Para futuras atualizações, basta:
@@ -90,4 +36,4 @@ Para futuras atualizações, basta:
 3. Aguardar o build
 
 ---
-**Última atualização**: 15/01/2025 - Correções de limite de salas (0→10) + detecção threads + reconexão automática
+**Última atualização**: Correção buscar_pagamento_imap com user_id

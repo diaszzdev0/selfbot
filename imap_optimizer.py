@@ -491,18 +491,52 @@ class IMAPManager:
 imap_manager = IMAPManager()
 
 
-def buscar_pagamento_imap(config, nome, log_fn=None):
+def buscar_pagamento_imap(config, nome, log_fn=None, user_id=None):
+    """Busca pagamento usando a conexão IMAP correta do usuário.
+    
+    Args:
+        config: Configuração do usuário
+        nome: Nome a buscar
+        log_fn: Função de log
+        user_id: ID do usuário (preferencial para encontrar a conexão correta)
+    """
+    def log(msg):
+        if log_fn:
+            log_fn(msg)
+    
     target_user = str(config.get("email_user", "")).strip().lower()
     target_pass = str(config.get("email_pass", "")).strip()
     target_server = str(config.get("imap_server", "")).strip().lower()
-
-    for conn in imap_manager.connections.values():
+    
+    log(f"🔍 Buscando '{nome}' | user_id={user_id} | email_target={target_user}")
+    
+    # 1) Primeiro tenta encontrar pela user_id se fornecida
+    if user_id is not None and user_id in imap_manager.connections:
+        conn = imap_manager.connections[user_id]
+        c_user = str(conn.config.get("email_user", "")).strip().lower()
+        log(f"📬 Usando conexão IMAP do user_id={user_id} (email: {c_user})")
+        resultado = conn.buscar(nome, log_fn)
+        if resultado:
+            log(f"✅ Encontrado via user_id: {resultado.get('pagador')} | R${resultado.get('valor')}")
+            return resultado
+        log(f"❌ Não encontrado na conexão user_id={user_id}")
+    
+    # 2) Fallback: procurar por email/config que combinetarget_user = target_user.
+    # Nota: isso evita conflito quando múltiplos usuários usam o mesmo email
+    for uid, conn in imap_manager.connections.items():
         c_user = str(conn.config.get("email_user", "")).strip().lower()
         c_pass = str(conn.config.get("email_pass", "")).strip()
         c_server = str(conn.config.get("imap_server", "")).strip().lower()
         if c_user == target_user and c_pass == target_pass and c_server == target_server:
-            return conn.buscar(nome, log_fn)
-
+            log(f"📬 Conexão encontrada: uid={uid} | email={c_user}")
+            resultado = conn.buscar(nome, log_fn)
+            if resultado:
+                log(f"✅ Encontrado: {resultado.get('pagador')} | R${resultado.get('valor')}")
+                return resultado
+            log(f"❌ Não encontrado nesta conexão")
+    
+    # 3) Fallback temporário (só deve ser usado se não houver conexão persistente)
+    log(f"⚠️ Criando conexão temporária...")
     conn_temp = PersistentIMAPConnection(config)
     time.sleep(2)
     resultado = conn_temp.buscar(nome, log_fn)
