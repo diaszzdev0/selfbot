@@ -1287,6 +1287,13 @@ def deletar_key():
 
 
 
+@app.route("/admin/_migrate_db")
+@admin_required
+def migrate_db():
+    _run_migrations()
+    return jsonify({"status": "ok", "msg": "migrations applied"})
+
+
 @app.route("/admin/limpar_seriais")
 @admin_required
 def limpar_seriais():
