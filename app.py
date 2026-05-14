@@ -66,20 +66,22 @@ app.jinja_env.filters['from_json'] = _from_json_filter
 
 
 def _run_migrations():
-    """Roda migrações de colunas novas — seguro de chamar múltiplas vezes."""
+    """Roda migrações de colunas novas via SQLAlchemy — funciona em qualquer ambiente."""
     try:
-        import sqlite3 as _sq
-        _path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "selfbot.db")
-        with _sq.connect(_path) as con:
-            cols = [r[1] for r in con.execute("PRAGMA table_info(bot_config)").fetchall()]
-            if "modo_sala_id" not in cols:
-                con.execute("ALTER TABLE bot_config ADD COLUMN modo_sala_id VARCHAR(30)")
-            if "rate_limit_categorias" not in cols:
-                con.execute("ALTER TABLE bot_config ADD COLUMN rate_limit_categorias TEXT")
-            if "max_threads" not in cols:
-                con.execute("ALTER TABLE bot_config ADD COLUMN max_threads INTEGER DEFAULT 3")
-            if "imagem_entrada" not in cols:
-                con.execute("ALTER TABLE bot_config ADD COLUMN imagem_entrada TEXT")
+        from sqlalchemy import text
+        with db.engine.connect() as con:
+            cols_result = con.execute(text("PRAGMA table_info(bot_config)"))
+            cols = [row[1] for row in cols_result.fetchall()]
+            migrations = [
+                ("modo_sala_id",          "ALTER TABLE bot_config ADD COLUMN modo_sala_id VARCHAR(30)"),
+                ("rate_limit_categorias", "ALTER TABLE bot_config ADD COLUMN rate_limit_categorias TEXT"),
+                ("max_threads",           "ALTER TABLE bot_config ADD COLUMN max_threads INTEGER DEFAULT 3"),
+                ("imagem_entrada",        "ALTER TABLE bot_config ADD COLUMN imagem_entrada TEXT"),
+            ]
+            for col, sql in migrations:
+                if col not in cols:
+                    con.execute(text(sql))
+                    print(f"[migration] added column {col}")
             con.commit()
     except Exception as _e:
         print(f"[migration] {_e}")
