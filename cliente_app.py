@@ -21,6 +21,9 @@ db.init_app(app)
 processos: dict[int, threading.Thread] = {}
 LOG_DIR = os.path.join(os.path.dirname(__file__), "logs")
 
+# Default limit is 10 - used when creating new BotStatus records
+_DEFAULT_LIMITE_SALAS = 10
+
 
 def _config_dict(cfg: BotConfig) -> dict:
     return {
@@ -58,8 +61,13 @@ def _iniciar_processo(user_id: int, cfg):
 def _get_bot_status(user_id: int) -> BotStatus:
     s = BotStatus.query.filter_by(user_id=user_id).first()
     if not s:
-        s = BotStatus(user_id=user_id, ativo=False, salas_usadas=0, limite_salas=0)
+        # Use default limit instead of 0 for new users
+        s = BotStatus(user_id=user_id, ativo=False, salas_usadas=0, limite_salas=_DEFAULT_LIMITE_SALAS)
         db.session.add(s)
+        db.session.commit()
+    elif s.limite_salas == 0:
+        # Fix existing records with 0 limit to use default
+        s.limite_salas = _DEFAULT_LIMITE_SALAS
         db.session.commit()
     return s
 

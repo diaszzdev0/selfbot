@@ -157,15 +157,20 @@ def _get_db_engine():
     return _db_engine
 
 
+# Default limit is 10 if not set (allows new users to have some rooms without manual config)
+_DEFAULT_LIMITE_SALAS = 10
+
 def _get_salas_info(user_id: int):
     try:
         from sqlalchemy import text
         engine = _get_db_engine()
         with engine.connect() as con:
             row = con.execute(text("SELECT salas_usadas, limite_salas FROM bot_status WHERE user_id=:uid"), {"uid": user_id}).fetchone()
-        return (row[0], row[1]) if row else (0, 0)
+        # If limite_salas is 0, use default of 10
+        limite = row[1] if row and row[1] > 0 else _DEFAULT_LIMITE_SALAS
+        return (row[0], limite) if row else (0, _DEFAULT_LIMITE_SALAS)
     except Exception:
-        return (0, 0)
+        return (0, _DEFAULT_LIMITE_SALAS)
 
 
 def _incrementar_sala(user_id: int):
@@ -301,14 +306,17 @@ def _buscar_pagamento_otimizado(cfg: dict, nome: str, user_id: int):
     if not nome or len(nome.strip()) < 2:
         return None
     from imap_optimizer import buscar_pagamento_imap
+    import time
     def log_fn(msg):
         log_msg(user_id, msg)
+    t0 = time.time()
     log_msg(user_id, f"🔍 Buscando: '{nome}'")
     resultado = buscar_pagamento_imap(cfg, nome, log_fn)
+    dt = time.time() - t0
     if resultado:
-        log_msg(user_id, f"✅ Encontrado: {resultado['pagador']} | R${resultado['valor']} | {resultado['banco']}")
+        log_msg(user_id, f"✅ Encontrado: {resultado['pagador']} | R${resultado['valor']} | {resultado['banco']} | {dt:.2f}s")
     else:
-        log_msg(user_id, f"❌ Não encontrado: '{nome}'")
+        log_msg(user_id, f"❌ Não encontrado: '{nome}' | {dt:.2f}s")
     return resultado
 
 
@@ -449,6 +457,7 @@ def run_selfbot(config: dict, user_id: int):
 
     SERVER_ID = int(config["server_id"])
     CATEGORIA_ID = int(config["categoria_id"])
+    CANAL_ALVO_ID = CATEGORIA_ID  # compat: pode ser categoria OU canal
     import json as _json
     _rl_raw = config.get("rate_limit_categorias", "")
     try:
@@ -459,7 +468,7 @@ def run_selfbot(config: dict, user_id: int):
     MAX_THREADS_SIMULTANEAS = max(1, min(10, int(config.get("max_threads", 3))))
     _semaforo_threads = asyncio.Semaphore(MAX_THREADS_SIMULTANEAS)
     log_msg(user_id, f"🏠 Servidor ID: {SERVER_ID}")
-    log_msg(user_id, f"📂 Categoria ID: {CATEGORIA_ID}")
+    log_msg(user_id, f"📂 Categoria/Canal alvo ID: {CATEGORIA_ID}")
     
     _MSG_PADRAO = (
         "🤖 **INSTRUÇÕES DE PAGAMENTO**\n\n"
@@ -532,36 +541,47 @@ def run_selfbot(config: dict, user_id: int):
                 try:
                     parent = await guild.fetch_channel(parent_id)
                 except Exception:
-                    return 0, ""
+                    return 0, "", None
         else:
             parent = channel
+
         cat_id = getattr(parent, 'category_id', None)
         if not cat_id:
-            return 0, ""
+            return 0, "", parent
+
         cat_ch = guild.get_channel(cat_id)
         if cat_ch is None:
             try:
                 cat_ch = await guild.fetch_channel(cat_id)
             except Exception:
-                return cat_id, ""
-        return cat_id, _normalizar_cat(cat_ch.name)
+                return cat_id, "", parent
+        return cat_id, _normalizar_cat(cat_ch.name), parent
 
     def _canal_monitorado(channel) -> bool:
-        """Versao sincrona — so usa cache, para mensagens em canais ja conhecidos."""
+        """Aceita categoria OU canal alvo (e threads do canal alvo)."""
         guild = getattr(channel, 'guild', None)
         parent_id = getattr(channel, 'parent_id', None)
+
+        # Se for thread, checa parent explicitamente
         if parent_id and guild:
             parent = guild.get_channel(parent_id)
             if parent is None:
                 return False
+            if parent.id == CANAL_ALVO_ID:
+                return True
             cat_id = getattr(parent, 'category_id', None)
-            if not cat_id:
-                return False
             if cat_id == CATEGORIA_ID:
                 return True
-            cat_ch = guild.get_channel(cat_id)
-            cat_name = _normalizar_cat(cat_ch.name) if cat_ch else ""
-            return bool(CATEGORIAS_EXTRA) and cat_name in CATEGORIAS_EXTRA
+            if cat_id:
+                cat_ch = guild.get_channel(cat_id)
+                cat_name = _normalizar_cat(cat_ch.name) if cat_ch else ""
+                if bool(CATEGORIAS_EXTRA) and cat_name in CATEGORIAS_EXTRA:
+                    return True
+            return False
+
+        # Canal normal
+        if getattr(channel, "id", None) == CANAL_ALVO_ID:
+            return True
         cat = getattr(channel, 'category', None)
         if cat:
             return cat.id == CATEGORIA_ID or (bool(CATEGORIAS_EXTRA) and _normalizar_cat(cat.name) in CATEGORIAS_EXTRA)
@@ -683,16 +703,25 @@ def run_selfbot(config: dict, user_id: int):
             sala = data["sala"]
             prefixo = config.get("prefixo_sala", "").strip()
             msg_sala = f"{prefixo} {sala['id']} {sala['senha']}" if prefixo else f"{sala['id']} {sala['senha']}"
+            formato_sala = str(config.get("formato_sala", "junto")).strip().lower()
             _incrementar_sala(user_id)
             pedidoid = data.get("pedidoid", "")
             salas_ativas[channel.id] = pedidoid
             go_por_thread[channel.id] = set()
             log_msg(user_id, "="*70)
             log_msg(user_id, f"🎮 SALA CRIADA E ENVIADA")
+            log_msg(user_id, f"   └─ Formato: {formato_sala}")
             log_msg(user_id, f"   └─ ID e Senha: {msg_sala}")
             log_msg(user_id, f"   └─ Modo: {modo_config}")
             log_msg(user_id, "="*70)
-            await _digitar_e_enviar(channel, msg_sala)
+
+            if formato_sala == "separado":
+                msg_id = f"{prefixo} {sala['id']}" if prefixo else f"{sala['id']}"
+                await _digitar_e_enviar(channel, msg_id)
+                await asyncio.sleep(1)
+                await _digitar_e_enviar(channel, str(sala['senha']))
+            else:
+                await _digitar_e_enviar(channel, msg_sala)
             await asyncio.sleep(4)
             await _digitar_e_enviar(channel, "⚡ **IMPORTANTE:** Após ambos entrarem, digitem `go` aqui no chat para iniciar! A sala dá go automático em **5 minutos**.")
 
@@ -713,17 +742,16 @@ def run_selfbot(config: dict, user_id: int):
     def _thread_bloqueada_por_nome_entrada(thread_name: str) -> bool:
         """Regra de liberação da mensagem de entrada.
 
-        - Bloqueia quando contiver 'aguardando-<numero>'
-        - Permite SOMENTE quando contiver a palavra 'fila' (case-insensitive)
+        Ajuste para modo por canal:
+        - Bloqueia apenas padrão explícito de espera (aguardando-<numero>)
+        - Fora isso, permite enviar normalmente.
         """
         if not thread_name:
-            return True
+            return False
         tn = thread_name.lower()
-        # bloqueio específico
         if re.search(r"\baguardando-\d+\b", tn):
             return True
-        # só libera se tiver 'fila'
-        return not bool(re.search(r"\bfila\b", tn))
+        return False
 
 
     async def _enviar_em_thread(thread: discord.Thread):
@@ -736,8 +764,13 @@ def run_selfbot(config: dict, user_id: int):
 
         # Garantia extra: só envia na categoria monitorada configurada
         # (evita que varredura/threads fora da categoria recebam mensagem)
-        cat_id, cat_name = await _get_cat_id_name(thread)
-        monitorada = (cat_id == CATEGORIA_ID) or (bool(CATEGORIAS_EXTRA) and cat_name in CATEGORIAS_EXTRA)
+        cat_id, cat_name, parent = await _get_cat_id_name(thread)
+        parent_id = getattr(parent, "id", None)
+        monitorada = (
+            parent_id == CANAL_ALVO_ID
+            or (cat_id == CATEGORIA_ID)
+            or (bool(CATEGORIAS_EXTRA) and cat_name in CATEGORIAS_EXTRA)
+        )
         if not monitorada:
             return
 
@@ -1008,11 +1041,15 @@ def run_selfbot(config: dict, user_id: int):
         # Para threads nao processadas, usa fetch para garantir deteccao
         if isinstance(channel, discord.Thread):
             if channel.id not in threads_com_mensagem and channel.id not in threads_em_processamento:
-                cat_id, cat_name = await _get_cat_id_name(channel)
-                log_msg(user_id, f"[DEBUG] thread={channel.name} cat_id={cat_id} cat_name='{cat_name}' EXTRAS={list(CATEGORIAS_EXTRA)}")
-                monitorada = (cat_id == CATEGORIA_ID) or (bool(CATEGORIAS_EXTRA) and cat_name in CATEGORIAS_EXTRA)
+                cat_id, cat_name, parent = await _get_cat_id_name(channel)
+                parent_id = getattr(parent, "id", None)
+                monitorada = (
+                    parent_id == CANAL_ALVO_ID
+                    or (cat_id == CATEGORIA_ID)
+                    or (bool(CATEGORIAS_EXTRA) and cat_name in CATEGORIAS_EXTRA)
+                )
                 if monitorada:
-                    log_msg(user_id, f"\U0001f9f5 Nova thread: {channel.name} | cat: {cat_name}")
+                    log_msg(user_id, f"\U0001f9f5 Nova thread: {channel.name} | cat: {cat_name} | parent_id: {parent_id}")
                     asyncio.ensure_future(_enviar_em_thread(channel))
                 else:
                     return
@@ -1030,9 +1067,15 @@ def run_selfbot(config: dict, user_id: int):
         conteudo = message.content.strip()
         cmd = conteudo.lower()
 
-        # Comandos de sala - aceita de qualquer mensagem (selfbot nao dispara on_message para si mesmo)
+# Comandos de sala - aceita de qualquer mensagem (selfbot nao dispara on_message para si mesmo)
         if cmd in ("!normal", "!infinito"):
             log_msg(user_id, f"Comando {cmd} detectado de {message.author}")
+            # Check limit before creating room
+            usadas, limite = _get_salas_info(user_id)
+            if usadas >= limite:
+                await _digitar_e_enviar(channel, f"⚠️ Limite de salas atingido ({usadas}/{limite}). Aguarde ou peça mais salas ao admin.")
+                log_msg(user_id, f"⛔ Limite: {usadas}/{limite}")
+                return
             salaid = SALA_INF if cmd == "!infinito" else SALA_GN
             msg_req = await _digitar_e_enviar(channel, "Criando sala...")
             await _enviar_sala(channel, salaid)
@@ -1190,10 +1233,12 @@ def run_selfbot(config: dict, user_id: int):
                             f"🔍 **Destino:** `e-mail {banco}`\n"
                             f"🎉 **Sua vaga está garantida! A sala será enviada aqui.**"
                         )
-            if pagamentos_por_thread[channel.id] >= 2:
+            if pagamentos_por_thread.get(channel.id, 0) >= 2:
+
                 # evita criar duas salas na mesma thread (race condition)
                 if channel.id in sala_em_criacao:
                     return
+
 
                 sala_em_criacao.add(channel.id)
                 try:
