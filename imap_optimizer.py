@@ -338,27 +338,7 @@ class IMAPManager:
     def get_cache(self, user_id, config):
         self.configs[user_id] = config
         if user_id not in self.connections:
-            conn = PersistentIMAPConnection(config)
-            # Restaura UIDs já usados do banco
-            try:
-                import os
-                from sqlalchemy import create_engine, text
-                db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "selfbot.db")
-                db_url = os.getenv("DATABASE_URL", f"sqlite:///{db_path}")
-                if db_url.startswith("postgres://"):
-                    db_url = db_url.replace("postgres://", "postgresql://", 1)
-                engine = create_engine(db_url, pool_pre_ping=True)
-                with engine.connect() as con:
-                    rows = con.execute(text(
-                        "SELECT hash FROM pagamentos_usados WHERE user_id=:uid"
-                    ), {"uid": user_id}).fetchall()
-                for row in rows:
-                    h = row[0]
-                    if h.startswith("uid_"):
-                        conn._uids_usados.add(h[4:])
-            except Exception:
-                pass
-            self.connections[user_id] = conn
+            self.connections[user_id] = PersistentIMAPConnection(config)
         return self
 
     def set_log(self, user_id, log_fn):

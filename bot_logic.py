@@ -1156,6 +1156,11 @@ def run_selfbot(config: dict, user_id: int):
             verificacao = _verificar_pagamento_usado(hash_pag, user_id)
 
             if verificacao["usado"]:
+                # Marca o UID no cache para não verificar de novo
+                uid_resultado = resultado.get('uid')
+                if uid_resultado:
+                    for conn in imap_manager.connections.values():
+                        conn._uids_usados.add(uid_resultado)
                 await _digitar_e_reply(message,
                     f"🚨 **PAGAMENTO JÁ UTILIZADO!**\n\n"
                     f"❌ Este pagamento já foi usado anteriormente.\n"
