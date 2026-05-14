@@ -78,6 +78,8 @@ def _run_migrations():
                 con.execute("ALTER TABLE bot_config ADD COLUMN rate_limit_categorias TEXT")
             if "max_threads" not in cols:
                 con.execute("ALTER TABLE bot_config ADD COLUMN max_threads INTEGER DEFAULT 3")
+            if "imagem_entrada" not in cols:
+                con.execute("ALTER TABLE bot_config ADD COLUMN imagem_entrada TEXT")
             con.commit()
     except Exception as _e:
         print(f"[migration] {_e}")
