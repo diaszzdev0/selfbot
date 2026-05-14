@@ -744,14 +744,19 @@ def run_selfbot(config: dict, user_id: int):
                         if _verificar_pagamento_usado(hash_pag, user_id)["usado"]:
                             continue
                         # Busca mensagens recentes da thread para tentar associar ao nome
+                        # Só considera comandos pg dos últimos 2 minutos
                         try:
                             msgs_recentes = [m async for m in thread.history(limit=20)]
                         except Exception:
                             continue
                         nome_encontrado = None
                         autor_encontrado = None
+                        agora_ts = datetime.utcnow()
                         for m in msgs_recentes:
                             if m.author == client.user:
+                                continue
+                            idade = (agora_ts - m.created_at.replace(tzinfo=None)).total_seconds()
+                            if idade > 120:  # ignora mensagens com mais de 2 minutos
                                 continue
                             nome_cmd = _extrair_nome(m.content)
                             if nome_cmd and _match_nomes(_normalizar(nome_cmd), pagador_norm):
