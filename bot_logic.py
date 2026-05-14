@@ -734,6 +734,24 @@ def run_selfbot(config: dict, user_id: int):
         imap_manager.get_cache(user_id, config)
         imap_manager.set_log(user_id, log_msg)
 
+        # Restaura UIDs já usados do banco para evitar reuso após restart
+        try:
+            from sqlalchemy import text
+            engine = _get_db_engine()
+            with engine.connect() as con:
+                rows = con.execute(text(
+                    "SELECT hash FROM pagamentos_usados WHERE user_id=:uid"
+                ), {"uid": user_id}).fetchall()
+            conn = imap_manager.connections.get(user_id)
+            if conn:
+                for row in rows:
+                    h = row[0]
+                    if h.startswith("uid_"):
+                        conn._uids_usados.add(h[4:])  # remove prefixo "uid_"
+            log_msg(user_id, f"🔒 {len(rows)} pagamentos anteriores carregados")
+        except Exception as e:
+            log_msg(user_id, f"⚠️ Erro ao restaurar UIDs: {e}")
+
         def _on_novo_pix(entry: dict):
             """Chamado pela thread do monitor IMAP quando novo PIX chega."""
             pagador = entry.get("pagador", "")
