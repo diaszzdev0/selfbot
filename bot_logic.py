@@ -512,7 +512,9 @@ def run_selfbot(config: dict, user_id: int):
     log_msg(user_id, "-"*70)
     pagamentos_por_thread: dict[int, int] = {}
     salas_ativas: dict[int, str] = {}       # channel_id -> pedidoid
+    sala_em_criacao: set[int] = set()       # channel_id que já está criando sala (evita duplicar)
     go_por_thread: dict[int, set] = {}       # channel_id -> set de user_ids
+
     go_auto_tasks: dict[int, asyncio.Task] = {}  # channel_id -> task do timer
     pg_em_processamento: set[str] = set()
     valores_thread: dict[int, float] = {}   # channel_id -> valor esperado
@@ -1188,17 +1190,32 @@ def run_selfbot(config: dict, user_id: int):
                             f"🔍 **Destino:** `e-mail {banco}`\n"
                             f"🎉 **Sua vaga está garantida! A sala será enviada aqui.**"
                         )
-                        if pagamentos_por_thread[channel.id] >= 2:
-                            pagamentos_por_thread[channel.id] = 0
-                            usadas, limite = _get_salas_info(user_id)
-                            if usadas >= limite:
-                                await _digitar_e_enviar(channel, f"Limite de salas atingido ({usadas}/{limite}).")
-                                log_msg(user_id, f"⛔ Limite: {usadas}/{limite}")
-                                return
-                            msg_req = await _digitar_e_enviar(channel, "Solicitando Sala...")
-                            await _enviar_sala(channel)
-                            await msg_req.delete()
+            if pagamentos_por_thread[channel.id] >= 2:
+                # evita criar duas salas na mesma thread (race condition)
+                if channel.id in sala_em_criacao:
                     return
+
+                sala_em_criacao.add(channel.id)
+                try:
+                    pagamentos_por_thread[channel.id] = 0
+                    usadas, limite = _get_salas_info(user_id)
+                    if usadas >= limite:
+                        await _digitar_e_enviar(channel, f"Limite de salas atingido ({usadas}/{limite}).")
+                        log_msg(user_id, f"⛔ Limite: {usadas}/{limite}")
+                        return
+
+                    msg_req = await _digitar_e_enviar(channel, "Solicitando Sala...")
+                    try:
+                        ok = await _enviar_sala(channel)
+                        if not ok:
+                            log_msg(user_id, f"⚠️ _enviar_sala retornou False (thread={channel.id})")
+                    finally:
+                        await msg_req.delete()
+                except Exception as exc:
+                    log_msg(user_id, f"❌ Erro ao criar sala (thread={channel.id}): {type(exc).__name__}: {exc}")
+                finally:
+                    sala_em_criacao.discard(channel.id)
+
 
         nome_busca = _extrair_nome(conteudo)
         if not nome_busca:
