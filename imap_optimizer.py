@@ -268,6 +268,7 @@ class PersistentIMAPConnection:
                             "valor": valor,
                             "banco": banco,
                             "uid": uid_str,
+                            "data": date.today(),
                         }
                         with self._cache_lock:
                             self._cache[uid_str] = entry
@@ -300,6 +301,7 @@ class PersistentIMAPConnection:
                 log_fn(msg)
 
         nome_busca = _normalizar(nome).lower().strip()
+        hoje = date.today()
 
         with self._cache_lock:
             cache_snapshot = sorted(self._cache.items(), key=lambda x: int(x[0]) if x[0].isdigit() else 0, reverse=True)
@@ -311,6 +313,11 @@ class PersistentIMAPConnection:
                 continue
             if uid in self._uids_usados:
                 log(f"\u23e9 Ignorado (ja usado): UID {uid}")
+                continue
+            # Rejeita emails de dias anteriores
+            entry_date = entry.get("data")
+            if entry_date and entry_date < hoje:
+                log(f"\u23e9 Ignorado (email antigo {entry_date}): UID {uid}")
                 continue
             pagador_norm = entry["pagador_norm"]
             log(f"\U0001f4b0 Verificando UID {uid} | pagador='{pagador_norm}' | R${entry['valor']} | {entry['banco']}")

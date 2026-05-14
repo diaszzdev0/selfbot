@@ -84,11 +84,15 @@ def _extrair_valor_texto(text):
     ]:
         m = re.search(padrao, text, re.IGNORECASE)
         if m:
-            v = m.group(1).strip().replace('.', ',')
+            v = m.group(1).strip().lstrip('0') or '0'
+            v = v.replace('.', ',')
             if ',' not in v:
                 v += ',00'
             elif len(v.split(',')[1]) == 1:
                 v += '0'
+            # Garante que tem pelo menos um digito antes da virgula
+            if v.startswith(','):
+                v = '0' + v
             return v
     return "N/A"
 
