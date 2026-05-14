@@ -45,7 +45,13 @@ PALAVRAS_INVALIDAS = {
     'cpf', 'cnpj', 'agencia', 'conta', 'pagamento', 'transferencia', 'recibo',
     'comprovante', 'autenticacao', 'codigo', 'operacao', 'descricao', 'origem',
     'destino', 'favorecido', 'beneficiario', 'instituicao', 'nome', 'cancelar',
-    'confirmar', 'voltar', 'continuar', 'enviar', 'receber', 'saldo', 'extrato'
+    'confirmar', 'voltar', 'continuar', 'enviar', 'receber', 'saldo', 'extrato',
+    'pedido', 'registrado', 'aprovado', 'concluido', 'realizado', 'efetuado',
+    'processado', 'pendente', 'sucesso', 'erro', 'falha', 'aguardando', 'ok',
+    'sim', 'nao', 'total', 'parcial', 'bruto', 'liquido', 'taxa', 'tarifa',
+    'recebido', 'enviado', 'debitado', 'creditado', 'estorno', 'devolucao',
+    'transacao', 'identificador', 'protocolo', 'numero', 'referencia', 'chave',
+    'solicitacao', 'servico', 'produto', 'desconto', 'acrescimo', 'juros'
 }
 
 MESES = {
@@ -182,7 +188,23 @@ def _validar_formato(text, banco):
     return True, None
 
 
-def _match_nomes(nome_cmd, texto_norm):
+def _parece_nome_pessoa(nome: str) -> bool:
+    """Valida se o texto extraido parece um nome de pessoa real."""
+    palavras = nome.strip().split()
+    if len(palavras) < 2:
+        return False
+    norm = [_normalizar(p) for p in palavras]
+    # Rejeita se qualquer palavra estiver na lista de invalidas
+    if any(p in PALAVRAS_INVALIDAS for p in norm):
+        return False
+    # Todas as palavras devem ser so letras
+    if not all(re.match(r'^[A-Za-z\u00C0-\u00FF]+$', p) for p in palavras):
+        return False
+    # Pelo menos 2 palavras com 3+ letras
+    longas = [p for p in palavras if len(p) >= 3]
+    return len(longas) >= 2
+
+
     ignorar = {'de', 'da', 'do', 'dos', 'das', 'e'}
     partes = [p for p in nome_cmd.split() if p not in ignorar and len(p) >= 3]
     return all(p in texto_norm for p in partes)
@@ -221,7 +243,7 @@ def ler_comprovante_url(image_url, nome=""):
         if valor == "N/A":
             return {"encontrado": False, "erro": "Valor n\u00e3o encontrado no comprovante"}
 
-        if pagador == "Desconhecido":
+        if pagador == "Desconhecido" or not _parece_nome_pessoa(pagador):
             return {"encontrado": False, "erro": "Nome do pagador n\u00e3o identificado no comprovante"}
 
         data_valida, motivo_data = _validar_data(texto)
