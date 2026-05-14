@@ -316,6 +316,7 @@ class PersistentIMAPConnection:
             log(f"\U0001f4b0 Verificando UID {uid} | pagador='{pagador_norm}' | R${entry['valor']} | {entry['banco']}")
             if pagador_norm and nome_busca and (nome_busca in pagador_norm or _match_nomes(nome_busca, pagador_norm)):
                 log(f"\u2705 MATCH: '{pagador_norm}'")
+                self.marcar_uid_usado(uid)
                 return {"valor": entry["valor"], "banco": entry["banco"], "pagador": entry["pagador"], "uid": uid}
 
         log(f"\u274c Nenhum pix de '{nome_busca}' encontrado")
