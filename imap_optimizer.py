@@ -253,6 +253,15 @@ class PersistentIMAPConnection:
                             continue
                         msg = email.message_from_bytes(raw)
                         subject = _decode_header_str(msg.get("Subject", ""))
+                        # Extrai data do header do email
+                        email_date = date.today()
+                        try:
+                            from email.utils import parsedate_to_datetime
+                            date_header = msg.get("Date", "")
+                            if date_header:
+                                email_date = parsedate_to_datetime(date_header).date()
+                        except Exception:
+                            pass
                         if not _is_email_pix(subject):
                             print(f"[IGNORADO] Assunto: '{subject}'", flush=True)
                             with self._cache_lock:
@@ -268,7 +277,7 @@ class PersistentIMAPConnection:
                             "valor": valor,
                             "banco": banco,
                             "uid": uid_str,
-                            "data": date.today(),
+                            "data": email_date,
                         }
                         with self._cache_lock:
                             self._cache[uid_str] = entry
@@ -314,9 +323,9 @@ class PersistentIMAPConnection:
             if uid in self._uids_usados:
                 log(f"\u23e9 Ignorado (ja usado): UID {uid}")
                 continue
-            # Rejeita emails de dias anteriores
+            # Rejeita emails de dias anteriores ou sem data (cache antigo)
             entry_date = entry.get("data")
-            if entry_date and entry_date < hoje:
+            if not entry_date or entry_date < hoje:
                 log(f"\u23e9 Ignorado (email antigo {entry_date}): UID {uid}")
                 continue
             pagador_norm = entry["pagador_norm"]
