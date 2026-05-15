@@ -180,7 +180,7 @@ def _config_dict(cfg: BotConfig) -> dict:
         return {}
     
     # Validação básica dos campos obrigatórios
-    required_fields = ["discord_token", "server_id", "categoria_id"]
+    required_fields = ["discord_token", "server_id"]
     for field in required_fields:
         if not getattr(cfg, field, None):
             raise ValueError(f"Campo obrigatório '{field}' não configurado")
@@ -195,7 +195,7 @@ def _config_dict(cfg: BotConfig) -> dict:
     return {
         "discord_token": str(cfg.discord_token).strip(),
         "server_id": _clean_id(cfg.server_id),
-        "categoria_id": _clean_id(cfg.categoria_id),
+        "categoria_id": _clean_id(cfg.categoria_id) if cfg.categoria_id else "0",
         "email_user": str(cfg.email_user or "").strip(),
         "email_pass": str(cfg.email_pass or "").strip(),
         "imap_server": str(cfg.imap_server or "imap.gmail.com").strip(),

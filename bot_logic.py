@@ -455,7 +455,7 @@ def run_selfbot(config: dict, user_id: int):
     log_msg(user_id, f"🔑 Token válido | User ID: {validation['user_id']} | Tipo: {expiry_check['type']}")
 
     SERVER_ID = int(config["server_id"])
-    CATEGORIA_ID = int(config["categoria_id"])
+    CATEGORIA_ID = int(config["categoria_id"]) if config.get("categoria_id", "0") not in ("", "0") else 0
     CANAL_ALVO_ID = CATEGORIA_ID  # compat: pode ser categoria OU canal
     import json as _json
     _rl_raw = config.get("rate_limit_categorias", "")
@@ -569,7 +569,7 @@ def run_selfbot(config: dict, user_id: int):
 
         if parent_id and guild:
             # Checa por ID direto do canal pai
-            if parent_id == CANAL_ALVO_ID:
+            if CANAL_ALVO_ID and parent_id == CANAL_ALVO_ID:
                 return True
             if parent_id in CATEGORIAS_EXTRA_IDS:
                 return True
@@ -577,7 +577,7 @@ def run_selfbot(config: dict, user_id: int):
             if parent is None:
                 return False
             cat_id = getattr(parent, 'category_id', None)
-            if cat_id == CATEGORIA_ID:
+            if CATEGORIA_ID and cat_id == CATEGORIA_ID:
                 return True
             if cat_id in CATEGORIAS_EXTRA_IDS:
                 return True
@@ -588,14 +588,14 @@ def run_selfbot(config: dict, user_id: int):
                     return True
             return False
 
-        if getattr(channel, "id", None) == CANAL_ALVO_ID:
+        if CANAL_ALVO_ID and getattr(channel, "id", None) == CANAL_ALVO_ID:
             return True
         if getattr(channel, "id", None) in CATEGORIAS_EXTRA_IDS:
             return True
         cat = getattr(channel, 'category', None)
         if cat:
             return (
-                cat.id == CATEGORIA_ID
+                (CATEGORIA_ID != 0 and cat.id == CATEGORIA_ID)
                 or cat.id in CATEGORIAS_EXTRA_IDS
                 or (bool(CATEGORIAS_EXTRA) and _normalizar_cat(cat.name) in CATEGORIAS_EXTRA)
             )
@@ -774,9 +774,9 @@ def run_selfbot(config: dict, user_id: int):
         cat_id, cat_name, parent = await _get_cat_id_name(thread)
         parent_id = getattr(parent, "id", None) or getattr(thread, 'parent_id', None)
         monitorada = (
-            parent_id == CANAL_ALVO_ID
+            (CANAL_ALVO_ID and parent_id == CANAL_ALVO_ID)
             or parent_id in CATEGORIAS_EXTRA_IDS
-            or (cat_id == CATEGORIA_ID)
+            or (CATEGORIA_ID != 0 and cat_id == CATEGORIA_ID)
             or cat_id in CATEGORIAS_EXTRA_IDS
             or (bool(CATEGORIAS_EXTRA) and cat_name in CATEGORIAS_EXTRA)
         )
@@ -841,14 +841,19 @@ def run_selfbot(config: dict, user_id: int):
 
         guild = client.get_guild(SERVER_ID)
         if guild:
-            cat = guild.get_channel(CATEGORIA_ID)
-            if cat is None:
-                try:
-                    cat = await client.fetch_channel(CATEGORIA_ID)
-                except Exception:
-                    pass
+            cat = None
+            if CATEGORIA_ID:
+                cat = guild.get_channel(CATEGORIA_ID)
+                if cat is None:
+                    try:
+                        cat = await client.fetch_channel(CATEGORIA_ID)
+                    except Exception:
+                        pass
             log_msg(user_id, f"🌐 Servidor: {guild.name}")
-            log_msg(user_id, f"📂 Categoria principal: {cat.name if cat else 'NAO ENCONTRADA'}")
+            if CATEGORIA_ID:
+                log_msg(user_id, f"📂 Categoria principal: {cat.name if cat else 'NAO ENCONTRADA'}")
+            else:
+                log_msg(user_id, "📂 Categoria principal: não configurada (usando apenas extras)")
             for nome_extra in CATEGORIAS_EXTRA:
                 encontrada = next((c for c in guild.channels if _normalizar(c.name) == nome_extra), None)
                 log_msg(user_id, f"📂 Extra '{nome_extra}': {'✅ ' + encontrada.name if encontrada else '❌ NAO ENCONTRADA'}")
@@ -1053,9 +1058,9 @@ def run_selfbot(config: dict, user_id: int):
                 cat_id, cat_name, parent = await _get_cat_id_name(channel)
                 parent_id = getattr(parent, "id", None) or getattr(channel, 'parent_id', None)
                 monitorada = (
-                    parent_id == CANAL_ALVO_ID
+                    (CANAL_ALVO_ID and parent_id == CANAL_ALVO_ID)
                     or parent_id in CATEGORIAS_EXTRA_IDS
-                    or (cat_id == CATEGORIA_ID)
+                    or (CATEGORIA_ID != 0 and cat_id == CATEGORIA_ID)
                     or cat_id in CATEGORIAS_EXTRA_IDS
                     or (bool(CATEGORIAS_EXTRA) and cat_name in CATEGORIAS_EXTRA)
                 )

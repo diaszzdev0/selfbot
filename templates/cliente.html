@@ -387,9 +387,11 @@
                       value="{{ cfg.server_id if cfg else '' }}" required>
                   </div>
                   <div class="col-sm-6">
-                    <label>Categoria ID</label>
+                    <label>Categoria ID <span style="color:#4b5563;font-weight:400">(opcional)</span></label>
                     <input name="categoria_id" class="form-control"
-                      value="{{ cfg.categoria_id if cfg else '' }}" required>
+                      placeholder="Deixe vazio para usar só as Categorias Extras"
+                      value="{{ cfg.categoria_id if cfg else '' }}">
+                    <div class="form-text">Se preenchido, monitora esta categoria. Se vazio, usa apenas as Categorias Extras da aba Rate Limite.</div>
                   </div>
                 </div>
 
