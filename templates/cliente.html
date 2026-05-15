@@ -476,16 +476,30 @@
                     </div>
                     <input type="hidden" name="auto_sala" id="input-auto-sala" value="{% if not cfg or cfg.auto_sala != '0' %}on{% endif %}">
 
-                    <!-- Formato: junto ou separado -->
+                    <!-- ID e senha juntos -->
+                    <div id="btn-junto" onclick="toggleOpcao('junto')" style="cursor:pointer;padding:12px 16px;border-radius:10px;border:1px solid;display:flex;align-items:center;justify-content:space-between;
+                      {% if not cfg or not cfg.formato_sala or cfg.formato_sala == 'junto' %}background:rgba(251,191,36,.08);border-color:rgba(251,191,36,.3){% else %}background:rgba(255,255,255,.03);border-color:rgba(255,255,255,.08){% endif %}">
+                      <div>
+                        <div style="font-size:.85rem;font-weight:600;color:{% if not cfg or not cfg.formato_sala or cfg.formato_sala == 'junto' %}#fbbf24{% else %}#6b7280{% endif %}">
+                          <i class="bi bi-union me-2"></i>Enviar ID e senha juntos
+                        </div>
+                        <div style="font-size:.72rem;color:#4b5563;margin-top:3px">Ex: <code style="color:#60a5fa">123456789 22</code></div>
+                      </div>
+                      <div id="dot-junto" style="width:36px;height:20px;border-radius:99px;transition:all .2s;position:relative;
+                        {% if not cfg or not cfg.formato_sala or cfg.formato_sala == 'junto' %}background:#f59e0b{% else %}background:rgba(255,255,255,.1){% endif %}">
+                        <div style="position:absolute;top:3px;width:14px;height:14px;border-radius:50%;background:#fff;transition:all .2s;
+                          {% if not cfg or not cfg.formato_sala or cfg.formato_sala == 'junto' %}left:19px{% else %}left:3px{% endif %}"></div>
+                      </div>
+                    </div>
+
+                    <!-- Formato: separado -->
                     <div id="btn-separado" onclick="toggleOpcao('separado')" style="cursor:pointer;padding:12px 16px;border-radius:10px;border:1px solid;display:flex;align-items:center;justify-content:space-between;
                       {% if cfg and cfg.formato_sala == 'separado' %}background:rgba(96,165,250,.08);border-color:rgba(96,165,250,.3){% else %}background:rgba(255,255,255,.03);border-color:rgba(255,255,255,.08){% endif %}">
                       <div>
                         <div style="font-size:.85rem;font-weight:600;color:{% if cfg and cfg.formato_sala == 'separado' %}#60a5fa{% else %}#6b7280{% endif %}">
                           <i class="bi bi-layout-split me-2"></i>Enviar ID e senha separados
                         </div>
-                        <div style="font-size:.72rem;color:#4b5563;margin-top:3px">
-                          {% if cfg and cfg.formato_sala == 'separado' %}Ativado: ID numa mensagem, senha em outra{% else %}Desativado: ID e senha juntos na mesma mensagem{% endif %}
-                        </div>
+                        <div style="font-size:.72rem;color:#4b5563;margin-top:3px">ID numa mensagem, senha em outra logo depois</div>
                       </div>
                       <div id="dot-separado" style="width:36px;height:20px;border-radius:99px;transition:all .2s;position:relative;
                         {% if cfg and cfg.formato_sala == 'separado' %}background:#60a5fa{% else %}background:rgba(255,255,255,.1){% endif %}">
@@ -827,26 +841,56 @@
           btn: 'btn-auto', dot: 'dot-auto', input: 'input-auto-sala',
           onBg: 'rgba(16,185,129,.08)', onBorder: 'rgba(16,185,129,.3)', onColor: '#10b981', dotColor: '#10b981'
         },
+        junto: {
+          btn: 'btn-junto', dot: 'dot-junto', input: 'input-formato-sala',
+          onBg: 'rgba(251,191,36,.08)', onBorder: 'rgba(251,191,36,.3)', onColor: '#fbbf24', dotColor: '#f59e0b',
+          onVal: 'junto', offVal: 'separado',
+          extra: () => _setFormato('junto')
+        },
         separado: {
           btn: 'btn-separado', dot: 'dot-separado', input: 'input-formato-sala',
           onBg: 'rgba(96,165,250,.08)', onBorder: 'rgba(96,165,250,.3)', onColor: '#60a5fa', dotColor: '#60a5fa',
-          onVal: 'separado', offVal: 'junto'
+          onVal: 'separado', offVal: 'junto',
+          extra: () => _setFormato('separado')
         }
       };
+
+      // junto e separado são mutuamente exclusivos
+      if (tipo === 'junto' || tipo === 'separado') {
+        const novoFormato = tipo;
+        _setFormato(novoFormato);
+        return;
+      }
+
       const c = configs[tipo];
       if (!c) return;
       const inp = document.getElementById(c.input);
       const btn = document.getElementById(c.btn);
       const dot = document.getElementById(c.dot);
-      const isOn = inp.value === 'on' || inp.value === (c.onVal || 'on');
+      const isOn = inp.value === 'on';
       const nowOn = !isOn;
-      inp.value = nowOn ? (c.onVal || 'on') : (c.offVal || '');
-      btn.style.background = nowOn ? c.onBg : 'rgba(255,255,255,.03)';
-      btn.style.borderColor = nowOn ? c.onBorder : 'rgba(255,255,255,.08)';
-      btn.querySelector('div > div:first-child').style.color = nowOn ? c.onColor : '#6b7280';
-      dot.style.background = nowOn ? c.dotColor : 'rgba(255,255,255,.1)';
-      dot.querySelector('div').style.left = nowOn ? '19px' : '3px';
+      inp.value = nowOn ? 'on' : '';
+      _aplicarEstado(btn, dot, nowOn, c);
       if (c.extra) c.extra();
+    }
+
+    function _setFormato(formato) {
+      const inp = document.getElementById('input-formato-sala');
+      inp.value = formato;
+      const isJunto = formato === 'junto';
+      const cJunto = { onBg:'rgba(251,191,36,.08)', onBorder:'rgba(251,191,36,.3)', onColor:'#fbbf24', dotColor:'#f59e0b' };
+      const cSep   = { onBg:'rgba(96,165,250,.08)',  onBorder:'rgba(96,165,250,.3)',  onColor:'#60a5fa', dotColor:'#60a5fa' };
+      _aplicarEstado(document.getElementById('btn-junto'),    document.getElementById('dot-junto'),    isJunto,  cJunto);
+      _aplicarEstado(document.getElementById('btn-separado'), document.getElementById('dot-separado'), !isJunto, cSep);
+    }
+
+    function _aplicarEstado(btn, dot, on, c) {
+      if (!btn || !dot) return;
+      btn.style.background   = on ? c.onBg    : 'rgba(255,255,255,.03)';
+      btn.style.borderColor  = on ? c.onBorder : 'rgba(255,255,255,.08)';
+      btn.querySelector('div > div:first-child').style.color = on ? c.onColor : '#6b7280';
+      dot.style.background   = on ? c.dotColor : 'rgba(255,255,255,.1)';
+      dot.querySelector('div').style.left = on ? '19px' : '3px';
     }
 
     // Load modos sala
