@@ -8,7 +8,7 @@ import time
 from datetime import datetime, timedelta, date
 from email.header import decode_header
 
-logger = logging.getLogger(__name__)
+import logging
 
 BANCOS_PATTERNS = {
     "Nubank":          [r"nubank"],
@@ -201,6 +201,7 @@ class PersistentIMAPConnection:
             return True
         except Exception as e:
             self._monitor_connected = False
+            import logging
             print(f"\u26a0\ufe0f IMAP monitor falhou: {type(e).__name__}: {e}", flush=True)
             return False
 

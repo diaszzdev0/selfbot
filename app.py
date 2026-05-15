@@ -488,12 +488,16 @@ def cliente_api_modos():
 @login_required
 def cliente_imap_pix():
     import re
+    from collections import deque
     user_id = session["cliente_id"]
     log_path = os.path.join(os.path.dirname(__file__), "logs", f"user_{user_id}.log")
     pix = []
+    # Read only the last 5000 lines to avoid scanning huge logs
     try:
         with open(log_path, "r", encoding="utf-8", errors="replace") as f:
-            for linha in f:
+            # deque will keep at most 5000 lines in memory
+            recent_lines = deque(f, maxlen=5000)
+            for linha in recent_lines:
                 # Detecta linhas de PIX encontrado: "💰 pagador='nome' | R$valor | banco"
                 m = re.search(r"pagador='([^']+)'\s*\|\s*R\$([\d,\.]+)\s*\|\s*(\S+)", linha)
                 if m:
