@@ -1122,6 +1122,10 @@ def run_selfbot(config: dict, user_id: int):
                 log_msg(user_id, f"⛔ Limite: {usadas}/{limite}")
                 return
             salaid = SALA_INF if cmd == ".rv inf" else SALA_GN
+            try:
+                await message.delete()
+            except Exception:
+                pass
             msg_req = await _digitar_e_enviar(channel, "Criando sala...")
             await _enviar_sala(channel, salaid)
             await msg_req.delete()
