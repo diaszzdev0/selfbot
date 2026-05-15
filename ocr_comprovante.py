@@ -26,13 +26,15 @@ BANCOS = {
 }
 
 NOME_PADROES = [
-    r"institui[c\u00e7][a\u00e3]o\s+([A-Za-z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\s]{4,60?})\s*(?:\||\d|R\$)",
-    r"destino\s*nome\s+([A-Za-z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\s]{4,60}?)\s*institui[c\u00e7][a\u00e3]o",
+    # Pagador / remetente / quem enviou — maior prioridade
     r"pagador\s*[:\-]?\s*([A-Za-z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\s]{4,50})",
     r"remetente\s*[:\-]?\s*([A-Za-z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\s]{4,50})",
-    r"recebedor\s*[:\-]?\s*([A-Za-z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\s]{4,50})",
     r"origem\s*[:\-]?\s*([A-Za-z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\s]{4,50})",
-    r"de\s*[:\-]?\s*([A-Z][a-z\u00C0-\u00FF]+(?:\s+[A-Z][a-z\u00C0-\u00FF]+)+)",
+    # Layout "De: Nome" (Nubank, Inter, etc)
+    r"(?:^|\n)\s*de\s*[:\-]?\s*([A-Z][a-z\u00C0-\u00FF]+(?:\s+[A-Z][a-z\u00C0-\u00FF]+)+)",
+    # Seção "quem pagou" antes da instituição (layout Nubank/Inter)
+    r"quem\s+pagou\s+([A-Za-z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\s]{4,50}?)\s*(?:institui[c\u00e7][a\u00e3]o|cpf|\d)",
+    # Nome genérico — só se não houver nada melhor
     r"nome\s*[:\-]?\s*([A-Za-z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\s]{4,50})",
 ]
 
@@ -119,6 +121,8 @@ def _extrair_valor_texto(text):
 def _extrair_pagador_texto(text):
     texto_limpo = re.sub(r'nome\s*cpf\s*institui[c\u00e7][a\u00e3]o\s*', '', text, flags=re.IGNORECASE)
     texto_limpo = re.sub(r'nome\s*cpf\s*', '', texto_limpo, flags=re.IGNORECASE)
+    # Remove bloco do recebedor/destino para nao capturar nome errado
+    texto_limpo = re.sub(r'(?:recebedor|destino|para|favorecido|benefici[a\u00e1]rio)\s*[:\-]?\s*[A-Za-z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\s]{4,60}?(?=\s*(?:institui[c\u00e7][a\u00e3]o|cpf|cnpj|chave|banco|\d|\n|$))', '', texto_limpo, flags=re.IGNORECASE)
     texto_limpo = re.sub(r'recebedor\s*nome\s*cpf\s*institui[c\u00e7][a\u00e3]o\s*', '', texto_limpo, flags=re.IGNORECASE)
 
     for padrao in NOME_PADROES:
