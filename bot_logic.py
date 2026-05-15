@@ -1334,6 +1334,9 @@ def run_selfbot(config: dict, user_id: int):
                 if channel.id in sala_em_criacao:
                     return
 
+                if config.get("auto_sala", "1") == "0":
+                    log_msg(user_id, "⚙️ Envio automático desativado — use .rv gn ou .rv inf")
+                    return
 
                 sala_em_criacao.add(channel.id)
                 try:
@@ -1443,6 +1446,10 @@ def run_selfbot(config: dict, user_id: int):
 
             if pagamentos_por_thread.get(channel.id, 0) >= 2:
                 pagamentos_por_thread[channel.id] = 0
+
+                if config.get("auto_sala", "1") == "0":
+                    log_msg(user_id, "⚙️ Envio automático desativado — use .rv gn ou .rv inf")
+                    return
 
                 usadas, limite = _get_salas_info(user_id)
                 if usadas >= limite:

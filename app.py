@@ -85,6 +85,7 @@ def _run_migrations():
             ("imagem_entrada",        "ALTER TABLE bot_config ADD COLUMN imagem_entrada TEXT"),
             ("prefixo_sala",          "ALTER TABLE bot_config ADD COLUMN prefixo_sala VARCHAR(20)"),
             ("formato_sala",          "ALTER TABLE bot_config ADD COLUMN formato_sala VARCHAR(20) DEFAULT 'junto'"),
+            ("auto_sala",              "ALTER TABLE bot_config ADD COLUMN auto_sala VARCHAR(1) DEFAULT '1'"),
         ]
         with db.engine.begin() as con:
             for col, sql in migrations:
@@ -205,6 +206,7 @@ def _config_dict(cfg: BotConfig) -> dict:
         "rate_limit_categorias": str(cfg.rate_limit_categorias or "").strip(),
         "max_threads": int(cfg.max_threads or 3),
         "formato_sala": str(cfg.formato_sala or "junto").strip().lower(),
+        "auto_sala": str(getattr(cfg, 'auto_sala', '1') or '1').strip(),
     }
 
 
@@ -322,6 +324,7 @@ def cliente_salvar_config():
     cfg.modo_sala_id = modo if modo else None
     formato = request.form.get("formato_sala", "junto").strip().lower()
     cfg.formato_sala = formato if formato in ("junto", "separado") else "junto"
+    cfg.auto_sala = "1" if request.form.get("auto_sala") else "0"
     import json as _json
     rl_cats = [v.strip() for v in request.form.getlist("rate_limit_cat") if v.strip()]
     cfg.rate_limit_categorias = _json.dumps(rl_cats) if rl_cats else None

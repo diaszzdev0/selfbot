@@ -439,6 +439,11 @@
                         {{ 'checked' if cfg and cfg.prefixo_sala }} onchange="togglePrefixo(this)">
                       <label class="form-check-label text-secondary small" for="usarPrefixo">Usar comando</label>
                     </div>
+                    <div class="form-check form-switch mb-0">
+                      <input class="form-check-input" type="checkbox" id="autoSala" name="auto_sala"
+                        {{ 'checked' if not cfg or cfg.auto_sala != '0' }}>
+                      <label class="form-check-label text-secondary small" for="autoSala">Envio automático de sala (após 2 pagamentos)</label>
+                    </div>
                   </div>
                   <div class="mt-2" id="campoPrefixo" style="display:{{ 'block' if cfg and cfg.prefixo_sala else 'none' }}">
                     <input name="prefixo_sala" class="form-control font-monospace"
