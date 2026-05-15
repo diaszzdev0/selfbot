@@ -180,7 +180,7 @@ def _incrementar_sala(user_id: int):
         with engine.begin() as con:
             con.execute(text(
                 "INSERT INTO bot_status (user_id, ativo, salas_usadas, limite_salas) "
-                "VALUES (:uid, 0, 1, 0) ON CONFLICT (user_id) DO UPDATE SET salas_usadas = bot_status.salas_usadas + 1"
+                "VALUES (:uid, false, 1, 0) ON CONFLICT (user_id) DO UPDATE SET salas_usadas = bot_status.salas_usadas + 1"
             ), {"uid": user_id})
             con.execute(text(
                 "CREATE TABLE IF NOT EXISTS sala_historico "
