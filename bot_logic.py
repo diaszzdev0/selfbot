@@ -628,7 +628,7 @@ def run_selfbot(config: dict, user_id: int):
         import aiohttp as _aiohttp
 
         # Delay de sincronizacao apos join na thread
-        await asyncio.sleep(2)
+        await asyncio.sleep(7)
 
         # Leitura dinamica do slowmode: thread primeiro, depois canal pai
         slowmode = getattr(canal, 'slowmode_delay', 0) or 0
