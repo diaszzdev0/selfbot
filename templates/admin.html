@@ -899,6 +899,29 @@
         </div>
         
         <div class="page" id="page-salas">
+          <div class="card" style="margin-bottom: 2rem;">
+            <div class="card-header">
+              <h2 class="card-title">
+                <i class="fas fa-gamepad"></i> Saldo da API SalasFF
+              </h2>
+            </div>
+            <div class="card-body">
+              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem;">
+                <div style="background: linear-gradient(135deg, var(--accent), #059669); padding: 1.5rem; border-radius: var(--radius-md); color: white; text-align: center;">
+                  <div id="saldo-api" style="font-size: 2rem; font-weight: 700;">...</div>
+                  <div style="font-size: 0.75rem; opacity: 0.9; margin-top: 0.25rem;">Salas Disponíveis (API)</div>
+                </div>
+                <div style="background: linear-gradient(135deg, var(--primary), var(--primary-dark)); padding: 1.5rem; border-radius: var(--radius-md); color: white; text-align: center;">
+                  <div style="font-size: 2rem; font-weight: 700;">{{ salas_info.values()|map(attribute='usadas')|sum }}</div>
+                  <div style="font-size: 0.75rem; opacity: 0.9; margin-top: 0.25rem;">Salas Usadas (Total)</div>
+                </div>
+                <div style="background: linear-gradient(135deg, var(--warning), #d97706); padding: 1.5rem; border-radius: var(--radius-md)); color: white; text-align: center;">
+                  <div style="font-size: 2rem; font-weight: 700;">{{ salas_info.values()|map(attribute='limite')|sum }}</div>
+                  <div style="font-size: 0.75rem; opacity: 0.9; margin-top: 0.25rem;">Limite Total Usuários</div>
+                </div>
+              </div>
+            </div>
+          </div>
           <div class="content-grid">
             <div class="card">
               <div class="card-header">
@@ -1261,6 +1284,19 @@
       history.replaceState(null, null, '#' + pageId);
     }
     
+    function loadSaldoAPI() {
+      fetch('/admin/api_saldo_salas')
+        .then(r => r.json())
+        .then(data => {
+          const el = document.getElementById('saldo-api');
+          if (el) el.textContent = data.salas !== undefined ? data.salas : '?';
+        })
+        .catch(() => {
+          const el = document.getElementById('saldo-api');
+          if (el) el.textContent = '?';
+        });
+    }
+
     // Função para atualizar status dos bots em tempo real
     function updateBotStatus() {
       const statusIndicator = document.getElementById('status-indicator');
@@ -1405,6 +1441,13 @@
       
       // Atualiza estatísticas IMAP a cada 30 segundos
       setInterval(updateIMAPStats, 30000);
+
+      // Carrega saldo da API ao abrir aba salas
+      const salasLink = document.querySelector('[onclick*="salas"]');
+      if (salasLink) {
+        salasLink.addEventListener('click', loadSaldoAPI);
+      }
+      loadSaldoAPI();
       
       // Escuta mudanças no hash da URL
       window.addEventListener('hashchange', function() {

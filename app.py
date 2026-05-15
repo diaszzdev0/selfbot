@@ -1,6 +1,8 @@
 import os
 import multiprocessing
 import secrets
+from dotenv import load_dotenv
+load_dotenv()
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify, make_response
 from werkzeug.security import generate_password_hash, check_password_hash
 from models import db, User, LicenseKey, BotConfig
@@ -107,6 +109,13 @@ def _ensure_migrations():
 with app.app_context():
     db.create_all()
     _run_migrations()
+    # Garante que o admin existe sempre
+    from werkzeug.security import generate_password_hash
+    if not User.query.filter_by(is_admin=True).first():
+        u = User(username="DiasDev", password=generate_password_hash("DiasDev0"), is_admin=True)
+        db.session.add(u)
+        db.session.commit()
+        print("[OK] Admin criado: DiasDev / DiasDev0")
 
 # Dicionário para controlar processos com limite
 MAX_PROCESSOS = 50
@@ -457,6 +466,10 @@ def cliente_debug_imap():
 @app.route("/cliente/api_saldo")
 @login_required
 def cliente_api_saldo():
+    user = db.session.get(User, session["cliente_id"])
+    if not user:
+        session.clear()
+        return jsonify({"status": "error", "salas": "?"}), 401
     bs = _get_bot_status_cliente(session["cliente_id"])
     disponiveis = max(bs.limite_salas - bs.salas_usadas, 0)
     try:
@@ -1244,7 +1257,20 @@ def adicionar_salas():
     return redirect(url_for("admin"))
 
 
-@app.route("/admin/imap_stats")
+@app.route("/admin/api_saldo_salas")
+@admin_required
+def admin_api_saldo_salas():
+    API_KEY = "266vq0badxid7jpcf96t"
+    try:
+        import requests as req
+        r = req.get(f"https://salasff.com/modos?key={API_KEY}", timeout=5)
+        data = r.json()
+        salas = data.get("salas", "?")
+    except Exception:
+        salas = "?"
+    return jsonify({"salas": salas})
+
+
 @admin_required
 def imap_stats():
     from imap_optimizer import imap_manager
