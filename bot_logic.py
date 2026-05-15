@@ -534,9 +534,8 @@ def run_selfbot(config: dict, user_id: int):
     pagamentos_usados_global: dict[str, dict] = {}
 
     async def _get_cat_id_name(channel):
-        """Retorna (cat_id, cat_name_norm) de qualquer canal ou thread."""
+        """Retorna (cat_id, cat_name_norm, parent) de qualquer canal ou thread."""
         guild = channel.guild
-        # Thread: busca canal pai pelo parent_id
         parent_id = getattr(channel, 'parent_id', None)
         if parent_id:
             parent = guild.get_channel(parent_id)
@@ -544,21 +543,24 @@ def run_selfbot(config: dict, user_id: int):
                 try:
                     parent = await guild.fetch_channel(parent_id)
                 except Exception:
-                    return 0, "", None
+                    return parent_id, "", None
         else:
             parent = channel
 
         cat_id = getattr(parent, 'category_id', None)
         if not cat_id:
-            return 0, "", parent
+            return getattr(parent, 'id', 0), "", parent
 
+        # Tenta pegar do cache primeiro, se nao tiver faz fetch
         cat_ch = guild.get_channel(cat_id)
         if cat_ch is None:
             try:
                 cat_ch = await guild.fetch_channel(cat_id)
             except Exception:
-                return cat_id, "", parent
-        return cat_id, _normalizar_cat(cat_ch.name), parent
+                cat_ch = None
+
+        cat_name = _normalizar_cat(cat_ch.name) if cat_ch else ""
+        return cat_id, cat_name, parent
 
     def _canal_monitorado(channel) -> bool:
         """Aceita categoria OU canal alvo (e threads do canal alvo)."""
@@ -777,7 +779,7 @@ def run_selfbot(config: dict, user_id: int):
         # Garantia extra: só envia na categoria monitorada configurada
         # (evita que varredura/threads fora da categoria recebam mensagem)
         cat_id, cat_name, parent = await _get_cat_id_name(thread)
-        parent_id = getattr(parent, "id", None)
+        parent_id = getattr(parent, "id", None) or getattr(thread, 'parent_id', None)
         monitorada = (
             parent_id == CANAL_ALVO_ID
             or parent_id in CATEGORIAS_EXTRA_IDS
@@ -1056,7 +1058,7 @@ def run_selfbot(config: dict, user_id: int):
         if isinstance(channel, discord.Thread):
             if channel.id not in threads_com_mensagem and channel.id not in threads_em_processamento:
                 cat_id, cat_name, parent = await _get_cat_id_name(channel)
-                parent_id = getattr(parent, "id", None)
+                parent_id = getattr(parent, "id", None) or getattr(channel, 'parent_id', None)
                 monitorada = (
                     parent_id == CANAL_ALVO_ID
                     or parent_id in CATEGORIAS_EXTRA_IDS
