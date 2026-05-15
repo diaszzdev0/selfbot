@@ -1114,15 +1114,14 @@ def run_selfbot(config: dict, user_id: int):
         cmd = conteudo.lower()
 
 # Comandos de sala - aceita de qualquer mensagem (selfbot nao dispara on_message para si mesmo)
-        if cmd in ("!normal", "!infinito"):
+        if cmd in (".rv gn", ".rv inf"):
             log_msg(user_id, f"Comando {cmd} detectado de {message.author}")
-            # Check limit before creating room
             usadas, limite = _get_salas_info(user_id)
             if usadas >= limite:
                 await _digitar_e_enviar(channel, f"⚠️ Limite de salas atingido ({usadas}/{limite}). Aguarde ou peça mais salas ao admin.")
                 log_msg(user_id, f"⛔ Limite: {usadas}/{limite}")
                 return
-            salaid = SALA_INF if cmd == "!infinito" else SALA_GN
+            salaid = SALA_INF if cmd == ".rv inf" else SALA_GN
             msg_req = await _digitar_e_enviar(channel, "Criando sala...")
             await _enviar_sala(channel, salaid)
             await msg_req.delete()
@@ -1156,12 +1155,6 @@ def run_selfbot(config: dict, user_id: int):
                 f"\u2022 Restantes: **{disponiveis}**\n"
                 f"\u2022 Criadas (1h): **{h1}** | (1 dia): **{d1}** | (1 semana): **{s1}**"
             )
-            return
-            log_msg(user_id, f"Comando {cmd} detectado")
-            salaid = SALA_INF if cmd == "!infinito" else SALA_GN
-            msg_req = await channel.send("Criando sala...")
-            await _enviar_sala(channel, salaid)
-            await msg_req.delete()
             return
 
         if message.author == client.user:
