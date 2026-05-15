@@ -769,17 +769,13 @@ def run_selfbot(config: dict, user_id: int):
 
 
     async def _enviar_em_thread(thread: discord.Thread):
-        """Ponto único de envio. Garante que nunca envia duas vezes na mesma thread."""
-        # Bloqueio por fase (somente mensagem de entrada)
-        # (Sem log para não poluir o painel)
         if _thread_bloqueada_por_nome_entrada(getattr(thread, "name", "")):
+            log_msg(user_id, f"⛔ Thread bloqueada por nome: {thread.name}")
             return
 
-
-        # Garantia extra: só envia na categoria monitorada configurada
-        # (evita que varredura/threads fora da categoria recebam mensagem)
         cat_id, cat_name, parent = await _get_cat_id_name(thread)
         parent_id = getattr(parent, "id", None) or getattr(thread, 'parent_id', None)
+        log_msg(user_id, f"🔎 Checando thread '{thread.name}' | parent_id={parent_id} | cat_id={cat_id} | cat_name='{cat_name}' | CANAL_ALVO={CANAL_ALVO_ID} | CATEGORIA_ID={CATEGORIA_ID} | EXTRA_IDS={CATEGORIAS_EXTRA_IDS} | EXTRA_NOMES={CATEGORIAS_EXTRA}")
         monitorada = (
             parent_id == CANAL_ALVO_ID
             or parent_id in CATEGORIAS_EXTRA_IDS
@@ -788,6 +784,7 @@ def run_selfbot(config: dict, user_id: int):
             or (bool(CATEGORIAS_EXTRA) and cat_name in CATEGORIAS_EXTRA)
         )
         if not monitorada:
+            log_msg(user_id, f"⛔ Thread '{thread.name}' fora da categoria monitorada")
             return
 
 
@@ -1042,10 +1039,12 @@ def run_selfbot(config: dict, user_id: int):
 
     @client.event
     async def on_thread_create(thread: discord.Thread):
+        log_msg(user_id, f"🧵 on_thread_create: {thread.name} | parent_id={thread.parent_id} | guild={getattr(thread.guild,'id',None)}")
         asyncio.ensure_future(_enviar_em_thread(thread))
 
     @client.event
     async def on_thread_join(thread: discord.Thread):
+        log_msg(user_id, f"🧵 on_thread_join: {thread.name} | parent_id={thread.parent_id}")
         asyncio.ensure_future(_enviar_em_thread(thread))
 
     @client.event
