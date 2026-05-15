@@ -310,8 +310,8 @@ def _buscar_pagamento_otimizado(cfg: dict, nome: str, user_id: int):
     def log_fn(msg):
         log_msg(user_id, msg)
     t0 = time.time()
-    log_msg(user_id, f"🔍 Buscando: '{nome}'")
-resultado = buscar_pagamento_imap(cfg, nome, log_fn, user_id)
+log_msg(user_id, f"🔍 Buscando: '{nome}'")
+    resultado = buscar_pagamento_imap(cfg, nome, log_fn, user_id)
     dt = time.time() - t0
     if resultado:
         log_msg(user_id, f"✅ Encontrado: {resultado['pagador']} | R${resultado['valor']} | {resultado['banco']} | {dt:.2f}s")
