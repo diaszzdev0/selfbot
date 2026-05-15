@@ -568,7 +568,6 @@ def run_selfbot(config: dict, user_id: int):
         parent_id = getattr(channel, 'parent_id', None)
 
         if parent_id and guild:
-            # Checa por ID direto do canal pai
             if CANAL_ALVO_ID and parent_id == CANAL_ALVO_ID:
                 return True
             if parent_id in CATEGORIAS_EXTRA_IDS:
@@ -576,6 +575,9 @@ def run_selfbot(config: dict, user_id: int):
             parent = guild.get_channel(parent_id)
             if parent is None:
                 return False
+            # Compara nome do canal pai com categorias extras
+            if bool(CATEGORIAS_EXTRA) and _normalizar_cat(getattr(parent, 'name', '') or '') in CATEGORIAS_EXTRA:
+                return True
             cat_id = getattr(parent, 'category_id', None)
             if CATEGORIA_ID and cat_id == CATEGORIA_ID:
                 return True
@@ -773,14 +775,17 @@ def run_selfbot(config: dict, user_id: int):
 
         cat_id, cat_name, parent = await _get_cat_id_name(thread)
         parent_id = getattr(parent, "id", None) or getattr(thread, 'parent_id', None)
+        parent_name = _normalizar_cat(getattr(parent, 'name', '') or '')
         monitorada = (
             (CANAL_ALVO_ID and parent_id == CANAL_ALVO_ID)
             or parent_id in CATEGORIAS_EXTRA_IDS
             or (CATEGORIA_ID != 0 and cat_id == CATEGORIA_ID)
             or cat_id in CATEGORIAS_EXTRA_IDS
             or (bool(CATEGORIAS_EXTRA) and cat_name in CATEGORIAS_EXTRA)
+            or (bool(CATEGORIAS_EXTRA) and parent_name in CATEGORIAS_EXTRA)
         )
         if not monitorada:
+            log_msg(user_id, f"🧵 Thread ignorada (fora das categorias): {thread.name} | cat='{cat_name}' | parent='{parent_name}' | parent_id={parent_id}")
             return
 
 
@@ -1063,6 +1068,7 @@ def run_selfbot(config: dict, user_id: int):
                     or (CATEGORIA_ID != 0 and cat_id == CATEGORIA_ID)
                     or cat_id in CATEGORIAS_EXTRA_IDS
                     or (bool(CATEGORIAS_EXTRA) and cat_name in CATEGORIAS_EXTRA)
+                    or (bool(CATEGORIAS_EXTRA) and _normalizar_cat(getattr(parent, 'name', '') or '') in CATEGORIAS_EXTRA)
                 )
                 if monitorada:
                     log_msg(user_id, f"\U0001f9f5 Nova thread: {channel.name} | cat: {cat_name} | parent_id: {parent_id}")
