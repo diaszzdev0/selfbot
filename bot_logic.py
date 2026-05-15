@@ -841,7 +841,6 @@ def run_selfbot(config: dict, user_id: int):
         if not guild:
             return []
         try:
-            # Endpoint oficial: GET /guilds/{guild.id}/threads/active
             data = await client.http.request(
                 discord.http.Route('GET', '/guilds/{guild_id}/threads/active', guild_id=SERVER_ID)
             )
@@ -849,7 +848,6 @@ def run_selfbot(config: dict, user_id: int):
             for t in data.get('threads', []):
                 thread = guild.get_channel(int(t['id']))
                 if thread is None:
-                    # Cria objeto Thread a partir dos dados brutos
                     try:
                         thread = discord.Thread(guild=guild, state=client._connection, data=t)
                     except Exception:
@@ -859,6 +857,8 @@ def run_selfbot(config: dict, user_id: int):
         except Exception as e:
             log_msg(user_id, f"⚠️ _fetch_active_threads falhou: {e}")
             return []
+
+    _monitor_iniciado = False
 
     @client.event
     async def on_disconnect():
