@@ -68,28 +68,30 @@ app.jinja_env.filters['from_json'] = _from_json_filter
 _migrations_done = False
 
 def _run_migrations():
-    """Roda migrações de colunas novas via SQLAlchemy — funciona em qualquer ambiente."""
+    """Roda migrações de colunas novas — compatível com SQLite e PostgreSQL."""
     global _migrations_done
     if _migrations_done:
         return
     try:
-        from sqlalchemy import text
-        with db.engine.connect() as con:
-            cols_result = con.execute(text("PRAGMA table_info(bot_config)"))
-            cols = [row[1] for row in cols_result.fetchall()]
-            migrations = [
-                ("modo_sala_id",          "ALTER TABLE bot_config ADD COLUMN modo_sala_id VARCHAR(30)"),
-                ("rate_limit_categorias", "ALTER TABLE bot_config ADD COLUMN rate_limit_categorias TEXT"),
-                ("max_threads",           "ALTER TABLE bot_config ADD COLUMN max_threads INTEGER DEFAULT 3"),
-                ("imagem_entrada",        "ALTER TABLE bot_config ADD COLUMN imagem_entrada TEXT"),
-                ("prefixo_sala",          "ALTER TABLE bot_config ADD COLUMN prefixo_sala VARCHAR(20)"),
-                ("formato_sala",          "ALTER TABLE bot_config ADD COLUMN formato_sala VARCHAR(20) DEFAULT 'junto'"),
-            ]
+        from sqlalchemy import text, inspect
+        inspector = inspect(db.engine)
+        cols = [c["name"] for c in inspector.get_columns("bot_config")]
+        migrations = [
+            ("modo_sala_id",          "ALTER TABLE bot_config ADD COLUMN modo_sala_id VARCHAR(30)"),
+            ("rate_limit_categorias", "ALTER TABLE bot_config ADD COLUMN rate_limit_categorias TEXT"),
+            ("max_threads",           "ALTER TABLE bot_config ADD COLUMN max_threads INTEGER DEFAULT 3"),
+            ("imagem_entrada",        "ALTER TABLE bot_config ADD COLUMN imagem_entrada TEXT"),
+            ("prefixo_sala",          "ALTER TABLE bot_config ADD COLUMN prefixo_sala VARCHAR(20)"),
+            ("formato_sala",          "ALTER TABLE bot_config ADD COLUMN formato_sala VARCHAR(20) DEFAULT 'junto'"),
+        ]
+        with db.engine.begin() as con:
             for col, sql in migrations:
                 if col not in cols:
-                    con.execute(text(sql))
-                    print(f"[migration] added column {col}")
-            con.commit()
+                    try:
+                        con.execute(text(sql))
+                        print(f"[migration] added column {col}")
+                    except Exception:
+                        pass  # coluna já existe em alguns dialetos
         _migrations_done = True
     except Exception as _e:
         print(f"[migration] {_e}")
