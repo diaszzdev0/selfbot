@@ -1162,6 +1162,58 @@ def run_selfbot(config: dict, user_id: int):
             return
 
         if message.author == client.user:
+            if cmd.startswith(".v "):
+                nome_busca = conteudo[3:].strip()
+                if not nome_busca:
+                    return
+                try:
+                    await message.delete()
+                except Exception:
+                    pass
+                chave_pg = f"{channel.id}_{nome_busca.lower()}"
+                if chave_pg in pg_em_processamento:
+                    return
+                pg_em_processamento.add(chave_pg)
+                log_msg(user_id, f"💰 COMANDO .v | Nome: {nome_busca}")
+                msg_fila = await _digitar_e_enviar(channel, "⏳ **Verificando pagamento…**")
+                try:
+                    resultado = await asyncio.wait_for(
+                        asyncio.get_running_loop().run_in_executor(None, lambda: _buscar_pagamento_otimizado(config, nome_busca, user_id)),
+                        timeout=90
+                    )
+                except asyncio.TimeoutError:
+                    resultado = None
+                try:
+                    await msg_fila.delete()
+                except Exception:
+                    pass
+                pg_em_processamento.discard(chave_pg)
+                if resultado:
+                    valor_str = resultado['valor']
+                    pagador = resultado.get('pagador', nome_busca)
+                    banco = resultado.get('banco', 'Email')
+                    hash_pag = _gerar_hash_pagamento(pagador, valor_str, banco, resultado.get('uid'))
+                    _registrar_pagamento_usado(hash_pag, user_id, channel.id, client.user.id, pagador, valor_str, resultado.get('uid'))
+                    pagamentos_por_thread[channel.id] = pagamentos_por_thread.get(channel.id, 0) + 1
+                    log_msg(user_id, f"💰 Progresso: {pagamentos_por_thread[channel.id]}/2 pagamentos confirmados")
+                    await _digitar_e_enviar(channel,
+                        f"✅ **PAGAMENTO CONFIRMADO**\n\n"
+                        f"📝 **Nome:** `{pagador}`\n"
+                        f"💰 **Valor:** `R$ {valor_str} (BRL)`\n"
+                        f"🔍 **Destino:** `e-mail {banco}`\n"
+                        f"🎉 **Vaga garantida! A sala será enviada aqui.**"
+                    )
+                    if pagamentos_por_thread.get(channel.id, 0) >= 2:
+                        pagamentos_por_thread[channel.id] = 0
+                        usadas, limite = _get_salas_info(user_id)
+                        if usadas >= limite:
+                            await _digitar_e_enviar(channel, f"Limite de salas atingido ({usadas}/{limite}).")
+                            return
+                        msg_req = await _digitar_e_enviar(channel, "Solicitando Sala...")
+                        await _enviar_sala(channel)
+                        await msg_req.delete()
+                else:
+                    await _digitar_e_enviar(channel, f"❌ Pagamento não encontrado para `{nome_busca}`.")
             return
 
         # Sistema de GO para iniciar sala
