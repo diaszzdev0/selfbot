@@ -216,78 +216,77 @@ class PersistentIMAPConnection:
             self._log(f"\u26a0\ufe0f Falha conexao IMAP: {type(e).__name__}: {str(e)[:100]}")
             return False
 
+    def _processar_uid(self, uid_bytes, mail_conn):
+        """Processa um UID e adiciona ao cache. Retorna entry ou None."""
+        uid_str = uid_bytes.decode()
+        try:
+            _, msgs_data = mail_conn.fetch(uid_bytes, "(RFC822)")
+            raw = next((x[1] for x in msgs_data if isinstance(x, tuple)), None)
+            if raw is None:
+                with self._cache_lock:
+                    self._cache[uid_str] = None
+                return None
+            msg = email.message_from_bytes(raw)
+            subject = _decode_header_str(msg.get("Subject", ""))
+            email_date = date.today()
+            try:
+                from email.utils import parsedate_to_datetime
+                date_header = msg.get("Date", "")
+                if date_header:
+                    email_date = parsedate_to_datetime(date_header).date()
+            except Exception:
+                pass
+            if not _is_email_pix(subject):
+                with self._cache_lock:
+                    self._cache[uid_str] = None
+                return None
+            content = f"{subject} {_get_body(msg)}"
+            entry = {
+                "pagador": _extrair_pagador(content),
+                "pagador_norm": _normalizar(_extrair_pagador(content)),
+                "valor": _extrair_valor(content),
+                "banco": _detectar_banco(content),
+                "uid": uid_str,
+                "data": email_date,
+            }
+            with self._cache_lock:
+                self._cache[uid_str] = entry
+            return entry
+        except Exception as e:
+            print(f"[MONITOR ERR] {type(e).__name__}: {e}", flush=True)
+            return None
+
     def _monitor_loop(self):
-        """Polling a cada 3s para detectar emails novos."""
+        """Polling a cada 3s para detectar emails novos. Usa lock para não conflitar com buscar()."""
         time.sleep(5)
         while not self._stop:
             try:
-                if not self._monitor_connected or self._monitor_mail is None:
-                    if not self._conectar_monitor():
-                        time.sleep(10)
-                        continue
-                hoje = date.today().strftime("%d-%b-%Y")
-                try:
-                    self._monitor_mail.select("INBOX")
-                    _, data = self._monitor_mail.search(None, f'(SINCE "{hoje}")')
-                except Exception as e:
-                    print(f"[MONITOR] Erro search: {e}", flush=True)
-                    self._monitor_connected = False
-                    time.sleep(5)
-                    continue
-                uids_all = data[0].split() if data and data[0] else []
-                with self._cache_lock:
-                    novos = [u for u in uids_all if u.decode() not in self._cache]
-                for uid_bytes in novos:
-                    uid_str = uid_bytes.decode()
-                    try:
-                        _, msgs_data = self._monitor_mail.fetch(uid_bytes, "(RFC822)")
-                    except Exception:
-                        self._monitor_connected = False
-                        break
-                    try:
-                        raw = next((x[1] for x in msgs_data if isinstance(x, tuple)), None)
-                        if raw is None:
-                            with self._cache_lock:
-                                self._cache[uid_str] = None
+                with self._search_lock:
+                    if not self._monitor_connected or self._monitor_mail is None:
+                        if not self._conectar_monitor():
+                            time.sleep(10)
                             continue
-                        msg = email.message_from_bytes(raw)
-                        subject = _decode_header_str(msg.get("Subject", ""))
-                        # Extrai data do header do email
-                        email_date = date.today()
-                        try:
-                            from email.utils import parsedate_to_datetime
-                            date_header = msg.get("Date", "")
-                            if date_header:
-                                email_date = parsedate_to_datetime(date_header).date()
-                        except Exception:
-                            pass
-                        if not _is_email_pix(subject):
-                            print(f"[IGNORADO] Assunto: '{subject}'", flush=True)
-                            with self._cache_lock:
-                                self._cache[uid_str] = None
-                            continue
-                        content = f"{subject} {_get_body(msg)}"
-                        pagador = _extrair_pagador(content)
-                        valor = _extrair_valor(content)
-                        banco = _detectar_banco(content)
-                        entry = {
-                            "pagador": pagador,
-                            "pagador_norm": _normalizar(pagador),
-                            "valor": valor,
-                            "banco": banco,
-                            "uid": uid_str,
-                            "data": email_date,
-                        }
-                        with self._cache_lock:
-                            self._cache[uid_str] = entry
-                        print(f"\U0001f4ec NOVO PIX | {pagador} | R${valor} | {banco}", flush=True)
-                        if self._on_novo_pix:
-                            try:
-                                self._on_novo_pix(entry)
-                            except Exception as _cb_err:
-                                print(f"[CALLBACK ERR] {_cb_err}", flush=True)
+                    hoje = date.today().strftime("%d-%b-%Y")
+                    try:
+                        self._monitor_mail.select("INBOX")
+                        _, data = self._monitor_mail.search(None, f'(SINCE "{hoje}")')
                     except Exception as e:
-                        print(f"[MONITOR ERR] {type(e).__name__}: {e}", flush=True)
+                        print(f"[MONITOR] Erro search: {e}", flush=True)
+                        self._monitor_connected = False
+                        time.sleep(5)
+                        continue
+                    uids_all = data[0].split() if data and data[0] else []
+                    with self._cache_lock:
+                        novos = [u for u in uids_all if u.decode() not in self._cache]
+                    for uid_bytes in novos:
+                        entry = self._processar_uid(uid_bytes, self._monitor_mail)
+                        if entry:
+                            print(f"\U0001f4ec NOVO PIX | {entry['pagador']} | R${entry['valor']} | {entry['banco']}", flush=True)
+                            if self._on_novo_pix:
+                                try:
+                                    self._on_novo_pix(entry)
+                                except Exception as _cb_err:
+                                    print(f"[CALLBACK ERR] {_cb_err}", flush=True)
             except Exception as e:
                 print(f"[MONITOR LOOP ERR] {type(e).__name__}: {e}", flush=True)
                 self._monitor_connected = False
@@ -344,58 +343,21 @@ class PersistentIMAPConnection:
         if res:
             return res
 
-        # 2) fallback rápido: força refresh da INBOX uma vez para reduzir atraso entre contas
-        # sem criar conexão temporária nova
+        # 2) fallback: força refresh usando a conexão de search (separada do monitor)
         try:
-            if self._monitor_connected and self._monitor_mail is not None:
-                hoje = date.today().strftime("%d-%b-%Y")
-                self._monitor_mail.select("INBOX")
-                _, data = self._monitor_mail.search(None, f'(SINCE "{hoje}")')
-                uids_all = data[0].split() if data and data[0] else []
-                with self._cache_lock:
-                    faltantes = [u for u in uids_all if u.decode() not in self._cache]
-                for uid_bytes in faltantes[:50]:
-                    uid_str = uid_bytes.decode()
-                    try:
-                        _, msgs_data = self._monitor_mail.fetch(uid_bytes, "(RFC822)")
-                        raw = next((x[1] for x in msgs_data if isinstance(x, tuple)), None)
-                        if raw is None:
-                            with self._cache_lock:
-                                self._cache[uid_str] = None
-                            continue
-                        msg = email.message_from_bytes(raw)
-                        subject = _decode_header_str(msg.get("Subject", ""))
-                        email_date = date.today()
-                        try:
-                            from email.utils import parsedate_to_datetime
-                            date_header = msg.get("Date", "")
-                            if date_header:
-                                email_date = parsedate_to_datetime(date_header).date()
-                        except Exception:
-                            pass
-                        if not _is_email_pix(subject):
-                            with self._cache_lock:
-                                self._cache[uid_str] = None
-                            continue
-                        content = f"{subject} {_get_body(msg)}"
-                        pagador = _extrair_pagador(content)
-                        valor = _extrair_valor(content)
-                        banco = _detectar_banco(content)
-                        entry = {
-                            "pagador": pagador,
-                            "pagador_norm": _normalizar(pagador),
-                            "valor": valor,
-                            "banco": banco,
-                            "uid": uid_str,
-                            "data": email_date,
-                        }
-                        with self._cache_lock:
-                            self._cache[uid_str] = entry
-                    except Exception:
-                        # mantém robusto para não abortar refresh inteiro por 1 email ruim
-                        continue
+            with self._search_lock:
+                if self._garantir_search():
+                    hoje = date.today().strftime("%d-%b-%Y")
+                    self._search_mail.select("INBOX")
+                    _, data = self._search_mail.search(None, f'(SINCE "{hoje}")')
+                    uids_all = data[0].split() if data and data[0] else []
+                    with self._cache_lock:
+                        faltantes = [u for u in uids_all if u.decode() not in self._cache]
+                    for uid_bytes in faltantes[:50]:
+                        self._processar_uid(uid_bytes, self._search_mail)
         except Exception as e:
-            log(f"\u26a0\ufe0f Refresh rápido IMAP falhou: {type(e).__name__}: {str(e)[:80]}")
+            log(f"\u26a0\ufe0f Refresh IMAP falhou: {type(e).__name__}: {str(e)[:80]}")
+            self._search_connected = False
 
         # 3) tenta cache novamente após refresh
         res = self._buscar_no_cache(nome, log_fn)
