@@ -422,13 +422,22 @@ def run_selfbot(config: dict, user_id: int):
             with open(lock_path, 'r') as f:
                 pid = f.read().strip()
             if pid:
-                import psutil
                 try:
+                    import psutil
                     if psutil.pid_exists(int(pid)):
-                        log_msg(user_id, f"⚠️ Instância já rodando (PID {pid}). Abortando.")
-                        return
-                except Exception:
+                        # Verifica se o processo é realmente um selfbot (não reuso de PID)
+                        proc = psutil.Process(int(pid))
+                        cmdline = ' '.join(proc.cmdline()).lower()
+                        if 'python' in cmdline:
+                            log_msg(user_id, f"⚠️ Instância já rodando (PID {pid}). Abortando.")
+                            return
+                except (ValueError, psutil.NoSuchProcess, psutil.AccessDenied, Exception):
                     pass
+            # Lock inválido ou processo morto — remove e continua
+            try:
+                os.remove(lock_path)
+            except Exception:
+                pass
         with open(lock_path, 'w') as f:
             f.write(str(os.getpid()))
     except Exception:
