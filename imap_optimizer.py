@@ -285,6 +285,8 @@ class PersistentIMAPConnection:
         time.sleep(5)
         while not self._stop:
             try:
+                # Busca UIDs dentro do lock (operacao rapida)
+                novos = []
                 with self._monitor_lock:
                     if not self._monitor_connected or self._monitor_mail is None:
                         if not self._conectar_monitor():
@@ -294,24 +296,28 @@ class PersistentIMAPConnection:
                     try:
                         self._monitor_mail.select("INBOX")
                         _, data = self._monitor_mail.search(None, f'(SINCE "{hoje}")')
+                        uids_all = data[0].split() if data and data[0] else []
+                        with self._cache_lock:
+                            novos = [u for u in uids_all if u.decode() not in self._cache]
                     except Exception as e:
                         print(f"[MONITOR] Erro search: {e}", flush=True)
                         self._monitor_connected = False
                         time.sleep(5)
                         continue
-                    uids_all = data[0].split() if data and data[0] else []
-                    with self._cache_lock:
-                        novos = [u for u in uids_all if u.decode() not in self._cache]
-                    for uid_bytes in novos:
+
+                # Processa cada UID novo FORA do lock para nao bloquear outros usuarios
+                for uid_bytes in novos:
+                    with self._monitor_lock:
+                        if not self._monitor_connected:
+                            break
                         entry = self._processar_uid(uid_bytes, self._monitor_mail)
-                        if entry:
-                            # Escreve direto no log do usuário — sem passar pelo Discord
-                            _escrever_log_usuario(self.user_id, entry)
-                            if self._on_novo_pix:
-                                try:
-                                    self._on_novo_pix(entry)
-                                except Exception as _cb_err:
-                                    print(f"[CALLBACK ERR] {_cb_err}", flush=True)
+                    if entry:
+                        _escrever_log_usuario(self.user_id, entry)
+                        if self._on_novo_pix:
+                            try:
+                                self._on_novo_pix(entry)
+                            except Exception as _cb_err:
+                                print(f"[CALLBACK ERR] {_cb_err}", flush=True)
             except Exception as e:
                 print(f"[MONITOR LOOP ERR] {type(e).__name__}: {e}", flush=True)
                 self._monitor_connected = False
