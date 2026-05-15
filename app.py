@@ -358,7 +358,7 @@ def cliente_salvar_config():
 @login_required
 def cliente_start_bot(user_id: int):
     if session["cliente_id"] != user_id:
-        return jsonify({"erro": "Sem permissão"}), 403
+        return redirect(url_for("painel_cliente"))
     
     # Verifica limite de processos
     if len(processos) >= MAX_PROCESSOS:
@@ -411,7 +411,7 @@ def cliente_start_bot(user_id: int):
 def cliente_stop_bot(user_id: int):
     from bot_logic import parar_selfbot
     if session["cliente_id"] != user_id:
-        return jsonify({"erro": "Sem permissao"}), 403
+        return redirect(url_for("painel_cliente"))
     parar_selfbot(user_id)
     p = processos.pop(user_id, None)
     if p and p.is_alive():
@@ -428,7 +428,7 @@ def cliente_stop_bot(user_id: int):
 def cliente_restart_bot(user_id: int):
     from bot_logic import parar_selfbot
     if session["cliente_id"] != user_id:
-        return jsonify({"erro": "Sem permissao"}), 403
+        return redirect(url_for("painel_cliente"))
     parar_selfbot(user_id)
     p = processos.pop(user_id, None)
     if p and p.is_alive():
@@ -564,7 +564,7 @@ def cliente_stream_logs(user_id: int):
     import time
     from flask import Response
     if session["cliente_id"] != user_id:
-        return jsonify({"erro": "Sem permissao"}), 403
+        return Response("data: Sem permissao\n\n", mimetype="text/event-stream")
     log_path = os.path.join(os.path.dirname(__file__), "logs", f"user_{user_id}.log")
 
     def generate():
