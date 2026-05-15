@@ -32,6 +32,7 @@ def _escrever_log_usuario(user_id, entry):
         pass
 
 
+BANCOS_PATTERNS = {
     "Nubank":          [r"nubank"],
     "PicPay":          [r"picpay"],
     "Itau":            [r"ita[u\u00fa]"],
