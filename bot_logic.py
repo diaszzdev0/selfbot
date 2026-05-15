@@ -618,8 +618,7 @@ def run_selfbot(config: dict, user_id: int):
             except discord.HTTPException as e:
                 if e.status == 429:
                     await asyncio.sleep(e.retry_after if hasattr(e, 'retry_after') else 5)
-                elif e.code == 200000:
-                    # servidor bloqueia mencoes, envia sem reply
+                elif e.code == 200000 or e.code == 50035:
                     return await message.channel.send(texto, allowed_mentions=discord.AllowedMentions.none(), **kwargs)
                 else:
                     raise
