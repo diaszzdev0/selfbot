@@ -15,10 +15,14 @@ BANCOS = {
     "Itau":         [r"ita[u\u00fa]"],
     "Bradesco":     [r"bradesco"],
     "Santander":    [r"santander"],
-    "Inter":        [r"banco\s*inter"],
-    "Caixa":        [r"caixa"],
+    "Inter":        [r"banco\s*inter", r"\binter\b"],
+    "Caixa":        [r"caixa\s*econ", r"cef\b"],
     "Mercado Pago": [r"mercado\s*pago"],
     "PicPay":       [r"picpay"],
+    "C6 Bank":      [r"c6\s*bank"],
+    "Sicoob":       [r"sicoob"],
+    "Sicredi":      [r"sicredi"],
+    "BTG":          [r"btg\s*pactual"],
 }
 
 NOME_PADROES = [
@@ -31,6 +35,21 @@ NOME_PADROES = [
     r"de\s*[:\-]?\s*([A-Z][a-z\u00C0-\u00FF]+(?:\s+[A-Z][a-z\u00C0-\u00FF]+)+)",
     r"nome\s*[:\-]?\s*([A-Za-z\u00C0-\u00FF][A-Za-z\u00C0-\u00FF\s]{4,50})",
 ]
+
+# Palavras-chave que DEVEM aparecer em um comprovante legítimo
+PALAVRAS_COMPROVANTE = [
+    r"\bpix\b", r"transfer[eê]ncia", r"comprovante", r"recibo",
+    r"pagamento\s+(?:realizado|efetuado|confirmado|aprovado)",
+    r"transa[cç][aã]o", r"opera[cç][aã]o", r"autenti",
+    r"valor\s+(?:da\s+)?transfer[eê]ncia", r"valor\s+(?:do\s+)?pix",
+    r"chave\s+pix", r"\bpago\b", r"enviado\s+com\s+sucesso",
+    r"recebido\s+com\s+sucesso", r"id\s+da\s+transa",
+    r"c[oó]digo\s+(?:de\s+)?autentica",
+]
+
+# Score mínimo para aprovar comprovante
+SCORE_MINIMO = 3
+VALOR_MINIMO = 1.0  # R$ 1,00
 
 VALIDACOES = {
     "Nubank": {"campos": [r"nubank", r"R\$", r"\d{2}/\d{2}/\d{4}|\d{2}\s+de\s+\w+"]},
@@ -183,6 +202,59 @@ def _validar_data(text):
     return True, None
 
 
+def _calcular_score_comprovante(text: str) -> int:
+    """Calcula score de confiança do comprovante (0-10)."""
+    score = 0
+    tl = text.lower()
+
+    # +2 se tem palavra-chave de comprovante
+    kw_count = sum(1 for p in PALAVRAS_COMPROVANTE if re.search(p, tl))
+    if kw_count >= 2:
+        score += 2
+    elif kw_count == 1:
+        score += 1
+
+    # +2 se tem valor monetário válido
+    if re.search(r'R\$\s*\d+[.,]\d{2}', text):
+        score += 2
+
+    # +1 se tem data
+    if re.search(r'\d{2}/\d{2}/\d{4}|\d{1,2}\s+de\s+\w+\s+de\s+\d{4}', tl):
+        score += 1
+
+    # +1 se tem hora
+    if re.search(r'\d{2}:\d{2}(?::\d{2})?', tl):
+        score += 1
+
+    # +1 se tem banco reconhecido
+    banco = _detectar_banco(text)
+    if banco != "Comprovante":
+        score += 1
+
+    # +1 se tem CPF/CNPJ (parcial ou mascarado)
+    if re.search(r'\d{3}[.*]{1,3}\d{3}[.*]{1,3}\d{3}[-.*]{1,2}\d{2}|\*{3}\.\d{3}\.\d{3}', tl):
+        score += 1
+
+    # +1 se tem código de autenticação/ID de transação
+    if re.search(r'(?:e\d{32}|[a-f0-9]{20,}|\d{20,})', tl):
+        score += 1
+
+    return score
+
+
+def _validar_valor_minimo(text: str) -> tuple:
+    """Verifica se o valor é maior que o mínimo permitido."""
+    m = re.search(r'R\$\s*([0-9]+(?:[.,][0-9]{1,2})?)', text, re.IGNORECASE)
+    if m:
+        try:
+            val = float(m.group(1).replace(',', '.'))
+            if val < VALOR_MINIMO:
+                return False, f"Valor R${val:.2f} abaixo do mínimo permitido"
+        except Exception:
+            pass
+    return True, None
+
+
 def _validar_formato(text, banco):
     if banco not in VALIDACOES:
         return True, None
@@ -207,11 +279,6 @@ def _parece_nome_pessoa(nome: str) -> bool:
     # Pelo menos 2 palavras com 3+ letras
     longas = [p for p in palavras if len(p) >= 3]
     return len(longas) >= 2
-
-
-    ignorar = {'de', 'da', 'do', 'dos', 'das', 'e'}
-    partes = [p for p in nome_cmd.split() if p not in ignorar and len(p) >= 3]
-    return all(p in texto_norm for p in partes)
 
 
 def ler_comprovante_url(image_url, nome=""):
@@ -244,8 +311,19 @@ def ler_comprovante_url(image_url, nome=""):
 
         logger.info(f"OCR texto: {texto[:300]}")
 
+        # Validação de score mínimo — rejeita imagens que não parecem comprovante
+        score = _calcular_score_comprovante(texto)
+        logger.info(f"OCR score: {score}/{SCORE_MINIMO}")
+        if score < SCORE_MINIMO:
+            return {"encontrado": False, "fake": True, "erro": f"\u26a0\ufe0f Imagem n\u00e3o parece ser um comprovante v\u00e1lido (score: {score}/{SCORE_MINIMO})"}
+
         if valor == "N/A":
             return {"encontrado": False, "erro": "Valor n\u00e3o encontrado no comprovante"}
+
+        # Validação de valor mínimo
+        valor_ok, motivo_valor = _validar_valor_minimo(texto)
+        if not valor_ok:
+            return {"encontrado": False, "fake": True, "erro": f"\u26a0\ufe0f {motivo_valor}"}
 
         if pagador == "Desconhecido" or not _parece_nome_pessoa(pagador):
             return {"encontrado": False, "erro": "Nome do pagador n\u00e3o identificado no comprovante"}
