@@ -835,7 +835,30 @@ def run_selfbot(config: dict, user_id: int):
                 threads_em_processamento.discard(thread.id)
 
 
-    _monitor_iniciado = False
+    async def _fetch_active_threads():
+        """Busca threads ativas via HTTP direto (discord.py-self nao tem guild.active_threads)."""
+        guild = client.get_guild(SERVER_ID)
+        if not guild:
+            return []
+        try:
+            # Endpoint oficial: GET /guilds/{guild.id}/threads/active
+            data = await client.http.request(
+                discord.http.Route('GET', '/guilds/{guild_id}/threads/active', guild_id=SERVER_ID)
+            )
+            threads = []
+            for t in data.get('threads', []):
+                thread = guild.get_channel(int(t['id']))
+                if thread is None:
+                    # Cria objeto Thread a partir dos dados brutos
+                    try:
+                        thread = discord.Thread(guild=guild, state=client._connection, data=t)
+                    except Exception:
+                        continue
+                threads.append(thread)
+            return threads
+        except Exception as e:
+            log_msg(user_id, f"⚠️ _fetch_active_threads falhou: {e}")
+            return []
 
     @client.event
     async def on_disconnect():
@@ -1050,7 +1073,7 @@ def run_selfbot(config: dict, user_id: int):
             if not guild:
                 return
             try:
-                active = await guild.active_threads()
+                active = await _fetch_active_threads()
                 log_msg(user_id, f"📡 active_threads: {len(active)} threads")
                 for thread in active:
                     if thread.id not in threads_com_mensagem:
@@ -1077,7 +1100,7 @@ def run_selfbot(config: dict, user_id: int):
                     # A cada 60s faz fetch ativo das threads via API
                     if (agora - ultimo_fetch).total_seconds() > 60:
                         try:
-                            active = await guild.active_threads()
+                            active = await _fetch_active_threads()
                             for thread in active:
                                 if thread.id not in threads_com_mensagem:
                                     asyncio.ensure_future(_enviar_em_thread(thread))
