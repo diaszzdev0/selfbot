@@ -542,8 +542,12 @@ def run_selfbot(config: dict, user_id: int):
             if parent is None:
                 try:
                     parent = await guild.fetch_channel(parent_id)
-                except Exception:
-                    return parent_id, "", None
+                except Exception as e:
+                    log_msg(user_id, f"⚠️ fetch_channel({parent_id}) falhou: {e}")
+                    # Tenta resolver pelo atributo parent da própria thread
+                    parent = getattr(channel, 'parent', None)
+                    if parent is None:
+                        return parent_id, "", None
         else:
             parent = channel
 
@@ -557,12 +561,15 @@ def run_selfbot(config: dict, user_id: int):
                 cat_ch = await guild.fetch_channel(cat_id)
             except Exception:
                 cat_ch = None
-
-        # Se ainda nao achou no cache, tenta via atributo .category do parent
         if cat_ch is None:
             cat_ch = getattr(parent, 'category', None)
 
         cat_name = _normalizar_cat(cat_ch.name) if cat_ch else ""
+
+        # Se cat_name ainda vazio, tenta resolver pelos IDs das categorias extras conhecidas
+        if not cat_name and cat_id and CATEGORIAS_EXTRA_IDS and cat_id in CATEGORIAS_EXTRA_IDS:
+            cat_name = "_id_match_"  # marcador para forçar match por ID
+
         return cat_id, cat_name, parent
 
     def _canal_monitorado(channel) -> bool:
@@ -872,7 +879,12 @@ def run_selfbot(config: dict, user_id: int):
                 log_msg(user_id, "📂 Categoria principal: não configurada (usando apenas extras)")
             for nome_extra in CATEGORIAS_EXTRA:
                 encontrada = next((c for c in guild.channels if _normalizar(c.name) == nome_extra), None)
-                log_msg(user_id, f"📂 Extra '{nome_extra}': {'✅ ' + encontrada.name if encontrada else '❌ NAO ENCONTRADA'}")
+                if encontrada:
+                    # Adiciona o ID da categoria encontrada por nome ao set de IDs extras
+                    CATEGORIAS_EXTRA_IDS.add(encontrada.id)
+                    log_msg(user_id, f"📂 Extra '{nome_extra}': ✅ {encontrada.name} (ID adicionado: {encontrada.id})")
+                else:
+                    log_msg(user_id, f"📂 Extra '{nome_extra}': ❌ NAO ENCONTRADA")
         else:
             log_msg(user_id, f"❌ Servidor {SERVER_ID} nao encontrado.")
 
@@ -1028,15 +1040,15 @@ def run_selfbot(config: dict, user_id: int):
             guild = client.get_guild(SERVER_ID)
             if not guild:
                 return
-            # Busca threads ativas via API (não depende do cache local)
             try:
                 active = await guild.active_threads()
+                log_msg(user_id, f"📡 active_threads: {len(active)} threads")
                 for thread in active:
                     if thread.id not in threads_com_mensagem:
                         asyncio.ensure_future(_enviar_em_thread(thread))
                 log_msg(user_id, f"✅ Verificação inicial: {len(active)} threads ativas")
-            except Exception:
-                # Fallback para cache local
+            except Exception as e:
+                log_msg(user_id, f"⚠️ active_threads falhou: {e} — usando fallback")
                 for canal in guild.channels:
                     for thread in getattr(canal, "threads", []):
                         if thread.id not in threads_com_mensagem:
