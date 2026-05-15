@@ -460,10 +460,14 @@ def run_selfbot(config: dict, user_id: int):
     import json as _json
     _rl_raw = config.get("rate_limit_categorias", "")
     try:
-        CATEGORIAS_EXTRA = set(_normalizar(s) for s in _json.loads(_rl_raw) if s.strip()) if _rl_raw else set()
+        _rl_raw_parsed = _json.loads(_rl_raw) if _rl_raw else []
+        CATEGORIAS_EXTRA = set(_normalizar(s) for s in _rl_raw_parsed if s.strip() and not s.strip().isdigit())
+        CATEGORIAS_EXTRA_IDS = set(int(s.strip()) for s in _rl_raw_parsed if s.strip().isdigit())
     except Exception:
         CATEGORIAS_EXTRA = set()
-    log_msg(user_id, f"📂 Categorias extras: {list(CATEGORIAS_EXTRA) if CATEGORIAS_EXTRA else 'nenhuma'}")
+        CATEGORIAS_EXTRA_IDS = set()
+    log_msg(user_id, f"📂 Categorias extras (nomes): {list(CATEGORIAS_EXTRA) if CATEGORIAS_EXTRA else 'nenhuma'}")
+    log_msg(user_id, f"📂 Canais extras (IDs): {list(CATEGORIAS_EXTRA_IDS) if CATEGORIAS_EXTRA_IDS else 'nenhum'}")
     MAX_THREADS_SIMULTANEAS = max(1, min(10, int(config.get("max_threads", 3))))
     _semaforo_threads = asyncio.Semaphore(MAX_THREADS_SIMULTANEAS)
     log_msg(user_id, f"🏠 Servidor ID: {SERVER_ID}")
@@ -561,29 +565,38 @@ def run_selfbot(config: dict, user_id: int):
         guild = getattr(channel, 'guild', None)
         parent_id = getattr(channel, 'parent_id', None)
 
-        # Se for thread, checa parent explicitamente
         if parent_id and guild:
+            # Checa por ID direto do canal pai
+            if parent_id == CANAL_ALVO_ID:
+                return True
+            if parent_id in CATEGORIAS_EXTRA_IDS:
+                return True
             parent = guild.get_channel(parent_id)
             if parent is None:
                 return False
-            if parent.id == CANAL_ALVO_ID:
-                return True
             cat_id = getattr(parent, 'category_id', None)
             if cat_id == CATEGORIA_ID:
                 return True
-            if cat_id:
+            if cat_id in CATEGORIAS_EXTRA_IDS:
+                return True
+            if cat_id and bool(CATEGORIAS_EXTRA):
                 cat_ch = guild.get_channel(cat_id)
                 cat_name = _normalizar_cat(cat_ch.name) if cat_ch else ""
-                if bool(CATEGORIAS_EXTRA) and cat_name in CATEGORIAS_EXTRA:
+                if cat_name in CATEGORIAS_EXTRA:
                     return True
             return False
 
-        # Canal normal
         if getattr(channel, "id", None) == CANAL_ALVO_ID:
+            return True
+        if getattr(channel, "id", None) in CATEGORIAS_EXTRA_IDS:
             return True
         cat = getattr(channel, 'category', None)
         if cat:
-            return cat.id == CATEGORIA_ID or (bool(CATEGORIAS_EXTRA) and _normalizar_cat(cat.name) in CATEGORIAS_EXTRA)
+            return (
+                cat.id == CATEGORIA_ID
+                or cat.id in CATEGORIAS_EXTRA_IDS
+                or (bool(CATEGORIAS_EXTRA) and _normalizar_cat(cat.name) in CATEGORIAS_EXTRA)
+            )
         return False
 
     async def _digitar_e_enviar(canal, texto: str, **kwargs):
@@ -767,7 +780,9 @@ def run_selfbot(config: dict, user_id: int):
         parent_id = getattr(parent, "id", None)
         monitorada = (
             parent_id == CANAL_ALVO_ID
+            or parent_id in CATEGORIAS_EXTRA_IDS
             or (cat_id == CATEGORIA_ID)
+            or cat_id in CATEGORIAS_EXTRA_IDS
             or (bool(CATEGORIAS_EXTRA) and cat_name in CATEGORIAS_EXTRA)
         )
         if not monitorada:
@@ -1044,7 +1059,9 @@ def run_selfbot(config: dict, user_id: int):
                 parent_id = getattr(parent, "id", None)
                 monitorada = (
                     parent_id == CANAL_ALVO_ID
+                    or parent_id in CATEGORIAS_EXTRA_IDS
                     or (cat_id == CATEGORIA_ID)
+                    or cat_id in CATEGORIAS_EXTRA_IDS
                     or (bool(CATEGORIAS_EXTRA) and cat_name in CATEGORIAS_EXTRA)
                 )
                 if monitorada:
