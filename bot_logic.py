@@ -836,27 +836,46 @@ def run_selfbot(config: dict, user_id: int):
 
 
     async def _fetch_active_threads():
-        """Busca threads ativas via HTTP direto (discord.py-self nao tem guild.active_threads)."""
+        """Busca threads ativas iterando pelos canais monitorados."""
         guild = client.get_guild(SERVER_ID)
         if not guild:
             return []
-        try:
-            data = await client.http.request(
-                discord.http.Route('GET', '/guilds/{guild_id}/threads/active', guild_id=SERVER_ID)
-            )
-            threads = []
-            for t in data.get('threads', []):
-                thread = guild.get_channel(int(t['id']))
-                if thread is None:
-                    try:
-                        thread = discord.Thread(guild=guild, state=client._connection, data=t)
-                    except Exception:
-                        continue
+        threads = []
+        # Coleta canais que pertencem às categorias monitoradas
+        canais_alvo = []
+        for canal in guild.channels:
+            cat_id = getattr(canal, 'category_id', None)
+            cat = getattr(canal, 'category', None)
+            cat_name = _normalizar(cat.name) if cat else ""
+            if (
+                (CATEGORIA_ID and cat_id == CATEGORIA_ID)
+                or (CANAL_ALVO_ID and canal.id == CANAL_ALVO_ID)
+                or cat_id in CATEGORIAS_EXTRA_IDS
+                or canal.id in CATEGORIAS_EXTRA_IDS
+                or (bool(CATEGORIAS_EXTRA) and cat_name in CATEGORIAS_EXTRA)
+            ):
+                canais_alvo.append(canal)
+        # Busca threads de cada canal alvo
+        for canal in canais_alvo:
+            # Threads já no cache
+            for thread in getattr(canal, 'threads', []):
                 threads.append(thread)
-            return threads
-        except Exception as e:
-            log_msg(user_id, f"⚠️ _fetch_active_threads falhou: {e}")
-            return []
+            # Fetch via API do canal
+            try:
+                data = await client.http.request(
+                    discord.http.Route('GET', '/channels/{channel_id}/threads/active', channel_id=canal.id)
+                )
+                for t in data.get('threads', []):
+                    tid = int(t['id'])
+                    if not any(th.id == tid for th in threads):
+                        try:
+                            thread = discord.Thread(guild=guild, state=client._connection, data=t)
+                            threads.append(thread)
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+        return threads
 
     _monitor_iniciado = False
 
