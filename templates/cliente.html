@@ -438,76 +438,64 @@
                   <div class="d-flex flex-column gap-2 mt-2">
 
                     <!-- Usar comando (prefixo) -->
-                    <div id="btn-prefixo" onclick="toggleOpcao('prefixo')" style="cursor:pointer;padding:12px 16px;border-radius:10px;border:1px solid;display:flex;align-items:center;justify-content:space-between;
-                      {% if cfg and cfg.prefixo_sala %}background:rgba(124,58,237,.12);border-color:rgba(124,58,237,.4){% else %}background:rgba(255,255,255,.03);border-color:rgba(255,255,255,.08){% endif %}">
+                    <div id="btn-prefixo" onclick="toggleOpcao('prefixo')" style="cursor:pointer;padding:12px 16px;border-radius:10px;border:1px solid;display:flex;align-items:center;justify-content:space-between;background:rgba(255,255,255,.03);border-color:rgba(255,255,255,.08)">
                       <div>
-                        <div style="font-size:.85rem;font-weight:600;color:{% if cfg and cfg.prefixo_sala %}#a78bfa{% else %}#6b7280{% endif %}">
+                        <div style="font-size:.85rem;font-weight:600;color:#6b7280">
                           <i class="bi bi-terminal me-2"></i>Usar comando no envio
                         </div>
                         <div style="font-size:.72rem;color:#4b5563;margin-top:3px">Ex: <code style="color:#60a5fa">.rv gn 123456 22</code></div>
                       </div>
-                      <div id="dot-prefixo" style="width:36px;height:20px;border-radius:99px;transition:all .2s;position:relative;
-                        {% if cfg and cfg.prefixo_sala %}background:#7c3aed{% else %}background:rgba(255,255,255,.1){% endif %}">
-                        <div style="position:absolute;top:3px;width:14px;height:14px;border-radius:50%;background:#fff;transition:all .2s;
-                          {% if cfg and cfg.prefixo_sala %}left:19px{% else %}left:3px{% endif %}"></div>
+                      <div id="dot-prefixo" style="width:36px;height:20px;border-radius:99px;transition:all .2s;position:relative;background:rgba(255,255,255,.1)">
+                        <div style="position:absolute;top:3px;left:3px;width:14px;height:14px;border-radius:50%;background:#fff;transition:all .2s"></div>
                       </div>
                     </div>
-                    <input type="hidden" name="usar_prefixo" id="input-usar-prefixo" value="{% if cfg and cfg.prefixo_sala %}on{% endif %}">
-                    <div id="campoPrefixo" style="display:{{ 'block' if cfg and cfg.prefixo_sala else 'none' }};padding:0 4px">
+                    <input type="hidden" name="usar_prefixo" id="input-usar-prefixo" value="">
+                    <div id="campoPrefixo" style="display:none;padding:0 4px">
                       <input name="prefixo_sala" class="form-control font-monospace mt-1"
                         placeholder="ex: .rv gn"
                         value="{{ cfg.prefixo_sala if cfg and cfg.prefixo_sala else '' }}">
                     </div>
 
                     <!-- Envio automático -->
-                    <div id="btn-auto" onclick="toggleOpcao('auto')" style="cursor:pointer;padding:12px 16px;border-radius:10px;border:1px solid;display:flex;align-items:center;justify-content:space-between;
-                      {% if not cfg or cfg.auto_sala != '0' %}background:rgba(16,185,129,.08);border-color:rgba(16,185,129,.3){% else %}background:rgba(255,255,255,.03);border-color:rgba(255,255,255,.08){% endif %}">
+                    <div id="btn-auto" onclick="toggleOpcao('auto')" style="cursor:pointer;padding:12px 16px;border-radius:10px;border:1px solid;display:flex;align-items:center;justify-content:space-between;background:rgba(255,255,255,.03);border-color:rgba(255,255,255,.08)">
                       <div>
-                        <div style="font-size:.85rem;font-weight:600;color:{% if not cfg or cfg.auto_sala != '0' %}#10b981{% else %}#6b7280{% endif %}">
+                        <div style="font-size:.85rem;font-weight:600;color:#6b7280">
                           <i class="bi bi-lightning-charge me-2"></i>Envio automático de sala
                         </div>
                         <div style="font-size:.72rem;color:#4b5563;margin-top:3px">Envia sala automaticamente após 2 pagamentos confirmados</div>
                       </div>
-                      <div id="dot-auto" style="width:36px;height:20px;border-radius:99px;transition:all .2s;position:relative;
-                        {% if not cfg or cfg.auto_sala != '0' %}background:#10b981{% else %}background:rgba(255,255,255,.1){% endif %}">
-                        <div style="position:absolute;top:3px;width:14px;height:14px;border-radius:50%;background:#fff;transition:all .2s;
-                          {% if not cfg or cfg.auto_sala != '0' %}left:19px{% else %}left:3px{% endif %}"></div>
+                      <div id="dot-auto" style="width:36px;height:20px;border-radius:99px;transition:all .2s;position:relative;background:rgba(255,255,255,.1)">
+                        <div style="position:absolute;top:3px;left:3px;width:14px;height:14px;border-radius:50%;background:#fff;transition:all .2s"></div>
                       </div>
                     </div>
-                    <input type="hidden" name="auto_sala" id="input-auto-sala" value="{% if not cfg or cfg.auto_sala != '0' %}on{% endif %}">
+                    <input type="hidden" name="auto_sala" id="input-auto-sala" value="">
 
                     <!-- ID e senha juntos -->
-                    <div id="btn-junto" onclick="toggleOpcao('junto')" style="cursor:pointer;padding:12px 16px;border-radius:10px;border:1px solid;display:flex;align-items:center;justify-content:space-between;
-                      {% if not cfg or not cfg.formato_sala or cfg.formato_sala == 'junto' %}background:rgba(251,191,36,.08);border-color:rgba(251,191,36,.3){% else %}background:rgba(255,255,255,.03);border-color:rgba(255,255,255,.08){% endif %}">
+                    <div id="btn-junto" onclick="toggleOpcao('junto')" style="cursor:pointer;padding:12px 16px;border-radius:10px;border:1px solid;display:flex;align-items:center;justify-content:space-between;background:rgba(255,255,255,.03);border-color:rgba(255,255,255,.08)">
                       <div>
-                        <div style="font-size:.85rem;font-weight:600;color:{% if not cfg or not cfg.formato_sala or cfg.formato_sala == 'junto' %}#fbbf24{% else %}#6b7280{% endif %}">
+                        <div style="font-size:.85rem;font-weight:600;color:#6b7280">
                           <i class="bi bi-union me-2"></i>Enviar ID e senha juntos
                         </div>
                         <div style="font-size:.72rem;color:#4b5563;margin-top:3px">Ex: <code style="color:#60a5fa">123456789 22</code></div>
                       </div>
-                      <div id="dot-junto" style="width:36px;height:20px;border-radius:99px;transition:all .2s;position:relative;
-                        {% if not cfg or not cfg.formato_sala or cfg.formato_sala == 'junto' %}background:#f59e0b{% else %}background:rgba(255,255,255,.1){% endif %}">
-                        <div style="position:absolute;top:3px;width:14px;height:14px;border-radius:50%;background:#fff;transition:all .2s;
-                          {% if not cfg or not cfg.formato_sala or cfg.formato_sala == 'junto' %}left:19px{% else %}left:3px{% endif %}"></div>
+                      <div id="dot-junto" style="width:36px;height:20px;border-radius:99px;transition:all .2s;position:relative;background:rgba(255,255,255,.1)">
+                        <div style="position:absolute;top:3px;left:3px;width:14px;height:14px;border-radius:50%;background:#fff;transition:all .2s"></div>
                       </div>
                     </div>
 
-                    <!-- Formato: separado -->
-                    <div id="btn-separado" onclick="toggleOpcao('separado')" style="cursor:pointer;padding:12px 16px;border-radius:10px;border:1px solid;display:flex;align-items:center;justify-content:space-between;
-                      {% if cfg and cfg.formato_sala == 'separado' %}background:rgba(96,165,250,.08);border-color:rgba(96,165,250,.3){% else %}background:rgba(255,255,255,.03);border-color:rgba(255,255,255,.08){% endif %}">
+                    <!-- ID e senha separados -->
+                    <div id="btn-separado" onclick="toggleOpcao('separado')" style="cursor:pointer;padding:12px 16px;border-radius:10px;border:1px solid;display:flex;align-items:center;justify-content:space-between;background:rgba(255,255,255,.03);border-color:rgba(255,255,255,.08)">
                       <div>
-                        <div style="font-size:.85rem;font-weight:600;color:{% if cfg and cfg.formato_sala == 'separado' %}#60a5fa{% else %}#6b7280{% endif %}">
+                        <div style="font-size:.85rem;font-weight:600;color:#6b7280">
                           <i class="bi bi-layout-split me-2"></i>Enviar ID e senha separados
                         </div>
                         <div style="font-size:.72rem;color:#4b5563;margin-top:3px">ID numa mensagem, senha em outra logo depois</div>
                       </div>
-                      <div id="dot-separado" style="width:36px;height:20px;border-radius:99px;transition:all .2s;position:relative;
-                        {% if cfg and cfg.formato_sala == 'separado' %}background:#60a5fa{% else %}background:rgba(255,255,255,.1){% endif %}">
-                        <div style="position:absolute;top:3px;width:14px;height:14px;border-radius:50%;background:#fff;transition:all .2s;
-                          {% if cfg and cfg.formato_sala == 'separado' %}left:19px{% else %}left:3px{% endif %}"></div>
+                      <div id="dot-separado" style="width:36px;height:20px;border-radius:99px;transition:all .2s;position:relative;background:rgba(255,255,255,.1)">
+                        <div style="position:absolute;top:3px;left:3px;width:14px;height:14px;border-radius:50%;background:#fff;transition:all .2s"></div>
                       </div>
                     </div>
-                    <input type="hidden" name="formato_sala" id="input-formato-sala" value="{{ 'separado' if cfg and cfg.formato_sala == 'separado' else 'junto' }}">
+                    <input type="hidden" name="formato_sala" id="input-formato-sala" value="junto">
 
                   </div>
                 </div>
