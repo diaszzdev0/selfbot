@@ -180,14 +180,11 @@ def _incrementar_sala(user_id: int):
         with engine.begin() as con:
             con.execute(text(
                 "INSERT INTO bot_status (user_id, ativo, salas_usadas, limite_salas) "
-                "VALUES (:uid, 0, 0, 0) ON CONFLICT (user_id) DO NOTHING"
+                "VALUES (:uid, 0, 1, 0) ON CONFLICT (user_id) DO UPDATE SET salas_usadas = bot_status.salas_usadas + 1"
             ), {"uid": user_id})
             con.execute(text(
-                "UPDATE bot_status SET salas_usadas = salas_usadas + 1 WHERE user_id = :uid"
-            ), {"uid": user_id})
-            # Registra no historico
-            con.execute(text(
-                "CREATE TABLE IF NOT EXISTS sala_historico (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
+                "CREATE TABLE IF NOT EXISTS sala_historico "
+                "(id SERIAL PRIMARY KEY, user_id INTEGER, criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
             ))
             con.execute(text(
                 "INSERT INTO sala_historico (user_id) VALUES (:uid)"
@@ -706,7 +703,6 @@ def run_selfbot(config: dict, user_id: int):
             prefixo = config.get("prefixo_sala", "").strip()
             msg_sala = f"{prefixo} {sala['id']} {sala['senha']}" if prefixo else f"{sala['id']} {sala['senha']}"
             formato_sala = str(config.get("formato_sala", "junto")).strip().lower()
-            _incrementar_sala(user_id)
             pedidoid = data.get("pedidoid", "")
             salas_ativas[channel.id] = pedidoid
             go_por_thread[channel.id] = set()
@@ -724,6 +720,7 @@ def run_selfbot(config: dict, user_id: int):
                 await _digitar_e_enviar(channel, str(sala['senha']))
             else:
                 await _digitar_e_enviar(channel, msg_sala)
+            _incrementar_sala(user_id)  # contabiliza só após envio confirmado
             await asyncio.sleep(4)
             await _digitar_e_enviar(channel, "⚡ **IMPORTANTE:** Após ambos entrarem, digitem `go` aqui no chat para iniciar! A sala dá go automático em **5 minutos**.")
 
@@ -1092,7 +1089,7 @@ def run_selfbot(config: dict, user_id: int):
                 from datetime import datetime, timedelta
                 engine = _get_db_engine()
                 with engine.connect() as con:
-                    con.execute(text("CREATE TABLE IF NOT EXISTS sala_historico (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"))
+                    con.execute(text("CREATE TABLE IF NOT EXISTS sala_historico (id SERIAL PRIMARY KEY, user_id INTEGER, criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"))
                     agora = datetime.utcnow()
                     h1 = con.execute(text("SELECT COUNT(*) FROM sala_historico WHERE user_id=:uid AND criado_em >= :dt"), {"uid": user_id, "dt": agora - timedelta(hours=1)}).scalar()
                     d1 = con.execute(text("SELECT COUNT(*) FROM sala_historico WHERE user_id=:uid AND criado_em >= :dt"), {"uid": user_id, "dt": agora - timedelta(days=1)}).scalar()
