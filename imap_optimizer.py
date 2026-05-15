@@ -181,6 +181,7 @@ class PersistentIMAPConnection:
         self._search_mail = None
         self._search_connected = False
         self._search_lock = threading.Lock()
+        self._monitor_lock = threading.Lock()
         self._stop = False
         self._uids_usados = set()
         self._carregar_uids_arquivo()
@@ -257,11 +258,11 @@ class PersistentIMAPConnection:
             return None
 
     def _monitor_loop(self):
-        """Polling a cada 3s para detectar emails novos. Usa lock para não conflitar com buscar()."""
+        """Polling a cada 3s para detectar emails novos. Lock separado do search."""
         time.sleep(5)
         while not self._stop:
             try:
-                with self._search_lock:
+                with self._monitor_lock:
                     if not self._monitor_connected or self._monitor_mail is None:
                         if not self._conectar_monitor():
                             time.sleep(10)
@@ -484,8 +485,7 @@ def buscar_pagamento_imap(config, nome, log_fn=None, user_id=None):
             return resultado
         log(f"❌ Não encontrado na conexão user_id={user_id}")
     
-    # 2) Fallback: procurar por email/config que combinetarget_user = target_user.
-    # Nota: isso evita conflito quando múltiplos usuários usam o mesmo email
+    # 2) Fallback: procurar por email/config que combine
     for uid, conn in imap_manager.connections.items():
         c_user = str(conn.config.get("email_user", "")).strip().lower()
         c_pass = str(conn.config.get("email_pass", "")).strip()
@@ -497,14 +497,6 @@ def buscar_pagamento_imap(config, nome, log_fn=None, user_id=None):
                 log(f"✅ Encontrado: {resultado.get('pagador')} | R${resultado.get('valor')}")
                 return resultado
             log(f"❌ Não encontrado nesta conexão")
-    
-    # 3) Fallback temporário (só deve ser usado se não houver conexão persistente)
-    log(f"⚠️ Criando conexão temporária...")
-    conn_temp = PersistentIMAPConnection(config)
-    time.sleep(2)
-    resultado = conn_temp.buscar(nome, log_fn)
-    if not resultado:
-        time.sleep(2)
-        resultado = conn_temp.buscar(nome, log_fn)
-    conn_temp.stop()
-    return resultado
+
+    log(f"❌ Nenhuma conexão IMAP ativa encontrada para '{target_user}'")
+    return None
