@@ -549,7 +549,6 @@ def run_selfbot(config: dict, user_id: int):
 
         cat_id = getattr(parent, 'category_id', None)
         if not cat_id:
-            # canal pai nao tem categoria — retorna o proprio canal pai como referencia
             return getattr(parent, 'id', 0), _normalizar_cat(getattr(parent, 'name', '') or ''), parent
 
         cat_ch = guild.get_channel(cat_id)
@@ -558,6 +557,10 @@ def run_selfbot(config: dict, user_id: int):
                 cat_ch = await guild.fetch_channel(cat_id)
             except Exception:
                 cat_ch = None
+
+        # Se ainda nao achou no cache, tenta via atributo .category do parent
+        if cat_ch is None:
+            cat_ch = getattr(parent, 'category', None)
 
         cat_name = _normalizar_cat(cat_ch.name) if cat_ch else ""
         return cat_id, cat_name, parent
@@ -844,6 +847,11 @@ def run_selfbot(config: dict, user_id: int):
             try:
                 canais = await guild.fetch_channels()
                 log_msg(user_id, f"📡 {len(canais)} canais carregados no cache")
+                # Loga categorias encontradas para debug
+                cats = [c for c in canais if getattr(c, 'type', None) and str(c.type) == 'category']
+                for cat in cats:
+                    if _normalizar(cat.name) in CATEGORIAS_EXTRA:
+                        log_msg(user_id, f"✅ Categoria extra encontrada: '{cat.name}' (ID: {cat.id})")
             except Exception as e:
                 log_msg(user_id, f"⚠️ fetch_channels falhou: {e}")
 
