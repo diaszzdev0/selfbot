@@ -1020,28 +1020,49 @@ def run_selfbot(config: dict, user_id: int):
             guild = client.get_guild(SERVER_ID)
             if not guild:
                 return
-            for canal in guild.channels:
-                for thread in getattr(canal, "threads", []):
+            # Busca threads ativas via API (não depende do cache local)
+            try:
+                active = await guild.active_threads()
+                for thread in active:
                     if thread.id not in threads_com_mensagem:
                         asyncio.ensure_future(_enviar_em_thread(thread))
-            log_msg(user_id, "✅ Verificação inicial concluída")
+                log_msg(user_id, f"✅ Verificação inicial: {len(active)} threads ativas")
+            except Exception:
+                # Fallback para cache local
+                for canal in guild.channels:
+                    for thread in getattr(canal, "threads", []):
+                        if thread.id not in threads_com_mensagem:
+                            asyncio.ensure_future(_enviar_em_thread(thread))
+                log_msg(user_id, "✅ Verificação inicial concluída (cache)")
         except Exception as exc:
             log_msg(user_id, f"❌ Erro na verificação inicial: {exc}")
 
     async def monitorar_threads():
         ultima_verificacao = datetime.now()
+        ultimo_fetch = datetime.now()
         while not _stop_flags.get(user_id, False):
             try:
                 guild = client.get_guild(SERVER_ID)
                 if guild:
-                    for canal in guild.channels:
-                        for thread in getattr(canal, "threads", []):
-                            if thread.id not in threads_com_mensagem:
-                                asyncio.ensure_future(_enviar_em_thread(thread))
-                agora = datetime.now()
-                if (agora - ultima_verificacao).total_seconds() > 300:
-                    log_msg(user_id, f"📊 Monitoramento: {len(threads_com_mensagem)} threads processadas")
-                    ultima_verificacao = agora
+                    agora = datetime.now()
+                    # A cada 60s faz fetch ativo das threads via API
+                    if (agora - ultimo_fetch).total_seconds() > 60:
+                        try:
+                            active = await guild.active_threads()
+                            for thread in active:
+                                if thread.id not in threads_com_mensagem:
+                                    asyncio.ensure_future(_enviar_em_thread(thread))
+                            ultimo_fetch = agora
+                        except Exception:
+                            pass
+                    else:
+                        for canal in guild.channels:
+                            for thread in getattr(canal, "threads", []):
+                                if thread.id not in threads_com_mensagem:
+                                    asyncio.ensure_future(_enviar_em_thread(thread))
+                    if (agora - ultima_verificacao).total_seconds() > 300:
+                        log_msg(user_id, f"📊 Monitoramento: {len(threads_com_mensagem)} threads processadas")
+                        ultima_verificacao = agora
             except Exception as exc:
                 log_msg(user_id, f"❌ Erro no monitoramento: {exc}")
             await asyncio.sleep(5)
