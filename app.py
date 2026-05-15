@@ -116,6 +116,31 @@ with app.app_context():
         db.session.add(u)
         db.session.commit()
         print("[OK] Admin criado: DiasDev / DiasDev0")
+    # Cria tabelas auxiliares usadas pelo bot_logic
+    from sqlalchemy import text
+    with db.engine.begin() as con:
+        con.execute(text('''
+            CREATE TABLE IF NOT EXISTS pagamentos_usados (
+                hash TEXT PRIMARY KEY,
+                user_id INTEGER,
+                thread_id BIGINT,
+                discord_user_id BIGINT,
+                nome TEXT,
+                valor TEXT,
+                usado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )'''))
+        con.execute(text('''
+            CREATE TABLE IF NOT EXISTS threads_enviadas (
+                user_id INTEGER,
+                thread_id BIGINT,
+                PRIMARY KEY(user_id, thread_id)
+            )'''))
+        con.execute(text('''
+            CREATE TABLE IF NOT EXISTS sala_historico (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER,
+                criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )'''))
 
 # Dicionário para controlar processos com limite
 MAX_PROCESSOS = 50
