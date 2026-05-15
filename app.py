@@ -535,13 +535,10 @@ def cliente_imap_pix():
     # Read only the last 5000 lines to avoid scanning huge logs
     try:
         with open(log_path, "r", encoding="utf-8", errors="replace") as f:
-            # deque will keep at most 5000 lines in memory
             recent_lines = deque(f, maxlen=5000)
             for linha in recent_lines:
-                # Detecta linhas de PIX encontrado: "💰 pagador='nome' | R$valor | banco"
                 m = re.search(r"pagador='([^']+)'\s*\|\s*R\$([\d,\.]+)\s*\|\s*(\S+)", linha)
                 if m:
-                    # Extrai hora da linha [2026-05-09 00:31:56]
                     hora_m = re.match(r"\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\]", linha)
                     hora = hora_m.group(1)[11:] if hora_m else "--:--:--"
                     pix.append({

@@ -2,15 +2,36 @@ import re
 import imaplib
 import email
 import unicodedata
-import logging
+import os
 import threading
 import time
-from datetime import datetime, timedelta, date
+from datetime import datetime, date
 from email.header import decode_header
 
-import logging
+LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+os.makedirs(LOG_DIR, exist_ok=True)
 
-BANCOS_PATTERNS = {
+
+def _escrever_log_usuario(user_id, entry):
+    """Escreve PIX detectado direto no arquivo de log do usuário, sem passar pelo Discord."""
+    if not user_id:
+        return
+    try:
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        linha = (
+            f"[{ts}] [PGTO  ] 💰 PIX DETECTADO | "
+            f"pagador='{entry['pagador']}' | "
+            f"R${entry['valor']} | "
+            f"{entry['banco']}"
+        )
+        path = os.path.join(LOG_DIR, f"user_{user_id}.log")
+        with open(path, "a", encoding="utf-8", errors="replace") as f:
+            f.write(linha + "\n")
+            f.flush()
+    except Exception:
+        pass
+
+
     "Nubank":          [r"nubank"],
     "PicPay":          [r"picpay"],
     "Itau":            [r"ita[u\u00fa]"],
@@ -172,9 +193,10 @@ def _nova_conexao_imap(config):
 
 class PersistentIMAPConnection:
 
-    def __init__(self, config, log_fn=None):
+    def __init__(self, config, log_fn=None, user_id=None):
         self.config = config
         self.log_fn = log_fn
+        self.user_id = user_id
         self._on_novo_pix = None
         self._monitor_mail = None
         self._monitor_connected = False
@@ -282,7 +304,8 @@ class PersistentIMAPConnection:
                     for uid_bytes in novos:
                         entry = self._processar_uid(uid_bytes, self._monitor_mail)
                         if entry:
-                            print(f"\U0001f4ec NOVO PIX | {entry['pagador']} | R${entry['valor']} | {entry['banco']}", flush=True)
+                            # Escreve direto no log do usuário — sem passar pelo Discord
+                            _escrever_log_usuario(self.user_id, entry)
                             if self._on_novo_pix:
                                 try:
                                     self._on_novo_pix(entry)
@@ -418,7 +441,7 @@ class IMAPManager:
     def get_cache(self, user_id, config):
         self.configs[user_id] = config
         if user_id not in self.connections:
-            self.connections[user_id] = PersistentIMAPConnection(config)
+            self.connections[user_id] = PersistentIMAPConnection(config, user_id=user_id)
         return self
 
     def set_log(self, user_id, log_fn):
