@@ -786,10 +786,10 @@ def run_selfbot(config: dict, user_id: int):
             or (bool(CATEGORIAS_EXTRA) and parent_name in CATEGORIAS_EXTRA)
         )
 
-        log_msg(user_id, f"🧵 Thread: '{thread.name}' | canal_pai='{parent_name}' | cat='{cat_name}' | monitorada={monitorada} | extras={list(CATEGORIAS_EXTRA)}")
-
         if not monitorada:
             return
+
+        log_msg(user_id, f"🧵 Thread: '{thread.name}' | canal_pai='{parent_name}' | cat='{cat_name}' | monitorada=True")
 
 
         if thread.id in threads_com_mensagem or thread.id in threads_em_processamento:
