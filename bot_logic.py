@@ -549,9 +549,9 @@ def run_selfbot(config: dict, user_id: int):
 
         cat_id = getattr(parent, 'category_id', None)
         if not cat_id:
-            return getattr(parent, 'id', 0), "", parent
+            # canal pai nao tem categoria — retorna o proprio canal pai como referencia
+            return getattr(parent, 'id', 0), _normalizar_cat(getattr(parent, 'name', '') or ''), parent
 
-        # Tenta pegar do cache primeiro, se nao tiver faz fetch
         cat_ch = guild.get_channel(cat_id)
         if cat_ch is None:
             try:
@@ -776,6 +776,7 @@ def run_selfbot(config: dict, user_id: int):
         cat_id, cat_name, parent = await _get_cat_id_name(thread)
         parent_id = getattr(parent, "id", None) or getattr(thread, 'parent_id', None)
         parent_name = _normalizar_cat(getattr(parent, 'name', '') or '')
+
         monitorada = (
             (CANAL_ALVO_ID and parent_id == CANAL_ALVO_ID)
             or parent_id in CATEGORIAS_EXTRA_IDS
@@ -784,8 +785,10 @@ def run_selfbot(config: dict, user_id: int):
             or (bool(CATEGORIAS_EXTRA) and cat_name in CATEGORIAS_EXTRA)
             or (bool(CATEGORIAS_EXTRA) and parent_name in CATEGORIAS_EXTRA)
         )
+
+        log_msg(user_id, f"🧵 Thread: '{thread.name}' | canal_pai='{parent_name}' | cat='{cat_name}' | monitorada={monitorada} | extras={list(CATEGORIAS_EXTRA)}")
+
         if not monitorada:
-            log_msg(user_id, f"🧵 Thread ignorada (fora das categorias): {thread.name} | cat='{cat_name}' | parent='{parent_name}' | parent_id={parent_id}")
             return
 
 
