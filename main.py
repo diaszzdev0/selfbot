@@ -5,6 +5,9 @@ A SquareCloud espera um arquivo MAIN=main.py (conforme squarecloud.app).
 Este main.py só inicializa o Flask no arquivo app.py existente.
 """
 
+from dotenv import load_dotenv
+load_dotenv()
+
 from app import app  # noqa: F401
 
 # Em vez de reaproveitar o código do Flask, apenas executa o app importado.
