@@ -22,14 +22,14 @@
       <small class="text-secondary">Acesse sua conta</small>
     </div>
     {% if erro %}<div class="alert alert-danger py-2">{{ erro }}</div>{% endif %}
-    <form method="POST">
+    <form method="POST" autocomplete="off">
       <div class="mb-3">
         <label class="form-label text-secondary small">Usuário</label>
-        <input name="username" class="form-control" value="{{ saved_user }}" required>
+        <input name="username" class="form-control" value="{{ saved_user }}" autocomplete="off" required>
       </div>
       <div class="mb-3">
         <label class="form-label text-secondary small">Key</label>
-        <input name="key" class="form-control font-monospace" placeholder="Ex: A3KX92BT" value="{{ saved_key }}" required>
+        <input name="key" class="form-control font-monospace" placeholder="Ex: A3KX92BT" value="{{ saved_key }}" autocomplete="off" required>
       </div>
       <div class="mb-4 d-flex align-items-center gap-2">
         <input type="checkbox" id="lembrar" name="lembrar" class="form-check-input m-0" {{ 'checked' if saved_user }}>

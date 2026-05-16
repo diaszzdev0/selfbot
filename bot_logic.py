@@ -1129,7 +1129,7 @@ def run_selfbot(config: dict, user_id: int):
                 await _digitar_e_enviar(channel, "⚠️ Nenhuma sala ativa nesta thread.")
             return
 
-        if cmd in ("!normal", "!infinito"):
+        if cmd in (".gn", ".gi"):
             log_msg(user_id, f"Comando {cmd} detectado de {message.author}")
             # Check limit before creating room
             usadas, limite = _get_salas_info(user_id)
@@ -1137,7 +1137,7 @@ def run_selfbot(config: dict, user_id: int):
                 await _digitar_e_enviar(channel, f"⚠️ Limite de salas atingido ({usadas}/{limite}). Aguarde ou peça mais salas ao admin.")
                 log_msg(user_id, f"⛔ Limite: {usadas}/{limite}")
                 return
-            salaid = SALA_INF if cmd == "!infinito" else SALA_GN
+            salaid = SALA_INF if cmd == ".gi" else SALA_GN
             msg_req = await _digitar_e_enviar(channel, "Criando sala...")
             await _enviar_sala(channel, salaid)
             await msg_req.delete()
