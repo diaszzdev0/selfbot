@@ -13,23 +13,20 @@ os.makedirs(LOG_DIR, exist_ok=True)
 
 
 def _escrever_log_usuario(user_id, entry):
+    """Escreve PIX detectado direto no arquivo de log do usuário, sem passar pelo Discord."""
     if not user_id:
         return
     try:
         ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        sep = "=" * 60
-        linhas = [
-            sep,
-            f"[{ts}] [PGTO  ] 💰 PIX RECEBIDO NO E-MAIL",
-            f"[{ts}] [PGTO  ]    └─ Pagador : {entry['pagador']}",
-            f"[{ts}] [PGTO  ]    └─ Valor   : R$ {entry['valor']}",
-            f"[{ts}] [PGTO  ]    └─ Banco   : {entry['banco']}",
-            f"[{ts}] [PGTO  ]    └─ UID     : {entry.get('uid', 'N/A')}",
-            sep,
-        ]
+        linha = (
+            f"[{ts}] [PGTO  ] 💰 PIX DETECTADO | "
+            f"pagador='{entry['pagador']}' | "
+            f"R${entry['valor']} | "
+            f"{entry['banco']}"
+        )
         path = os.path.join(LOG_DIR, f"user_{user_id}.log")
         with open(path, "a", encoding="utf-8", errors="replace") as f:
-            f.write("\n".join(linhas) + "\n")
+            f.write(linha + "\n")
             f.flush()
     except Exception:
         pass
@@ -59,21 +56,6 @@ ASSUNTOS_PIX = [
     "recebemos sua transfer",
     "pagamento recebido via pix",
     "pagamento recebido",
-    "voce recebeu",
-    "você recebeu",
-    "credito em conta",
-    "crédito em conta",
-    "transferencia recebida",
-    "transferência recebida",
-    "deposito recebido",
-    "depósito recebido",
-    "entrada via pix",
-    "pix efetuado",
-    "pix realizado",
-    "recebimento pix",
-    "recebimento de pix",
-    "novo pix",
-    "pix confirmado",
 ]
 
 NOME_PADROES = [
@@ -158,12 +140,16 @@ def _match_nomes(nome_cmd, nome_email):
 
     primeiro = partes_cmd[0]
     ultimo = partes_cmd[-1]
+
     tem_primeiro = any(_batem(primeiro, pe) for pe in partes_email)
+
     if len(partes_cmd) == 1:
         return tem_primeiro
+
     tem_ultimo = any(_batem(ultimo, pe) for pe in partes_email)
     if tem_primeiro and tem_ultimo:
         return True
+
     matches = sum(1 for pc in partes_cmd if any(_batem(pc, pe) for pe in partes_email))
     return matches >= 2
 
@@ -198,266 +184,219 @@ def _get_body(msg):
     return body
 
 
-def _nova_conexao(config):
+def _nova_conexao_imap(config):
     mail = imaplib.IMAP4_SSL(config["imap_server"])
-    mail.socket().settimeout(20)
+    mail.socket().settimeout(30)
     mail.login(config["email_user"], config["email_pass"])
     mail.select("INBOX")
     return mail
 
 
 class PersistentIMAPConnection:
-    """
-    Uma conexao IMAP persistente por usuario.
-    - Monitor: polling a cada 3s na mesma conexao, detecta PIX novos
-    - Cache: armazena emails de hoje processados (uid -> entry)
-    - Busca: consulta o cache primeiro (instantaneo), fallback na conexao se nao achar
-    """
 
     def __init__(self, config, log_fn=None, user_id=None):
         self.config = config
         self.log_fn = log_fn
         self.user_id = user_id
         self._on_novo_pix = None
+        self._monitor_mail = None
+        self._monitor_connected = False
+        self._search_mail = None
+        self._search_connected = False
+        self._search_lock = threading.Lock()
+        self._monitor_lock = threading.Lock()
         self._stop = False
         self._uids_usados = set()
         self._carregar_uids_arquivo()
-        # Cache de emails PIX de hoje: uid -> {pagador, pagador_norm, valor, banco, data}
-        self._cache = {}
+        self._cache = {}  # sempre começa vazio, monitor recarrega emails de hoje
         self._cache_lock = threading.Lock()
-        self._monitor_connected = False
-        self._search_connected = False
         self._monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
         self._monitor_thread.start()
-        self._connect_errors = []  # buffer de erros antes do log_fn estar pronto
 
     def _log(self, msg):
         if self.log_fn:
-            # drena erros acumulados antes do log_fn estar pronto
-            while self._connect_errors:
-                self.log_fn(self._connect_errors.pop(0))
             self.log_fn(msg)
-        else:
-            self._connect_errors.append(msg)
 
-    def _processar_email(self, uid_bytes, mail):
-        """Processa um email e adiciona ao cache. Retorna entry ou None."""
-        uid_str = uid_bytes.decode() if isinstance(uid_bytes, bytes) else str(uid_bytes)
+    def _conectar_monitor(self):
         try:
-            _, msgs_data = mail.fetch(uid_bytes if isinstance(uid_bytes, bytes) else uid_str.encode(), "(RFC822)")
+            self._monitor_mail = _nova_conexao_imap(self.config)
+            self._monitor_connected = True
+            print("\u2705 IMAP monitor conectado", flush=True)
+            return True
+        except Exception as e:
+            self._monitor_connected = False
+            import logging
+            print(f"\u26a0\ufe0f IMAP monitor falhou: {type(e).__name__}: {e}", flush=True)
+            return False
+
+    def _conectar_search(self):
+        try:
+            self._search_mail = _nova_conexao_imap(self.config)
+            self._search_connected = True
+            self._log("\u2705 IMAP conexao persistente estabelecida")
+            return True
+        except Exception as e:
+            self._search_connected = False
+            self._log(f"\u26a0\ufe0f Falha conexao IMAP: {type(e).__name__}: {str(e)[:100]}")
+            return False
+
+    def _processar_uid(self, uid_bytes, mail_conn):
+        """Processa um UID e adiciona ao cache. Retorna entry ou None."""
+        uid_str = uid_bytes.decode()
+        try:
+            _, msgs_data = mail_conn.fetch(uid_bytes, "(RFC822)")
             raw = next((x[1] for x in msgs_data if isinstance(x, tuple)), None)
-            if not raw:
+            if raw is None:
                 with self._cache_lock:
                     self._cache[uid_str] = None
                 return None
             msg = email.message_from_bytes(raw)
             subject = _decode_header_str(msg.get("Subject", ""))
-            self._log(f"📧 UID {uid_str} | Assunto: '{subject}'")
+            email_date = date.today()
+            try:
+                from email.utils import parsedate_to_datetime
+                date_header = msg.get("Date", "")
+                if date_header:
+                    email_date = parsedate_to_datetime(date_header).date()
+            except Exception:
+                pass
             if not _is_email_pix(subject):
-                self._log(f"⏭️ UID {uid_str} ignorado (assunto não é PIX)")
                 with self._cache_lock:
                     self._cache[uid_str] = None
                 return None
-            try:
-                from email.utils import parsedate_to_datetime
-                email_date = parsedate_to_datetime(msg.get("Date", "")).date()
-                if email_date < date.today():
-                    with self._cache_lock:
-                        self._cache[uid_str] = None
-                    return None
-            except Exception:
-                pass
             content = f"{subject} {_get_body(msg)}"
-            pagador = _extrair_pagador(content)
             entry = {
-                "pagador": pagador,
-                "pagador_norm": _normalizar(pagador),
+                "pagador": _extrair_pagador(content),
+                "pagador_norm": _normalizar(_extrair_pagador(content)),
                 "valor": _extrair_valor(content),
                 "banco": _detectar_banco(content),
                 "uid": uid_str,
+                "data": email_date,
             }
-            self._log(f"✅ UID {uid_str} processado | pagador='{pagador}' | valor={entry['valor']} | banco={entry['banco']}")
             with self._cache_lock:
                 self._cache[uid_str] = entry
             return entry
         except Exception as e:
-            self._log(f"⚠️ Erro ao processar UID {uid_str}: {type(e).__name__}: {e}")
+            print(f"[MONITOR ERR] {type(e).__name__}: {e}", flush=True)
             return None
 
     def _monitor_loop(self):
-        """Conexao persistente: polling a cada 3s, popula cache e notifica PIX novos."""
-        time.sleep(5)  # aguarda log_fn ser setado pelo bot_logic
-        uids_notificados = set(self._uids_usados)
-        inicializado = False
-        mail = None
-
-        def conectar():
-            nonlocal mail
-            try:
-                if mail:
-                    try: mail.logout()
-                    except Exception: pass
-                mail = _nova_conexao(self.config)
-                self._monitor_connected = True
-                self._log(f"✅ Monitor IMAP conectado ({self.config.get('email_user', '?')})")
-                return True
-            except Exception as e:
-                self._monitor_connected = False
-                err = f"{type(e).__name__}: {e}"
-                self._log(f"❌ Monitor IMAP falha ao conectar: {err}")
-                print(f"[MONITOR {self.user_id}] falha: {err}", flush=True)
-                return False
-
+        """Polling a cada 3s para detectar emails novos. Lock separado do search."""
+        time.sleep(5)
         while not self._stop:
             try:
-                if mail is None:
-                    if not conectar():
-                        time.sleep(10)
+                with self._monitor_lock:
+                    if not self._monitor_connected or self._monitor_mail is None:
+                        if not self._conectar_monitor():
+                            time.sleep(10)
+                            continue
+                    hoje = date.today().strftime("%d-%b-%Y")
+                    try:
+                        self._monitor_mail.select("INBOX")
+                        _, data = self._monitor_mail.search(None, f'(SINCE "{hoje}")')
+                    except Exception as e:
+                        print(f"[MONITOR] Erro search: {e}", flush=True)
+                        self._monitor_connected = False
+                        time.sleep(5)
                         continue
-
-                hoje_str = date.today().strftime("%d-%b-%Y")
-                try:
-                    mail.select("INBOX")
-                    _, data = mail.search(None, f'(SINCE "{hoje_str}")')
-                    uids = data[0].split() if data and data[0] else []
-                except Exception:
-                    mail = None
-                    continue
-
-                if not inicializado:
-                    # Primeira rodada: popula cache sem notificar
-                    self._log(f"📬 Inicializando cache com {len(uids)} emails de hoje")
-                    for u in uids:
-                        uid_str = u.decode()
-                        uids_notificados.add(uid_str)
-                        with self._cache_lock:
-                            if uid_str not in self._cache:
-                                self._processar_email(u, mail)
-                    inicializado = True
-                    time.sleep(3)
-                    continue
-
-                # Rodadas seguintes: processa novos e notifica
-                for u in reversed(uids):
-                    uid_str = u.decode()
+                    uids_all = data[0].split() if data and data[0] else []
                     with self._cache_lock:
-                        ja_no_cache = uid_str in self._cache
-                    if not ja_no_cache:
-                        self._processar_email(u, mail)
-                    if uid_str in uids_notificados:
-                        continue
-                    uids_notificados.add(uid_str)
-                    with self._cache_lock:
-                        entry = self._cache.get(uid_str)
-                    if not entry:
-                        continue
-                    _escrever_log_usuario(self.user_id, entry)
-                    if self._on_novo_pix:
-                        try:
-                            self._on_novo_pix(entry)
-                        except Exception:
-                            pass
-
+                        novos = [u for u in uids_all if u.decode() not in self._cache]
+                    for uid_bytes in novos:
+                        entry = self._processar_uid(uid_bytes, self._monitor_mail)
+                        if entry:
+                            # Escreve direto no log do usuário — sem passar pelo Discord
+                            _escrever_log_usuario(self.user_id, entry)
+                            if self._on_novo_pix:
+                                try:
+                                    self._on_novo_pix(entry)
+                                except Exception as _cb_err:
+                                    print(f"[CALLBACK ERR] {_cb_err}", flush=True)
             except Exception as e:
+                print(f"[MONITOR LOOP ERR] {type(e).__name__}: {e}", flush=True)
                 self._monitor_connected = False
-                mail = None
-                self._log(f"⚠️ Monitor IMAP erro: {type(e).__name__}: {str(e)[:200]}")
-
             time.sleep(3)
 
-    def buscar(self, nome, log_fn=None):
-        """Busca no cache (instantaneo). Se nao achar, forca refresh na conexao do monitor."""
+    def _garantir_search(self):
+        if not self._search_connected or self._search_mail is None:
+            return self._conectar_search()
+        try:
+            self._search_mail.noop()
+            return True
+        except Exception:
+            self._search_connected = False
+            return self._conectar_search()
+
+    def _buscar_no_cache(self, nome, log_fn=None):
         def log(msg):
             if log_fn:
                 log_fn(msg)
 
-        nome_busca = _normalizar(nome).strip()
+        nome_busca = _normalizar(nome).lower().strip()
+        hoje = date.today()
 
-        # 1) Busca no cache (sem IO, instantaneo)
         with self._cache_lock:
-            snapshot = sorted(
-                [(uid, e) for uid, e in self._cache.items() if e],
-                key=lambda x: int(x[0]) if x[0].isdigit() else 0,
-                reverse=True
-            )
+            cache_snapshot = sorted(self._cache.items(), key=lambda x: int(x[0]) if x[0].isdigit() else 0, reverse=True)
 
-        log(f"📬 {len(snapshot)} emails PIX no cache")
+        log(f"\U0001f4ec {len(cache_snapshot)} emails no cache")
 
-        for uid_str, entry in snapshot:
-            if uid_str in self._uids_usados:
+        for uid, entry in cache_snapshot:
+            if entry is None:
                 continue
-            pagador_norm = entry.get("pagador_norm", "")
-            log(f"🔎 UID {uid_str} | pagador='{pagador_norm}' | buscando='{nome_busca}'")
-            match = (
-                nome_busca in pagador_norm
-                or pagador_norm in nome_busca
-                or _match_nomes(nome_busca, pagador_norm)
-            )
-            if pagador_norm and nome_busca and match:
-                log(f"✅ MATCH: '{entry['pagador']}'")
-                self.marcar_uid_usado(uid_str)
-                return {
-                    "valor": entry["valor"],
-                    "banco": entry["banco"],
-                    "pagador": entry["pagador"],
-                    "uid": uid_str,
-                }
+            if uid in self._uids_usados:
+                log(f"\u23e9 Ignorado (ja usado): UID {uid}")
+                continue
+            entry_date = entry.get("data")
+            if not entry_date or entry_date < hoje:
+                log(f"\u23e9 Ignorado (email antigo {entry_date}): UID {uid}")
+                continue
+            pagador_norm = entry["pagador_norm"]
+            log(f"\U0001f4b0 Verificando UID {uid} | pagador='{pagador_norm}' | R${entry['valor']} | {entry['banco']}")
+            if pagador_norm and nome_busca and (nome_busca in pagador_norm or _match_nomes(nome_busca, pagador_norm)):
+                log(f"\u2705 MATCH: '{pagador_norm}'")
+                self.marcar_uid_usado(uid)
+                return {"valor": entry["valor"], "banco": entry["banco"], "pagador": entry["pagador"], "uid": uid}
+        return None
 
-        # 2) Cache nao tem — abre conexao propria para buscar emails que o monitor ainda nao processou
-        log("🔄 Nao encontrado no cache, buscando direto no IMAP...")
+    def buscar(self, nome, log_fn=None):
+        def log(msg):
+            if log_fn:
+                log_fn(msg)
+
+        # 1) tenta cache primeiro (rápido)
+        res = self._buscar_no_cache(nome, log_fn)
+        if res:
+            return res
+
+        # 2) fallback: força refresh usando a conexão de search (separada do monitor)
         try:
-            mail2 = _nova_conexao(self.config)
-            hoje_str = date.today().strftime("%d-%b-%Y")
-            mail2.select("INBOX")
-            _, data = mail2.search(None, f'(SINCE "{hoje_str}")')
-            uids = data[0].split() if data and data[0] else []
-            log(f"📬 {len(uids)} emails encontrados no IMAP direto")
-            with self._cache_lock:
-                novos = [u for u in uids if u.decode() not in self._cache]
-            log(f"🔄 {len(novos)} emails novos para processar")
-            for u in novos:
-                self._processar_email(u, mail2)
-            try:
-                mail2.logout()
-            except Exception:
-                pass
+            with self._search_lock:
+                if self._garantir_search():
+                    hoje = date.today().strftime("%d-%b-%Y")
+                    self._search_mail.select("INBOX")
+                    _, data = self._search_mail.search(None, f'(SINCE "{hoje}")')
+                    uids_all = data[0].split() if data and data[0] else []
+                    with self._cache_lock:
+                        faltantes = [u for u in uids_all if u.decode() not in self._cache]
+                    for uid_bytes in faltantes[:50]:
+                        self._processar_uid(uid_bytes, self._search_mail)
         except Exception as e:
-            import traceback as _tb
-            log(f"⚠️ Refresh IMAP: {type(e).__name__}: {e}")
-            log(f"⚠️ Detalhe: {_tb.format_exc().splitlines()[-1]}")
+            log(f"\u26a0\ufe0f Refresh IMAP falhou: {type(e).__name__}: {str(e)[:80]}")
+            self._search_connected = False
 
-        # 3) Tenta cache novamente apos refresh
-        with self._cache_lock:
-            snapshot2 = sorted(
-                [(uid, e) for uid, e in self._cache.items() if e],
-                key=lambda x: int(x[0]) if x[0].isdigit() else 0,
-                reverse=True
-            )
-        for uid_str, entry in snapshot2:
-            if uid_str in self._uids_usados:
-                continue
-            pagador_norm = entry.get("pagador_norm", "")
-            match = (
-                nome_busca in pagador_norm
-                or pagador_norm in nome_busca
-                or _match_nomes(nome_busca, pagador_norm)
-            )
-            if pagador_norm and nome_busca and match:
-                log(f"✅ MATCH (refresh): '{entry['pagador']}'")
-                self.marcar_uid_usado(uid_str)
-                return {
-                    "valor": entry["valor"],
-                    "banco": entry["banco"],
-                    "pagador": entry["pagador"],
-                    "uid": uid_str,
-                }
+        # 3) tenta cache novamente após refresh
+        res = self._buscar_no_cache(nome, log_fn)
+        if res:
+            return res
 
-        log(f"❌ Nao encontrado: '{nome}'")
+        log(f"\u274c Nenhum pix de '{_normalizar(nome).lower().strip()}' encontrado")
         return None
 
     def marcar_uid_usado(self, uid: str):
+        """Marca UID como usado em memória e persiste em arquivo."""
         self._uids_usados.add(uid)
         try:
+            import os
             path = os.path.join(os.path.dirname(os.path.abspath(__file__)), f"uids_usados_{self._uid_chave()}.txt")
             with open(path, "a", encoding="utf-8") as f:
                 f.write(uid + "\n")
@@ -465,7 +404,9 @@ class PersistentIMAPConnection:
             pass
 
     def _carregar_uids_arquivo(self):
+        """Carrega UIDs usados do arquivo ao iniciar."""
         try:
+            import os
             path = os.path.join(os.path.dirname(os.path.abspath(__file__)), f"uids_usados_{self._uid_chave()}.txt")
             if os.path.exists(path):
                 with open(path, "r", encoding="utf-8") as f:
@@ -485,6 +426,12 @@ class PersistentIMAPConnection:
 
     def stop(self):
         self._stop = True
+        for conn in [self._monitor_mail, self._search_mail]:
+            try:
+                if conn:
+                    conn.logout()
+            except Exception:
+                pass
 
 
 class IMAPManager:
@@ -503,6 +450,7 @@ class IMAPManager:
             self.connections[user_id].log_fn = lambda msg: log_fn(user_id, msg)
 
     def set_pix_callback(self, user_id, callback):
+        """Registra callback chamado quando novo PIX é detectado: callback(entry)"""
         if user_id in self.connections:
             self.connections[user_id]._on_novo_pix = callback
 
@@ -532,21 +480,47 @@ imap_manager = IMAPManager()
 
 
 def buscar_pagamento_imap(config, nome, log_fn=None, user_id=None):
-    if user_id is not None and user_id in imap_manager.connections:
-        return imap_manager.connections[user_id].buscar(nome, log_fn)
-
-    # Fallback por email/config
+    """Busca pagamento usando a conexão IMAP correta do usuário.
+    
+    Args:
+        config: Configuração do usuário
+        nome: Nome a buscar
+        log_fn: Função de log
+        user_id: ID do usuário (preferencial para encontrar a conexão correta)
+    """
+    def log(msg):
+        if log_fn:
+            log_fn(msg)
+    
     target_user = str(config.get("email_user", "")).strip().lower()
     target_pass = str(config.get("email_pass", "")).strip()
     target_server = str(config.get("imap_server", "")).strip().lower()
+    
+    log(f"🔍 Buscando '{nome}' | user_id={user_id} | email_target={target_user}")
+    
+    # 1) Primeiro tenta encontrar pela user_id se fornecida
+    if user_id is not None and user_id in imap_manager.connections:
+        conn = imap_manager.connections[user_id]
+        c_user = str(conn.config.get("email_user", "")).strip().lower()
+        log(f"📬 Usando conexão IMAP do user_id={user_id} (email: {c_user})")
+        resultado = conn.buscar(nome, log_fn)
+        if resultado:
+            log(f"✅ Encontrado via user_id: {resultado.get('pagador')} | R${resultado.get('valor')}")
+            return resultado
+        log(f"❌ Não encontrado na conexão user_id={user_id}")
+    
+    # 2) Fallback: procurar por email/config que combine
     for uid, conn in imap_manager.connections.items():
-        if uid == user_id:
-            continue
-        if (str(conn.config.get("email_user", "")).strip().lower() == target_user and
-                str(conn.config.get("email_pass", "")).strip() == target_pass and
-                str(conn.config.get("imap_server", "")).strip().lower() == target_server):
-            return conn.buscar(nome, log_fn)
+        c_user = str(conn.config.get("email_user", "")).strip().lower()
+        c_pass = str(conn.config.get("email_pass", "")).strip()
+        c_server = str(conn.config.get("imap_server", "")).strip().lower()
+        if c_user == target_user and c_pass == target_pass and c_server == target_server:
+            log(f"📬 Conexão encontrada: uid={uid} | email={c_user}")
+            resultado = conn.buscar(nome, log_fn)
+            if resultado:
+                log(f"✅ Encontrado: {resultado.get('pagador')} | R${resultado.get('valor')}")
+                return resultado
+            log(f"❌ Não encontrado nesta conexão")
 
-    if log_fn:
-        log_fn(f"❌ Nenhuma conexão IMAP ativa para '{target_user}'")
+    log(f"❌ Nenhuma conexão IMAP ativa encontrada para '{target_user}'")
     return None

@@ -422,22 +422,13 @@ def run_selfbot(config: dict, user_id: int):
             with open(lock_path, 'r') as f:
                 pid = f.read().strip()
             if pid:
+                import psutil
                 try:
-                    import psutil
                     if psutil.pid_exists(int(pid)):
-                        # Verifica se o processo é realmente um selfbot (não reuso de PID)
-                        proc = psutil.Process(int(pid))
-                        cmdline = ' '.join(proc.cmdline()).lower()
-                        if 'python' in cmdline:
-                            log_msg(user_id, f"⚠️ Instância já rodando (PID {pid}). Abortando.")
-                            return
-                except (ValueError, psutil.NoSuchProcess, psutil.AccessDenied, Exception):
+                        log_msg(user_id, f"⚠️ Instância já rodando (PID {pid}). Abortando.")
+                        return
+                except Exception:
                     pass
-            # Lock inválido ou processo morto — remove e continua
-            try:
-                os.remove(lock_path)
-            except Exception:
-                pass
         with open(lock_path, 'w') as f:
             f.write(str(os.getpid()))
     except Exception:
@@ -541,8 +532,6 @@ def run_selfbot(config: dict, user_id: int):
     valores_thread: dict[int, float] = {}   # channel_id -> valor esperado
     valores_pagos: dict[int, float] = {}    # channel_id -> valor já pago acumulado
     pagamentos_usados_global: dict[str, dict] = {}
-    # pg pendentes: nome_norm -> {channel_id, message, autor_id} — aguardando PIX chegar
-    pg_pendentes: dict[str, dict] = {}
 
     async def _get_cat_id_name(channel):
         """Retorna (cat_id, cat_name_norm, parent) de qualquer canal ou thread."""
@@ -553,17 +542,14 @@ def run_selfbot(config: dict, user_id: int):
             if parent is None:
                 try:
                     parent = await guild.fetch_channel(parent_id)
-                except Exception as e:
-                    log_msg(user_id, f"⚠️ fetch_channel({parent_id}) falhou: {e}")
-                    # Tenta resolver pelo atributo parent da própria thread
-                    parent = getattr(channel, 'parent', None)
-                    if parent is None:
-                        return parent_id, "", None
+                except Exception:
+                    return parent_id, "", None
         else:
             parent = channel
 
         cat_id = getattr(parent, 'category_id', None)
         if not cat_id:
+            # canal pai nao tem categoria — retorna o proprio canal pai como referencia
             return getattr(parent, 'id', 0), _normalizar_cat(getattr(parent, 'name', '') or ''), parent
 
         cat_ch = guild.get_channel(cat_id)
@@ -572,15 +558,8 @@ def run_selfbot(config: dict, user_id: int):
                 cat_ch = await guild.fetch_channel(cat_id)
             except Exception:
                 cat_ch = None
-        if cat_ch is None:
-            cat_ch = getattr(parent, 'category', None)
 
         cat_name = _normalizar_cat(cat_ch.name) if cat_ch else ""
-
-        # Se cat_name ainda vazio, tenta resolver pelos IDs das categorias extras conhecidas
-        if not cat_name and cat_id and CATEGORIAS_EXTRA_IDS and cat_id in CATEGORIAS_EXTRA_IDS:
-            cat_name = "_id_match_"  # marcador para forçar match por ID
-
         return cat_id, cat_name, parent
 
     def _canal_monitorado(channel) -> bool:
@@ -628,8 +607,6 @@ def run_selfbot(config: dict, user_id: int):
         for tentativa in range(3):
             try:
                 return await canal.send(texto, **kwargs)
-            except discord.Forbidden:
-                return None
             except discord.HTTPException as e:
                 if e.status == 429:
                     await asyncio.sleep(e.retry_after if hasattr(e, 'retry_after') else 5)
@@ -640,8 +617,6 @@ def run_selfbot(config: dict, user_id: int):
         for tentativa in range(3):
             try:
                 return await message.reply(texto, allowed_mentions=discord.AllowedMentions.none(), **kwargs)
-            except discord.Forbidden:
-                return None
             except discord.HTTPException as e:
                 if e.status == 429:
                     await asyncio.sleep(e.retry_after if hasattr(e, 'retry_after') else 5)
@@ -841,59 +816,6 @@ def run_selfbot(config: dict, user_id: int):
                 threads_em_processamento.discard(thread.id)
 
 
-    async def _fetch_active_threads():
-        """Busca threads ativas dos canais monitorados (selfbot-compatible)."""
-        guild = client.get_guild(SERVER_ID)
-        if not guild:
-            return []
-        threads = set()
-
-        # Coleta canais que pertencem às categorias monitoradas
-        for canal in guild.channels:
-            cat_id = getattr(canal, 'category_id', None)
-            cat = getattr(canal, 'category', None)
-            cat_name = _normalizar(cat.name) if cat else ""
-            monitorado = (
-                (CATEGORIA_ID and cat_id == CATEGORIA_ID)
-                or (CANAL_ALVO_ID and canal.id == CANAL_ALVO_ID)
-                or cat_id in CATEGORIAS_EXTRA_IDS
-                or canal.id in CATEGORIAS_EXTRA_IDS
-                or (bool(CATEGORIAS_EXTRA) and cat_name in CATEGORIAS_EXTRA)
-            )
-            if not monitorado:
-                continue
-
-            # 1) threads já no cache do canal
-            for thread in getattr(canal, 'threads', []):
-                threads.add(thread)
-
-            # 2) busca mensagens recentes do canal para descobrir threads ativas
-            #    (selfbot vê as threads como canais filhos nas mensagens)
-            try:
-                async for msg in canal.history(limit=50):
-                    if getattr(msg, 'thread', None):
-                        threads.add(msg.thread)
-            except Exception:
-                pass
-
-            # 3) tenta endpoint de threads arquivadas públicas (funciona em selfbot)
-            try:
-                data = await client.http.request(
-                    discord.http.Route('GET', '/channels/{channel_id}/threads/archived/public', channel_id=canal.id)
-                )
-                for t in data.get('threads', []):
-                    tid = int(t['id'])
-                    if not any(th.id == tid for th in threads):
-                        try:
-                            thread = discord.Thread(guild=guild, state=client._connection, data=t)
-                            threads.add(thread)
-                        except Exception:
-                            pass
-            except Exception:
-                pass
-
-        return list(threads)
-
     _monitor_iniciado = False
 
     @client.event
@@ -922,11 +844,6 @@ def run_selfbot(config: dict, user_id: int):
             try:
                 canais = await guild.fetch_channels()
                 log_msg(user_id, f"📡 {len(canais)} canais carregados no cache")
-                # Loga categorias encontradas para debug
-                cats = [c for c in canais if getattr(c, 'type', None) and str(c.type) == 'category']
-                for cat in cats:
-                    if _normalizar(cat.name) in CATEGORIAS_EXTRA:
-                        log_msg(user_id, f"✅ Categoria extra encontrada: '{cat.name}' (ID: {cat.id})")
             except Exception as e:
                 log_msg(user_id, f"⚠️ fetch_channels falhou: {e}")
 
@@ -947,12 +864,7 @@ def run_selfbot(config: dict, user_id: int):
                 log_msg(user_id, "📂 Categoria principal: não configurada (usando apenas extras)")
             for nome_extra in CATEGORIAS_EXTRA:
                 encontrada = next((c for c in guild.channels if _normalizar(c.name) == nome_extra), None)
-                if encontrada:
-                    # Adiciona o ID da categoria encontrada por nome ao set de IDs extras
-                    CATEGORIAS_EXTRA_IDS.add(encontrada.id)
-                    log_msg(user_id, f"📂 Extra '{nome_extra}': ✅ {encontrada.name} (ID adicionado: {encontrada.id})")
-                else:
-                    log_msg(user_id, f"📂 Extra '{nome_extra}': ❌ NAO ENCONTRADA")
+                log_msg(user_id, f"📂 Extra '{nome_extra}': {'✅ ' + encontrada.name if encontrada else '❌ NAO ENCONTRADA'}")
         else:
             log_msg(user_id, f"❌ Servidor {SERVER_ID} nao encontrado.")
 
@@ -994,13 +906,7 @@ def run_selfbot(config: dict, user_id: int):
             valor = entry.get("valor", "N/A")
             banco = entry.get("banco", "")
             uid = entry.get("uid", "")
-            log_msg(user_id, "="*70)
-            log_msg(user_id, f"💰 PIX RECEBIDO NO E-MAIL")
-            log_msg(user_id, f"   └─ Pagador : {pagador}")
-            log_msg(user_id, f"   └─ Valor   : R$ {valor}")
-            log_msg(user_id, f"   └─ Banco   : {banco}")
-            log_msg(user_id, f"   └─ UID     : {uid}")
-            log_msg(user_id, "="*70)
+            log_msg(user_id, f"🔔 PIX em tempo real: {pagador} | R${valor} | {banco}")
 
             loop = _loops.get(user_id)
             if not loop or loop.is_closed():
@@ -1068,12 +974,12 @@ def run_selfbot(config: dict, user_id: int):
 
     async def reset_diario():
         import pytz
-        from datetime import timedelta
         tz = pytz.timezone("America/Sao_Paulo")
         while not _stop_flags.get(user_id, False):
             agora = datetime.now(tz)
             # Calcula segundos até meia-noite
             meia_noite = agora.replace(hour=0, minute=0, second=0, microsecond=0)
+            from datetime import timedelta
             proximo = meia_noite + timedelta(days=1)
             espera = (proximo - agora).total_seconds()
             await asyncio.sleep(espera)
@@ -1114,25 +1020,20 @@ def run_selfbot(config: dict, user_id: int):
             guild = client.get_guild(SERVER_ID)
             if not guild:
                 return
-            count = 0
-            for canal in guild.channels:
-                cat_id = getattr(canal, 'category_id', None)
-                if cat_id not in CATEGORIAS_EXTRA_IDS and canal.id not in CATEGORIAS_EXTRA_IDS:
-                    if not (CATEGORIA_ID and cat_id == CATEGORIA_ID):
-                        continue
-                for thread in getattr(canal, 'threads', []):
+            # Busca threads ativas via API (não depende do cache local)
+            try:
+                active = await guild.active_threads()
+                for thread in active:
                     if thread.id not in threads_com_mensagem:
                         asyncio.ensure_future(_enviar_em_thread(thread))
-                        count += 1
-                try:
-                    async for msg in canal.history(limit=30):
-                        t = getattr(msg, 'thread', None)
-                        if t and t.id not in threads_com_mensagem:
-                            asyncio.ensure_future(_enviar_em_thread(t))
-                            count += 1
-                except Exception:
-                    pass
-            log_msg(user_id, f"✅ Verificação inicial: {count} threads enfileiradas")
+                log_msg(user_id, f"✅ Verificação inicial: {len(active)} threads ativas")
+            except Exception:
+                # Fallback para cache local
+                for canal in guild.channels:
+                    for thread in getattr(canal, "threads", []):
+                        if thread.id not in threads_com_mensagem:
+                            asyncio.ensure_future(_enviar_em_thread(thread))
+                log_msg(user_id, "✅ Verificação inicial concluída (cache)")
         except Exception as exc:
             log_msg(user_id, f"❌ Erro na verificação inicial: {exc}")
 
@@ -1147,7 +1048,7 @@ def run_selfbot(config: dict, user_id: int):
                     # A cada 60s faz fetch ativo das threads via API
                     if (agora - ultimo_fetch).total_seconds() > 60:
                         try:
-                            active = await _fetch_active_threads()
+                            active = await guild.active_threads()
                             for thread in active:
                                 if thread.id not in threads_com_mensagem:
                                     asyncio.ensure_future(_enviar_em_thread(thread))
@@ -1213,48 +1114,15 @@ def run_selfbot(config: dict, user_id: int):
         cmd = conteudo.lower()
 
 # Comandos de sala - aceita de qualquer mensagem (selfbot nao dispara on_message para si mesmo)
-        if cmd == ".scan":
-            try:
-                await message.delete()
-            except Exception:
-                pass
-            guild = client.get_guild(SERVER_ID)
-            if not guild:
-                return
-            count = 0
-            for canal in guild.channels:
-                cat_id = getattr(canal, 'category_id', None)
-                if cat_id not in CATEGORIAS_EXTRA_IDS and canal.id not in CATEGORIAS_EXTRA_IDS:
-                    if not (CATEGORIA_ID and cat_id == CATEGORIA_ID):
-                        continue
-                for thread in getattr(canal, 'threads', []):
-                    if thread.id not in threads_com_mensagem:
-                        asyncio.ensure_future(_enviar_em_thread(thread))
-                        count += 1
-                # busca via historico do canal
-                try:
-                    async for msg in canal.history(limit=30):
-                        t = getattr(msg, 'thread', None)
-                        if t and t.id not in threads_com_mensagem:
-                            asyncio.ensure_future(_enviar_em_thread(t))
-                            count += 1
-                except Exception:
-                    pass
-            log_msg(user_id, f"🔍 .scan: {count} threads enfileiradas")
-            return
-
-        if cmd in (".rv gn", ".rv inf"):
+        if cmd in ("!normal", "!infinito"):
             log_msg(user_id, f"Comando {cmd} detectado de {message.author}")
+            # Check limit before creating room
             usadas, limite = _get_salas_info(user_id)
             if usadas >= limite:
                 await _digitar_e_enviar(channel, f"⚠️ Limite de salas atingido ({usadas}/{limite}). Aguarde ou peça mais salas ao admin.")
                 log_msg(user_id, f"⛔ Limite: {usadas}/{limite}")
                 return
-            salaid = SALA_INF if cmd == ".rv inf" else SALA_GN
-            try:
-                await message.delete()
-            except Exception:
-                pass
+            salaid = SALA_INF if cmd == "!infinito" else SALA_GN
             msg_req = await _digitar_e_enviar(channel, "Criando sala...")
             await _enviar_sala(channel, salaid)
             await msg_req.delete()
@@ -1265,12 +1133,11 @@ def run_selfbot(config: dict, user_id: int):
             disponiveis = max(limite - usadas, 0)
             try:
                 from sqlalchemy import text
-                import datetime as _dt
-                from datetime import timedelta
+                from datetime import datetime, timedelta
                 engine = _get_db_engine()
                 with engine.connect() as con:
                     con.execute(text("CREATE TABLE IF NOT EXISTS sala_historico (id SERIAL PRIMARY KEY, user_id INTEGER, criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"))
-                    agora = _dt.datetime.utcnow()
+                    agora = datetime.utcnow()
                     h1 = con.execute(text("SELECT COUNT(*) FROM sala_historico WHERE user_id=:uid AND criado_em >= :dt"), {"uid": user_id, "dt": agora - timedelta(hours=1)}).scalar()
                     d1 = con.execute(text("SELECT COUNT(*) FROM sala_historico WHERE user_id=:uid AND criado_em >= :dt"), {"uid": user_id, "dt": agora - timedelta(days=1)}).scalar()
                     s1 = con.execute(text("SELECT COUNT(*) FROM sala_historico WHERE user_id=:uid AND criado_em >= :dt"), {"uid": user_id, "dt": agora - timedelta(weeks=1)}).scalar()
@@ -1290,61 +1157,14 @@ def run_selfbot(config: dict, user_id: int):
                 f"\u2022 Criadas (1h): **{h1}** | (1 dia): **{d1}** | (1 semana): **{s1}**"
             )
             return
+            log_msg(user_id, f"Comando {cmd} detectado")
+            salaid = SALA_INF if cmd == "!infinito" else SALA_GN
+            msg_req = await channel.send("Criando sala...")
+            await _enviar_sala(channel, salaid)
+            await msg_req.delete()
+            return
 
         if message.author == client.user:
-            if cmd.startswith(".v "):
-                nome_busca = conteudo[3:].strip()
-                # Ignora se for mencao (@usuario) ou vazio
-                if not nome_busca or nome_busca.startswith('<@'):
-                    return
-                try:
-                    await message.delete()
-                except Exception:
-                    pass
-                chave_pg = f"{channel.id}_{nome_busca.lower()}"
-                if chave_pg in pg_em_processamento:
-                    return
-                pg_em_processamento.add(chave_pg)
-                log_msg(user_id, f"💰 COMANDO .v | Nome: {nome_busca}")
-                msg_fila = await _digitar_e_enviar(channel, "⏳ **Verificando pagamento…**")
-                try:
-                    resultado = await asyncio.wait_for(
-                        asyncio.get_running_loop().run_in_executor(None, lambda: _buscar_pagamento_otimizado(config, nome_busca, user_id)),
-                        timeout=75
-                    )
-                except asyncio.TimeoutError:
-                    resultado = None
-                try:
-                    await msg_fila.delete()
-                except Exception:
-                    pass
-                pg_em_processamento.discard(chave_pg)
-                if resultado:
-                    valor_str = resultado['valor']
-                    pagador = resultado.get('pagador', nome_busca)
-                    banco = resultado.get('banco', 'Email')
-                    hash_pag = _gerar_hash_pagamento(pagador, valor_str, banco, resultado.get('uid'))
-                    _registrar_pagamento_usado(hash_pag, user_id, channel.id, client.user.id, pagador, valor_str, resultado.get('uid'))
-                    pagamentos_por_thread[channel.id] = pagamentos_por_thread.get(channel.id, 0) + 1
-                    log_msg(user_id, f"💰 Progresso: {pagamentos_por_thread[channel.id]}/2 pagamentos confirmados")
-                    await _digitar_e_enviar(channel,
-                        f"✅ **PAGAMENTO CONFIRMADO**\n\n"
-                        f"📝 **Nome:** `{pagador}`\n"
-                        f"💰 **Valor:** `R$ {valor_str} (BRL)`\n"
-                        f"🔍 **Destino:** `e-mail {banco}`\n"
-                        f"🎉 **Vaga garantida! A sala será enviada aqui.**"
-                    )
-                    if pagamentos_por_thread.get(channel.id, 0) >= 2:
-                        pagamentos_por_thread[channel.id] = 0
-                        usadas, limite = _get_salas_info(user_id)
-                        if usadas >= limite:
-                            await _digitar_e_enviar(channel, f"Limite de salas atingido ({usadas}/{limite}).")
-                            return
-                        msg_req = await _digitar_e_enviar(channel, "Solicitando Sala...")
-                        await _enviar_sala(channel)
-                        await msg_req.delete()
-                else:
-                    await _digitar_e_enviar(channel, f"❌ Pagamento não encontrado para `{nome_busca}`.")
             return
 
         # Sistema de GO para iniciar sala
@@ -1465,9 +1285,6 @@ def run_selfbot(config: dict, user_id: int):
                 if channel.id in sala_em_criacao:
                     return
 
-                if config.get("auto_sala", "1") == "0":
-                    log_msg(user_id, "⚙️ Envio automático desativado — use .rv gn ou .rv inf")
-                    return
 
                 sala_em_criacao.add(channel.id)
                 try:
@@ -1514,7 +1331,7 @@ def run_selfbot(config: dict, user_id: int):
         try:
             resultado = await asyncio.wait_for(
                 asyncio.get_running_loop().run_in_executor(None, lambda: _buscar_pagamento_otimizado(config, nome_busca, user_id)),
-                timeout=75
+                timeout=90
             )
         except asyncio.TimeoutError:
             log_msg(user_id, "Timeout na busca")
@@ -1578,10 +1395,6 @@ def run_selfbot(config: dict, user_id: int):
             if pagamentos_por_thread.get(channel.id, 0) >= 2:
                 pagamentos_por_thread[channel.id] = 0
 
-                if config.get("auto_sala", "1") == "0":
-                    log_msg(user_id, "⚙️ Envio automático desativado — use .rv gn ou .rv inf")
-                    return
-
                 usadas, limite = _get_salas_info(user_id)
                 if usadas >= limite:
                     await _digitar_e_enviar(channel, f"Limite de salas atingido ({usadas}/{limite}).")
@@ -1591,18 +1404,7 @@ def run_selfbot(config: dict, user_id: int):
                 await _enviar_sala(channel)
                 await msg_req.delete()
         else:
-            # Registra como pendente — monitor vai confirmar quando PIX chegar
-            pg_pendentes[_normalizar(nome_busca)] = {
-                "channel_id": channel.id,
-                "message": message,
-                "nome": nome_busca,
-                "ts": datetime.utcnow()
-            }
-            await _digitar_e_reply(message,
-                f"⏳ **Pagamento ainda não detectado.**\n"
-                f"Aguardando PIX de `{nome_busca}` chegar no e-mail...\n"
-                f"Você será notificado automaticamente!"
-            )
+            await _digitar_e_reply(message, f"Pagamento nao confirmado para {nome_busca}.")
 
     @client.event
     async def on_error(event, *args, **kwargs):
