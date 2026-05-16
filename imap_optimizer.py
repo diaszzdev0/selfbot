@@ -214,10 +214,16 @@ class PersistentIMAPConnection:
         self._search_connected = False
         self._monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
         self._monitor_thread.start()
+        self._connect_errors = []  # buffer de erros antes do log_fn estar pronto
 
     def _log(self, msg):
         if self.log_fn:
+            # drena erros acumulados antes do log_fn estar pronto
+            while self._connect_errors:
+                self.log_fn(self._connect_errors.pop(0))
             self.log_fn(msg)
+        else:
+            self._connect_errors.append(msg)
 
     def _processar_email(self, uid_bytes, mail):
         """Processa um email e adiciona ao cache. Retorna entry ou None."""
@@ -261,7 +267,7 @@ class PersistentIMAPConnection:
 
     def _monitor_loop(self):
         """Conexao persistente: polling a cada 3s, popula cache e notifica PIX novos."""
-        time.sleep(2)
+        time.sleep(5)  # aguarda log_fn ser setado pelo bot_logic
         uids_notificados = set(self._uids_usados)
         inicializado = False
         mail = None
@@ -274,10 +280,13 @@ class PersistentIMAPConnection:
                     except Exception: pass
                 mail = _nova_conexao(self.config)
                 self._monitor_connected = True
+                self._log(f"✅ Monitor IMAP conectado ({self.config.get('email_user', '?')})")
                 return True
             except Exception as e:
                 self._monitor_connected = False
-                print(f"[MONITOR {self.user_id}] falha: {e}", flush=True)
+                err = f"{type(e).__name__}: {e}"
+                self._log(f"❌ Monitor IMAP falha ao conectar: {err}")
+                print(f"[MONITOR {self.user_id}] falha: {err}", flush=True)
                 return False
 
         while not self._stop:
@@ -332,6 +341,7 @@ class PersistentIMAPConnection:
             except Exception as e:
                 self._monitor_connected = False
                 mail = None
+                self._log(f"⚠️ Monitor IMAP erro: {type(e).__name__}: {str(e)[:200]}")
 
             time.sleep(3)
 
@@ -373,18 +383,25 @@ class PersistentIMAPConnection:
         # 2) Cache nao tem — abre conexao propria para buscar emails que o monitor ainda nao processou
         log("🔄 Nao encontrado no cache, buscando direto no IMAP...")
         try:
-            mail = _nova_conexao(self.config)
+            mail2 = _nova_conexao(self.config)
             hoje_str = date.today().strftime("%d-%b-%Y")
-            mail.select("INBOX")
-            _, data = mail.search(None, f'(SINCE "{hoje_str}")')
+            mail2.select("INBOX")
+            _, data = mail2.search(None, f'(SINCE "{hoje_str}")')
             uids = data[0].split() if data and data[0] else []
+            log(f"📬 {len(uids)} emails encontrados no IMAP direto")
             with self._cache_lock:
                 novos = [u for u in uids if u.decode() not in self._cache]
+            log(f"🔄 {len(novos)} emails novos para processar")
             for u in novos:
-                self._processar_email(u, mail)
-            mail.logout()
+                self._processar_email(u, mail2)
+            try:
+                mail2.logout()
+            except Exception:
+                pass
         except Exception as e:
-            log(f"⚠️ Refresh IMAP: {type(e).__name__}")
+            import traceback as _tb
+            log(f"⚠️ Refresh IMAP: {type(e).__name__}: {e}")
+            log(f"⚠️ Detalhe: {_tb.format_exc().splitlines()[-1]}")
 
         # 3) Tenta cache novamente apos refresh
         with self._cache_lock:
