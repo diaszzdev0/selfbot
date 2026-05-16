@@ -333,6 +333,7 @@ class PersistentIMAPConnection:
         """Polling a cada 5s para notificação de PIX em tempo real."""
         time.sleep(5)
         uids_vistos = set(self._uids_usados)
+        inicializado = False
 
         while not self._stop:
             try:
@@ -346,6 +347,15 @@ class PersistentIMAPConnection:
 
                 _, data = mail.search(None, f'(SINCE "{hoje_str}")')
                 uids = data[0].split() if data and data[0] else []
+
+                if not inicializado:
+                    # Primeira execucao: marca todos como vistos sem notificar
+                    for uid_bytes in uids:
+                        uids_vistos.add(uid_bytes.decode())
+                    inicializado = True
+                    mail.logout()
+                    time.sleep(5)
+                    continue
 
                 for uid_bytes in reversed(uids):
                     uid_str = uid_bytes.decode()
