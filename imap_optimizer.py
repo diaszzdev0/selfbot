@@ -199,46 +199,160 @@ class PersistentIMAPConnection:
         self.log_fn = log_fn
         self.user_id = user_id
         self._on_novo_pix = None
-        self._monitor_mail = None
-        self._monitor_connected = False
         self._search_mail = None
         self._search_connected = False
         self._search_lock = threading.Lock()
-        self._monitor_lock = threading.Lock()
         self._stop = False
         self._uids_usados = set()
         self._carregar_uids_arquivo()
-        self._cache = {}  # sempre começa vazio, monitor recarrega emails de hoje
+        self._cache = {}
         self._cache_lock = threading.Lock()
-        self._monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
-        self._monitor_thread.start()
+        # Thread dedicada ao IDLE (conexao propria, nunca compartilhada)
+        self._idle_thread = threading.Thread(target=self._idle_loop, daemon=True)
+        self._idle_thread.start()
 
     def _log(self, msg):
         if self.log_fn:
             self.log_fn(msg)
 
-    def _conectar_monitor(self):
-        try:
-            self._monitor_mail = _nova_conexao_imap(self.config)
-            self._monitor_connected = True
-            print("\u2705 IMAP monitor conectado", flush=True)
-            return True
-        except Exception as e:
-            self._monitor_connected = False
-            import logging
-            print(f"\u26a0\ufe0f IMAP monitor falhou: {type(e).__name__}: {e}", flush=True)
-            return False
-
     def _conectar_search(self):
         try:
             self._search_mail = _nova_conexao_imap(self.config)
             self._search_connected = True
-            self._log("\u2705 IMAP conexao persistente estabelecida")
             return True
         except Exception as e:
             self._search_connected = False
-            self._log(f"\u26a0\ufe0f Falha conexao IMAP: {type(e).__name__}: {str(e)[:100]}")
+            self._log(f"\u26a0\ufe0f Falha conexao IMAP search: {type(e).__name__}: {str(e)[:100]}")
             return False
+
+    def _processar_uid(self, uid_bytes, mail_conn):
+        uid_str = uid_bytes.decode() if isinstance(uid_bytes, bytes) else str(uid_bytes)
+        try:
+            _, msgs_data = mail_conn.fetch(uid_bytes if isinstance(uid_bytes, bytes) else uid_str.encode(), "(RFC822)")
+            raw = next((x[1] for x in msgs_data if isinstance(x, tuple)), None)
+            if raw is None:
+                with self._cache_lock:
+                    self._cache[uid_str] = None
+                return None
+            msg = email.message_from_bytes(raw)
+            subject = _decode_header_str(msg.get("Subject", ""))
+            email_date = date.today()
+            try:
+                from email.utils import parsedate_to_datetime
+                date_header = msg.get("Date", "")
+                if date_header:
+                    email_date = parsedate_to_datetime(date_header).date()
+            except Exception:
+                pass
+            if not _is_email_pix(subject):
+                with self._cache_lock:
+                    self._cache[uid_str] = None
+                return None
+            content = f"{subject} {_get_body(msg)}"
+            entry = {
+                "pagador": _extrair_pagador(content),
+                "pagador_norm": _normalizar(_extrair_pagador(content)),
+                "valor": _extrair_valor(content),
+                "banco": _detectar_banco(content),
+                "uid": uid_str,
+                "data": email_date,
+            }
+            with self._cache_lock:
+                self._cache[uid_str] = entry
+            return entry
+        except Exception as e:
+            print(f"[IMAP ERR] {type(e).__name__}: {e}", flush=True)
+            return None
+
+    def _idle_loop(self):
+        """Conexao IMAP exclusiva para IDLE push. Nunca compartilhada."""
+        time.sleep(3)
+        idle_mail = None
+        idle_connected = False
+
+        def conectar():
+            nonlocal idle_mail, idle_connected
+            try:
+                idle_mail = _nova_conexao_imap(self.config)
+                idle_mail.socket().settimeout(35)
+                idle_connected = True
+                print(f"[IDLE] Conectado: {self.config.get('email_user')}", flush=True)
+                # Carrega emails de hoje no cache inicial
+                hoje = date.today().strftime("%d-%b-%Y")
+                _, data = idle_mail.search(None, f'(SINCE "{hoje}")')
+                uids = data[0].split() if data and data[0] else []
+                with self._cache_lock:
+                    novos = [u for u in uids if u.decode() not in self._cache]
+                for u in novos:
+                    entry = self._processar_uid(u, idle_mail)
+                    if entry:
+                        _escrever_log_usuario(self.user_id, entry)
+                        if self._on_novo_pix:
+                            try:
+                                self._on_novo_pix(entry)
+                            except Exception:
+                                pass
+                return True
+            except Exception as e:
+                idle_connected = False
+                print(f"[IDLE] Falha conexao: {e}", flush=True)
+                return False
+
+        while not self._stop:
+            if not idle_connected or idle_mail is None:
+                if not conectar():
+                    time.sleep(15)
+                    continue
+
+            try:
+                # Entra em IDLE
+                idle_mail.select("INBOX")
+                tag = idle_mail._new_tag()
+                idle_mail.send(f"{tag} IDLE\r\n".encode())
+                resp = idle_mail.readline()  # espera "+ idling"
+                if b"idling" not in resp.lower() and b"+" not in resp:
+                    idle_connected = False
+                    continue
+
+                # Aguarda notificacao (timeout 28s para renovar antes do limite de 30s)
+                idle_mail.socket().settimeout(28)
+                try:
+                    line = idle_mail.readline()
+                except Exception:
+                    line = b""
+                finally:
+                    idle_mail.socket().settimeout(35)
+
+                # Sai do IDLE
+                idle_mail.send(b"DONE\r\n")
+                idle_mail.readline()  # consome OK
+
+                # Se chegou notificacao de EXISTS (email novo)
+                if b"EXISTS" in line or b"FETCH" in line or b"RECENT" in line:
+                    hoje = date.today().strftime("%d-%b-%Y")
+                    _, data = idle_mail.search(None, f'(SINCE "{hoje}")')
+                    uids = data[0].split() if data and data[0] else []
+                    with self._cache_lock:
+                        novos = [u for u in uids if u.decode() not in self._cache]
+                    for u in novos:
+                        entry = self._processar_uid(u, idle_mail)
+                        if entry:
+                            _escrever_log_usuario(self.user_id, entry)
+                            if self._on_novo_pix:
+                                try:
+                                    self._on_novo_pix(entry)
+                                except Exception:
+                                    pass
+
+            except Exception as e:
+                print(f"[IDLE LOOP ERR] {type(e).__name__}: {e}", flush=True)
+                idle_connected = False
+                try:
+                    idle_mail.logout()
+                except Exception:
+                    pass
+                idle_mail = None
+                time.sleep(5)
 
     def _processar_uid(self, uid_bytes, mail_conn):
         """Processa um UID e adiciona ao cache. Retorna entry ou None."""
@@ -281,79 +395,7 @@ class PersistentIMAPConnection:
             return None
 
     def _monitor_loop(self):
-        """IMAP IDLE: recebe notificacao em tempo real quando chega email novo."""
-        time.sleep(5)
-        while not self._stop:
-            try:
-                with self._monitor_lock:
-                    if not self._monitor_connected or self._monitor_mail is None:
-                        if not self._conectar_monitor():
-                            time.sleep(10)
-                            continue
-                    hoje = date.today().strftime("%d-%b-%Y")
-                    # Carrega emails de hoje no cache antes de entrar em IDLE
-                    try:
-                        self._monitor_mail.select("INBOX")
-                        _, data = self._monitor_mail.search(None, f'(SINCE "{hoje}")')
-                        uids_all = data[0].split() if data and data[0] else []
-                        with self._cache_lock:
-                            novos = [u for u in uids_all if u.decode() not in self._cache]
-                    except Exception as e:
-                        print(f"[MONITOR] Erro search: {e}", flush=True)
-                        self._monitor_connected = False
-                        time.sleep(5)
-                        continue
-
-                # Processa emails novos encontrados
-                for uid_bytes in novos:
-                    with self._monitor_lock:
-                        if not self._monitor_connected:
-                            break
-                        entry = self._processar_uid(uid_bytes, self._monitor_mail)
-                    if entry:
-                        _escrever_log_usuario(self.user_id, entry)
-                        if self._on_novo_pix:
-                            try:
-                                self._on_novo_pix(entry)
-                            except Exception as _cb_err:
-                                print(f"[CALLBACK ERR] {_cb_err}", flush=True)
-
-                # Entra em IDLE para receber notificacao imediata de novos emails
-                try:
-                    with self._monitor_lock:
-                        if not self._monitor_connected:
-                            continue
-                        # Envia IDLE
-                        tag = self._monitor_mail._new_tag()
-                        self._monitor_mail.send(f"{tag} IDLE\r\n".encode())
-                        # Aguarda resposta "+ idling"
-                        self._monitor_mail.readline()
-
-                    # Aguarda notificacao por ate 25s (keepalive IMAP e 30s)
-                    self._monitor_mail.socket().settimeout(25)
-                    try:
-                        line = self._monitor_mail.readline()
-                    except Exception:
-                        line = b""
-                    finally:
-                        self._monitor_mail.socket().settimeout(30)
-
-                    # Sai do IDLE
-                    with self._monitor_lock:
-                        try:
-                            self._monitor_mail.send(b"DONE\r\n")
-                            self._monitor_mail.readline()  # consome resposta do DONE
-                        except Exception:
-                            self._monitor_connected = False
-
-                except Exception as e:
-                    print(f"[IDLE ERR] {type(e).__name__}: {e}", flush=True)
-                    self._monitor_connected = False
-
-            except Exception as e:
-                print(f"[MONITOR LOOP ERR] {type(e).__name__}: {e}", flush=True)
-                self._monitor_connected = False
-                time.sleep(5)
+        pass  # substituido por _idle_loop
 
     def _garantir_search(self):
         if not self._search_connected or self._search_mail is None:
@@ -467,12 +509,11 @@ class PersistentIMAPConnection:
 
     def stop(self):
         self._stop = True
-        for conn in [self._monitor_mail, self._search_mail]:
-            try:
-                if conn:
-                    conn.logout()
-            except Exception:
-                pass
+        try:
+            if self._search_mail:
+                self._search_mail.logout()
+        except Exception:
+            pass
 
 
 class IMAPManager:

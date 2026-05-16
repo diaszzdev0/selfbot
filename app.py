@@ -1313,8 +1313,7 @@ def imap_stats_user(user_id: int):
             total_cache = len(conn._cache)
         return jsonify({
             "user_id": user_id,
-            "connected_monitor": conn._monitor_connected,
-            "connected_search": conn._search_connected,
+            "connected": conn._search_connected,
             "total_cache": total_cache,
             "uids_usados": len(conn._uids_usados),
         })
