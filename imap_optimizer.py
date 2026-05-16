@@ -330,30 +330,51 @@ class PersistentIMAPConnection:
             self.log_fn(msg)
 
     def _monitor_loop(self):
-        """Polling a cada 5s para notificação de PIX em tempo real."""
-        time.sleep(5)
+        """Monitor com conexao persistente e polling a cada 5s."""
+        time.sleep(3)
         uids_vistos = set(self._uids_usados)
         inicializado = False
+        mail = None
 
-        while not self._stop:
+        def conectar():
+            nonlocal mail
             try:
-                hoje = date.today()
-                hoje_str = hoje.strftime("%d-%b-%Y")
+                if mail:
+                    try: mail.logout()
+                    except Exception: pass
                 mail = imaplib.IMAP4_SSL(self.config["imap_server"])
                 mail.socket().settimeout(20)
                 mail.login(self.config["email_user"], self.config["email_pass"])
                 mail.select("INBOX")
                 self._monitor_connected = True
+                return True
+            except Exception as e:
+                self._monitor_connected = False
+                print(f"[MONITOR {self.user_id}] conectar: {e}", flush=True)
+                return False
 
-                _, data = mail.search(None, f'(SINCE "{hoje_str}")')
-                uids = data[0].split() if data and data[0] else []
+        while not self._stop:
+            try:
+                if mail is None:
+                    if not conectar():
+                        time.sleep(10)
+                        continue
+
+                hoje = date.today()
+                hoje_str = hoje.strftime("%d-%b-%Y")
+
+                try:
+                    mail.select("INBOX")
+                    _, data = mail.search(None, f'(SINCE "{hoje_str}")')
+                    uids = data[0].split() if data and data[0] else []
+                except Exception:
+                    mail = None
+                    continue
 
                 if not inicializado:
-                    # Primeira execucao: marca todos como vistos sem notificar
                     for uid_bytes in uids:
                         uids_vistos.add(uid_bytes.decode())
                     inicializado = True
-                    mail.logout()
                     time.sleep(5)
                     continue
 
@@ -393,10 +414,12 @@ class PersistentIMAPConnection:
                                 pass
                     except Exception:
                         continue
-                mail.logout()
+
             except Exception as e:
                 self._monitor_connected = False
                 print(f"[MONITOR {self.user_id}] {type(e).__name__}: {e}", flush=True)
+                mail = None
+
             time.sleep(5)
 
     def buscar(self, nome, log_fn=None):
