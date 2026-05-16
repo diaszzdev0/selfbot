@@ -252,26 +252,37 @@ class PersistentIMAPConnection:
                 return None
             msg = email.message_from_bytes(raw)
             subject = _decode_header_str(msg.get("Subject", ""))
-            email_date = date.today()
-            try:
-                from email.utils import parsedate_to_datetime
-                date_header = msg.get("Date", "")
-                if date_header:
-                    email_date = parsedate_to_datetime(date_header).date()
-            except Exception:
-                pass
+            # Rejeita se nao for email de PIX
             if not _is_email_pix(subject):
                 with self._cache_lock:
                     self._cache[uid_str] = None
                 return None
+            # Rejeita emails de dias anteriores
+            try:
+                from email.utils import parsedate_to_datetime
+                date_header = msg.get("Date", "")
+                if not date_header:
+                    with self._cache_lock:
+                        self._cache[uid_str] = None
+                    return None
+                email_date = parsedate_to_datetime(date_header).date()
+                if email_date < date.today():
+                    with self._cache_lock:
+                        self._cache[uid_str] = None
+                    return None
+            except Exception:
+                with self._cache_lock:
+                    self._cache[uid_str] = None
+                return None
             content = f"{subject} {_get_body(msg)}"
+            pagador = _extrair_pagador(content)
             entry = {
-                "pagador": _extrair_pagador(content),
-                "pagador_norm": _normalizar(_extrair_pagador(content)),
+                "pagador": pagador,
+                "pagador_norm": _normalizar(pagador),
                 "valor": _extrair_valor(content),
                 "banco": _detectar_banco(content),
                 "uid": uid_str,
-                "data": email_date,
+                "data": date.today(),
             }
             with self._cache_lock:
                 self._cache[uid_str] = entry

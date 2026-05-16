@@ -1253,6 +1253,28 @@ def run_selfbot(config: dict, user_id: int):
                         valor_str = resultado_ocr.get('valor', 'N/A')
                         banco = resultado_ocr.get('banco', 'Comprovante')
                         pagador = resultado_ocr.get('pagador', 'Desconhecido')
+
+                        # Rejeita comprovantes com data anterior a hoje
+                        data_comp = resultado_ocr.get('data', '')
+                        if data_comp:
+                            try:
+                                from datetime import date as _date
+                                import re as _re
+                                m = _re.search(r'(\d{2})[/\-](\d{2})[/\-](\d{2,4})', str(data_comp))
+                                if m:
+                                    d, mo, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
+                                    if y < 100: y += 2000
+                                    data_pag = _date(y, mo, d)
+                                    if data_pag < _date.today():
+                                        await _digitar_e_reply(message,
+                                            f"\U0001f6a8 **Comprovante recusado!**\n"
+                                            f"\u274c Este comprovante é do dia `{data_comp}` e já expirou.\n"
+                                            f"Por favor envie um comprovante de hoje."
+                                        )
+                                        log_msg(user_id, f"\U0001f6a8 Comprovante antigo bloqueado: {data_comp} | {pagador}")
+                                        return
+                            except Exception:
+                                pass
                         
                         # Gera hash do pagamento para verificar duplicação
                         hash_pag = _gerar_hash_pagamento(pagador, valor_str, banco)
