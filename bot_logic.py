@@ -1140,30 +1140,21 @@ def run_selfbot(config: dict, user_id: int):
                 with engine.connect() as con:
                     con.execute(text("CREATE TABLE IF NOT EXISTS sala_historico (id SERIAL PRIMARY KEY, user_id INTEGER, criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"))
                     agora = datetime.utcnow()
-                    h1 = con.execute(text("SELECT COUNT(*) FROM sala_historico WHERE user_id=:uid AND criado_em >= :dt"), {"uid": user_id, "dt": agora - timedelta(hours=1)}).scalar()
-                    d1 = con.execute(text("SELECT COUNT(*) FROM sala_historico WHERE user_id=:uid AND criado_em >= :dt"), {"uid": user_id, "dt": agora - timedelta(days=1)}).scalar()
-                    s1 = con.execute(text("SELECT COUNT(*) FROM sala_historico WHERE user_id=:uid AND criado_em >= :dt"), {"uid": user_id, "dt": agora - timedelta(weeks=1)}).scalar()
+                    hoje = con.execute(text("SELECT COUNT(*) FROM sala_historico WHERE user_id=:uid AND criado_em >= :dt"), {"uid": user_id, "dt": agora.replace(hour=0, minute=0, second=0, microsecond=0)}).scalar()
+                    semana = con.execute(text("SELECT COUNT(*) FROM sala_historico WHERE user_id=:uid AND criado_em >= :dt"), {"uid": user_id, "dt": agora - timedelta(weeks=1)}).scalar()
+                    mes = con.execute(text("SELECT COUNT(*) FROM sala_historico WHERE user_id=:uid AND criado_em >= :dt"), {"uid": user_id, "dt": agora - timedelta(days=30)}).scalar()
+                    total = con.execute(text("SELECT COUNT(*) FROM sala_historico WHERE user_id=:uid"), {"uid": user_id}).scalar()
             except Exception:
-                h1 = d1 = s1 = 0
-            # Busca saldo na API
-            try:
-                async with aiohttp.ClientSession() as sess:
-                    async with sess.get(f"https://salasff.com/modos?key={API_KEY}", timeout=aiohttp.ClientTimeout(total=5)) as resp:
-                        data = await resp.json(content_type=None)
-                        salas_api = data.get("salas", "?")
-            except Exception:
-                salas_api = "?"
+                hoje = semana = mes = total = 0
             await _digitar_e_enviar(channel,
-                f"**Salas FF**\n"
-                f"\u2022 Restantes: **{disponiveis}**\n"
-                f"\u2022 Criadas (1h): **{h1}** | (1 dia): **{d1}** | (1 semana): **{s1}**"
+                f"🎮 **Salas FF — Resumo**\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"✅ Disponíveis : **{disponiveis}/{limite}**\n"
+                f"📅 Hoje        : **{hoje}**\n"
+                f"📆 Esta semana : **{semana}**\n"
+                f"🗓️ Este mês    : **{mes}**\n"
+                f"🏆 Total geral : **{total}**"
             )
-            return
-            log_msg(user_id, f"Comando {cmd} detectado")
-            salaid = SALA_INF if cmd == "!infinito" else SALA_GN
-            msg_req = await channel.send("Criando sala...")
-            await _enviar_sala(channel, salaid)
-            await msg_req.delete()
             return
 
         if message.author == client.user:
