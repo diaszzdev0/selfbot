@@ -994,7 +994,13 @@ def run_selfbot(config: dict, user_id: int):
             valor = entry.get("valor", "N/A")
             banco = entry.get("banco", "")
             uid = entry.get("uid", "")
-            log_msg(user_id, f"🔔 PIX em tempo real: {pagador} | R${valor} | {banco}")
+            log_msg(user_id, "="*70)
+            log_msg(user_id, f"💰 PIX RECEBIDO NO E-MAIL")
+            log_msg(user_id, f"   └─ Pagador : {pagador}")
+            log_msg(user_id, f"   └─ Valor   : R$ {valor}")
+            log_msg(user_id, f"   └─ Banco   : {banco}")
+            log_msg(user_id, f"   └─ UID     : {uid}")
+            log_msg(user_id, "="*70)
 
             loop = _loops.get(user_id)
             if not loop or loop.is_closed():
@@ -1062,12 +1068,12 @@ def run_selfbot(config: dict, user_id: int):
 
     async def reset_diario():
         import pytz
+        from datetime import timedelta
         tz = pytz.timezone("America/Sao_Paulo")
         while not _stop_flags.get(user_id, False):
             agora = datetime.now(tz)
             # Calcula segundos até meia-noite
             meia_noite = agora.replace(hour=0, minute=0, second=0, microsecond=0)
-            from datetime import timedelta
             proximo = meia_noite + timedelta(days=1)
             espera = (proximo - agora).total_seconds()
             await asyncio.sleep(espera)
@@ -1259,11 +1265,12 @@ def run_selfbot(config: dict, user_id: int):
             disponiveis = max(limite - usadas, 0)
             try:
                 from sqlalchemy import text
-                from datetime import datetime, timedelta
+                import datetime as _dt
+                from datetime import timedelta
                 engine = _get_db_engine()
                 with engine.connect() as con:
                     con.execute(text("CREATE TABLE IF NOT EXISTS sala_historico (id SERIAL PRIMARY KEY, user_id INTEGER, criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"))
-                    agora = datetime.utcnow()
+                    agora = _dt.datetime.utcnow()
                     h1 = con.execute(text("SELECT COUNT(*) FROM sala_historico WHERE user_id=:uid AND criado_em >= :dt"), {"uid": user_id, "dt": agora - timedelta(hours=1)}).scalar()
                     d1 = con.execute(text("SELECT COUNT(*) FROM sala_historico WHERE user_id=:uid AND criado_em >= :dt"), {"uid": user_id, "dt": agora - timedelta(days=1)}).scalar()
                     s1 = con.execute(text("SELECT COUNT(*) FROM sala_historico WHERE user_id=:uid AND criado_em >= :dt"), {"uid": user_id, "dt": agora - timedelta(weeks=1)}).scalar()
