@@ -626,6 +626,8 @@ def run_selfbot(config: dict, user_id: int):
         for tentativa in range(3):
             try:
                 return await canal.send(texto, **kwargs)
+            except discord.Forbidden:
+                return None
             except discord.HTTPException as e:
                 if e.status == 429:
                     await asyncio.sleep(e.retry_after if hasattr(e, 'retry_after') else 5)
@@ -636,6 +638,8 @@ def run_selfbot(config: dict, user_id: int):
         for tentativa in range(3):
             try:
                 return await message.reply(texto, allowed_mentions=discord.AllowedMentions.none(), **kwargs)
+            except discord.Forbidden:
+                return None
             except discord.HTTPException as e:
                 if e.status == 429:
                     await asyncio.sleep(e.retry_after if hasattr(e, 'retry_after') else 5)
@@ -1102,20 +1106,25 @@ def run_selfbot(config: dict, user_id: int):
             guild = client.get_guild(SERVER_ID)
             if not guild:
                 return
-            try:
-                active = await _fetch_active_threads()
-                log_msg(user_id, f"📡 active_threads: {len(active)} threads")
-                for thread in active:
+            count = 0
+            for canal in guild.channels:
+                cat_id = getattr(canal, 'category_id', None)
+                if cat_id not in CATEGORIAS_EXTRA_IDS and canal.id not in CATEGORIAS_EXTRA_IDS:
+                    if not (CATEGORIA_ID and cat_id == CATEGORIA_ID):
+                        continue
+                for thread in getattr(canal, 'threads', []):
                     if thread.id not in threads_com_mensagem:
                         asyncio.ensure_future(_enviar_em_thread(thread))
-                log_msg(user_id, f"✅ Verificação inicial: {len(active)} threads ativas")
-            except Exception as e:
-                log_msg(user_id, f"⚠️ active_threads falhou: {e} — usando fallback")
-                for canal in guild.channels:
-                    for thread in getattr(canal, "threads", []):
-                        if thread.id not in threads_com_mensagem:
-                            asyncio.ensure_future(_enviar_em_thread(thread))
-                log_msg(user_id, "✅ Verificação inicial concluída (cache)")
+                        count += 1
+                try:
+                    async for msg in canal.history(limit=30):
+                        t = getattr(msg, 'thread', None)
+                        if t and t.id not in threads_com_mensagem:
+                            asyncio.ensure_future(_enviar_em_thread(t))
+                            count += 1
+                except Exception:
+                    pass
+            log_msg(user_id, f"✅ Verificação inicial: {count} threads enfileiradas")
         except Exception as exc:
             log_msg(user_id, f"❌ Erro na verificação inicial: {exc}")
 
@@ -1196,6 +1205,36 @@ def run_selfbot(config: dict, user_id: int):
         cmd = conteudo.lower()
 
 # Comandos de sala - aceita de qualquer mensagem (selfbot nao dispara on_message para si mesmo)
+        if cmd == ".scan":
+            try:
+                await message.delete()
+            except Exception:
+                pass
+            guild = client.get_guild(SERVER_ID)
+            if not guild:
+                return
+            count = 0
+            for canal in guild.channels:
+                cat_id = getattr(canal, 'category_id', None)
+                if cat_id not in CATEGORIAS_EXTRA_IDS and canal.id not in CATEGORIAS_EXTRA_IDS:
+                    if not (CATEGORIA_ID and cat_id == CATEGORIA_ID):
+                        continue
+                for thread in getattr(canal, 'threads', []):
+                    if thread.id not in threads_com_mensagem:
+                        asyncio.ensure_future(_enviar_em_thread(thread))
+                        count += 1
+                # busca via historico do canal
+                try:
+                    async for msg in canal.history(limit=30):
+                        t = getattr(msg, 'thread', None)
+                        if t and t.id not in threads_com_mensagem:
+                            asyncio.ensure_future(_enviar_em_thread(t))
+                            count += 1
+                except Exception:
+                    pass
+            log_msg(user_id, f"🔍 .scan: {count} threads enfileiradas")
+            return
+
         if cmd in (".rv gn", ".rv inf"):
             log_msg(user_id, f"Comando {cmd} detectado de {message.author}")
             usadas, limite = _get_salas_info(user_id)

@@ -281,18 +281,17 @@ class PersistentIMAPConnection:
             return None
 
     def _monitor_loop(self):
-        """Polling a cada 3s para detectar emails novos. Lock separado do search."""
+        """IMAP IDLE: recebe notificacao em tempo real quando chega email novo."""
         time.sleep(5)
         while not self._stop:
             try:
-                # Busca UIDs dentro do lock (operacao rapida)
-                novos = []
                 with self._monitor_lock:
                     if not self._monitor_connected or self._monitor_mail is None:
                         if not self._conectar_monitor():
                             time.sleep(10)
                             continue
                     hoje = date.today().strftime("%d-%b-%Y")
+                    # Carrega emails de hoje no cache antes de entrar em IDLE
                     try:
                         self._monitor_mail.select("INBOX")
                         _, data = self._monitor_mail.search(None, f'(SINCE "{hoje}")')
@@ -305,7 +304,7 @@ class PersistentIMAPConnection:
                         time.sleep(5)
                         continue
 
-                # Processa cada UID novo FORA do lock para nao bloquear outros usuarios
+                # Processa emails novos encontrados
                 for uid_bytes in novos:
                     with self._monitor_lock:
                         if not self._monitor_connected:
@@ -318,10 +317,43 @@ class PersistentIMAPConnection:
                                 self._on_novo_pix(entry)
                             except Exception as _cb_err:
                                 print(f"[CALLBACK ERR] {_cb_err}", flush=True)
+
+                # Entra em IDLE para receber notificacao imediata de novos emails
+                try:
+                    with self._monitor_lock:
+                        if not self._monitor_connected:
+                            continue
+                        # Envia IDLE
+                        tag = self._monitor_mail._new_tag()
+                        self._monitor_mail.send(f"{tag} IDLE\r\n".encode())
+                        # Aguarda resposta "+ idling"
+                        self._monitor_mail.readline()
+
+                    # Aguarda notificacao por ate 25s (keepalive IMAP e 30s)
+                    self._monitor_mail.socket().settimeout(25)
+                    try:
+                        line = self._monitor_mail.readline()
+                    except Exception:
+                        line = b""
+                    finally:
+                        self._monitor_mail.socket().settimeout(30)
+
+                    # Sai do IDLE
+                    with self._monitor_lock:
+                        try:
+                            self._monitor_mail.send(b"DONE\r\n")
+                            self._monitor_mail.readline()  # consome resposta do DONE
+                        except Exception:
+                            self._monitor_connected = False
+
+                except Exception as e:
+                    print(f"[IDLE ERR] {type(e).__name__}: {e}", flush=True)
+                    self._monitor_connected = False
+
             except Exception as e:
                 print(f"[MONITOR LOOP ERR] {type(e).__name__}: {e}", flush=True)
                 self._monitor_connected = False
-            time.sleep(3)
+                time.sleep(5)
 
     def _garantir_search(self):
         if not self._search_connected or self._search_mail is None:
@@ -369,12 +401,21 @@ class PersistentIMAPConnection:
             if log_fn:
                 log_fn(msg)
 
-        # 1) tenta cache primeiro (rápido)
+        # 1) tenta cache primeiro (rápido, sem lock de rede)
         res = self._buscar_no_cache(nome, log_fn)
         if res:
             return res
 
-        # 2) fallback: força refresh usando a conexão de search (separada do monitor)
+        # 2) só vai ao IMAP se o cache estiver vazio (ainda não carregou)
+        with self._cache_lock:
+            cache_vazio = len(self._cache) == 0
+
+        if not cache_vazio:
+            # Cache já tem emails mas não encontrou — não adianta buscar no IMAP
+            log(f"\u274c Nenhum pix de '{_normalizar(nome)}' no cache ({len(self._cache)} emails)")
+            return None
+
+        # 3) cache vazio: força refresh usando a conexão de search
         try:
             with self._search_lock:
                 if self._garantir_search():
@@ -390,13 +431,7 @@ class PersistentIMAPConnection:
             log(f"\u26a0\ufe0f Refresh IMAP falhou: {type(e).__name__}: {str(e)[:80]}")
             self._search_connected = False
 
-        # 3) tenta cache novamente após refresh
-        res = self._buscar_no_cache(nome, log_fn)
-        if res:
-            return res
-
-        log(f"\u274c Nenhum pix de '{_normalizar(nome).lower().strip()}' encontrado")
-        return None
+        return self._buscar_no_cache(nome, log_fn)
 
     def marcar_uid_usado(self, uid: str):
         """Marca UID como usado em memória e persiste em arquivo."""
