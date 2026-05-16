@@ -527,6 +527,7 @@ def run_selfbot(config: dict, user_id: int):
     pagamentos_por_thread: dict[int, int] = {}
     salas_ativas: dict[int, str] = {}       # channel_id -> pedidoid
     sala_em_criacao: set[int] = set()       # channel_id que já está criando sala (evita duplicar)
+    salas_concluidas: set[int] = set()      # channel_id onde sala já foi enviada — ignora comprovantes
     go_por_thread: dict[int, set] = {}       # channel_id -> set de user_ids
 
     go_auto_tasks: dict[int, asyncio.Task] = {}  # channel_id -> task do timer
@@ -739,6 +740,7 @@ def run_selfbot(config: dict, user_id: int):
             else:
                 await _digitar_e_enviar(channel, msg_sala)
             _incrementar_sala(user_id)  # contabiliza só após envio confirmado
+            salas_concluidas.add(channel.id)  # para de ler comprovantes nesta thread
             await asyncio.sleep(4)
             await _digitar_e_enviar(channel, "⚡ **IMPORTANTE:** Após ambos entrarem, digitem `go` aqui no chat para iniciar! A sala dá go automático em **5 minutos**.")
 
@@ -1218,6 +1220,8 @@ def run_selfbot(config: dict, user_id: int):
 
         # Verifica se e um comprovante (imagem anexada)
         if message.attachments and not _extrair_nome(conteudo):
+            if channel.id in salas_concluidas:
+                return
             for attachment in message.attachments:
                 ct = getattr(attachment, 'content_type', '') or ''
                 ext = attachment.filename.split('.')[-1].lower()
