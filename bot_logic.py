@@ -1116,6 +1116,34 @@ def run_selfbot(config: dict, user_id: int):
         cmd = conteudo.lower()
 
 # Comandos de sala - aceita de qualquer mensagem (selfbot nao dispara on_message para si mesmo)
+        if cmd == ".help":
+            if message.author != client.user:
+                return
+            try:
+                await message.delete()
+            except Exception:
+                pass
+            await _digitar_e_enviar(channel,
+                "**🤖 Comandos do Selfbot**\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                "**💰 Pagamentos**\n"
+                "`pg Nome Sobrenome` — Verifica se o pagamento chegou no e-mail\n"
+                "`pg Nome` — Busca por primeiro nome (ex: pg Matheus)\n\n"
+                "**🎮 Salas**\n"
+                "`.gn` — Cria uma sala de Gel Normal\n"
+                "`.gi` — Cria uma sala de Gel Infinito\n"
+                "`.go` — Força o go da sala ativa na thread\n"
+                "`go` — Confirma entrada na sala (precisa de 2 jogadores)\n\n"
+                "**📊 Informações**\n"
+                "`!salas` — Mostra quantas salas foram criadas (hoje, semana, mês, total)\n\n"
+                "**🔍 Verificação automática**\n"
+                "Envie uma imagem/comprovante — O bot lê e confirma o pagamento automaticamente\n\n"
+                "**🛠️ Admin**\n"
+                "`.scan` — Varre todas as threads e envia mensagem de entrada nas novas\n"
+                "`.v Nome` — Força verificação de pagamento sem precisar do cliente digitar"
+            )
+            return
+
         if cmd == ".go":
             if channel.id in salas_ativas:
                 pedidoid = salas_ativas[channel.id]
