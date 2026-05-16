@@ -200,16 +200,35 @@ def _buscar_direto_imap(config, nome, log_fn=None, uids_usados: set = None, mail
             mail_conn.login(config["email_user"], config["email_pass"])
 
         mail_conn.select("INBOX")
-        _, data = mail_conn.search(None, f'(SINCE "{hoje_str}")')
-        uids = data[0].split() if data and data[0] else []
-        log(f"📬 {len(uids)} emails de hoje no IMAP")
 
-        for uid_bytes in reversed(uids):
-            uid_str = uid_bytes.decode()
+        # Busca apenas emails de PIX de hoje usando filtro no servidor
+        uids_pix = set()
+        for assunto in ASSUNTOS_PIX:
+            try:
+                _, data = mail_conn.search(None, f'(SINCE "{hoje_str}" SUBJECT "{assunto}")')
+                if data and data[0]:
+                    for u in data[0].split():
+                        uids_pix.add(u)
+            except Exception:
+                pass
+
+        # Fallback: busca todos de hoje se filtro por assunto nao retornou nada
+        if not uids_pix:
+            _, data = mail_conn.search(None, f'(SINCE "{hoje_str}")')
+            if data and data[0]:
+                for u in data[0].split():
+                    uids_pix.add(u)
+
+        uids = sorted(uids_pix, key=lambda x: int(x), reverse=True)  # mais recente primeiro
+        log(f"📬 {len(uids)} emails PIX de hoje")
+
+        for uid_bytes in uids:
+            uid_str = uid_bytes.decode() if isinstance(uid_bytes, bytes) else str(uid_bytes)
             if uid_str in uids_usados:
                 continue
+            uid_fetch = uid_bytes if isinstance(uid_bytes, bytes) else uid_str.encode()
             try:
-                _, msgs_data = mail_conn.fetch(uid_bytes, "(RFC822)")
+                _, msgs_data = mail_conn.fetch(uid_fetch, "(RFC822)")
                 raw = next((x[1] for x in msgs_data if isinstance(x, tuple)), None)
                 if not raw:
                     continue
@@ -371,12 +390,8 @@ class PersistentIMAPConnection:
             time.sleep(5)
 
     def buscar(self, nome, log_fn=None):
-        """Busca direto no IMAP reusando conexão persistente."""
-        with self._conn_lock:
-            if not self._garantir_conn():
-                # fallback: abre conexão temporária
-                return _buscar_direto_imap(self.config, nome, log_fn, self._uids_usados)
-            return _buscar_direto_imap(self.config, nome, log_fn, self._uids_usados, self._conn)
+        """Abre conexao propria para busca — nunca bloqueia pelo monitor."""
+        return _buscar_direto_imap(self.config, nome, log_fn, self._uids_usados)
 
     def marcar_uid_usado(self, uid: str):
         self._uids_usados.add(uid)

@@ -541,6 +541,8 @@ def run_selfbot(config: dict, user_id: int):
     valores_thread: dict[int, float] = {}   # channel_id -> valor esperado
     valores_pagos: dict[int, float] = {}    # channel_id -> valor já pago acumulado
     pagamentos_usados_global: dict[str, dict] = {}
+    # pg pendentes: nome_norm -> {channel_id, message, autor_id} — aguardando PIX chegar
+    pg_pendentes: dict[str, dict] = {}
 
     async def _get_cat_id_name(channel):
         """Retorna (cat_id, cat_name_norm, parent) de qualquer canal ou thread."""
@@ -1301,7 +1303,7 @@ def run_selfbot(config: dict, user_id: int):
                 try:
                     resultado = await asyncio.wait_for(
                         asyncio.get_running_loop().run_in_executor(None, lambda: _buscar_pagamento_otimizado(config, nome_busca, user_id)),
-                        timeout=90
+                        timeout=75
                     )
                 except asyncio.TimeoutError:
                     resultado = None
@@ -1505,7 +1507,7 @@ def run_selfbot(config: dict, user_id: int):
         try:
             resultado = await asyncio.wait_for(
                 asyncio.get_running_loop().run_in_executor(None, lambda: _buscar_pagamento_otimizado(config, nome_busca, user_id)),
-                timeout=90
+                timeout=75
             )
         except asyncio.TimeoutError:
             log_msg(user_id, "Timeout na busca")
@@ -1582,7 +1584,18 @@ def run_selfbot(config: dict, user_id: int):
                 await _enviar_sala(channel)
                 await msg_req.delete()
         else:
-            await _digitar_e_reply(message, f"Pagamento nao confirmado para {nome_busca}.")
+            # Registra como pendente — monitor vai confirmar quando PIX chegar
+            pg_pendentes[_normalizar(nome_busca)] = {
+                "channel_id": channel.id,
+                "message": message,
+                "nome": nome_busca,
+                "ts": datetime.utcnow()
+            }
+            await _digitar_e_reply(message,
+                f"⏳ **Pagamento ainda não detectado.**\n"
+                f"Aguardando PIX de `{nome_busca}` chegar no e-mail...\n"
+                f"Você será notificado automaticamente!"
+            )
 
     @client.event
     async def on_error(event, *args, **kwargs):
