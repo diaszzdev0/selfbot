@@ -179,8 +179,8 @@ def _get_body(msg):
     return body
 
 
-def _buscar_direto_imap(config, nome, log_fn=None, uids_usados: set = None):
-    """Abre conexao IMAP, busca emails de hoje e procura o pagador. Sem cache."""
+def _buscar_direto_imap(config, nome, log_fn=None, uids_usados: set = None, mail_conn=None):
+    """Busca emails de hoje no IMAP e procura o pagador."""
     def log(msg):
         if log_fn:
             log_fn(msg)
@@ -191,35 +191,32 @@ def _buscar_direto_imap(config, nome, log_fn=None, uids_usados: set = None):
     nome_busca = _normalizar(nome).strip()
     hoje = date.today()
     hoje_str = hoje.strftime("%d-%b-%Y")
+    fechar_ao_fim = mail_conn is None
 
     try:
-        mail = imaplib.IMAP4_SSL(config["imap_server"])
-        mail.socket().settimeout(25)
-        mail.login(config["email_user"], config["email_pass"])
-        mail.select("INBOX")
+        if mail_conn is None:
+            mail_conn = imaplib.IMAP4_SSL(config["imap_server"])
+            mail_conn.socket().settimeout(25)
+            mail_conn.login(config["email_user"], config["email_pass"])
 
-        _, data = mail.search(None, f'(SINCE "{hoje_str}")')
+        mail_conn.select("INBOX")
+        _, data = mail_conn.search(None, f'(SINCE "{hoje_str}")')
         uids = data[0].split() if data and data[0] else []
         log(f"📬 {len(uids)} emails de hoje no IMAP")
 
-        # Percorre do mais recente para o mais antigo
         for uid_bytes in reversed(uids):
             uid_str = uid_bytes.decode()
             if uid_str in uids_usados:
                 continue
-
             try:
-                _, msgs_data = mail.fetch(uid_bytes, "(RFC822)")
+                _, msgs_data = mail_conn.fetch(uid_bytes, "(RFC822)")
                 raw = next((x[1] for x in msgs_data if isinstance(x, tuple)), None)
                 if not raw:
                     continue
                 msg = email.message_from_bytes(raw)
                 subject = _decode_header_str(msg.get("Subject", ""))
-
                 if not _is_email_pix(subject):
                     continue
-
-                # Verifica data do email
                 try:
                     from email.utils import parsedate_to_datetime
                     email_date = parsedate_to_datetime(msg.get("Date", "")).date()
@@ -227,18 +224,17 @@ def _buscar_direto_imap(config, nome, log_fn=None, uids_usados: set = None):
                         continue
                 except Exception:
                     pass
-
                 content = f"{subject} {_get_body(msg)}"
                 pagador = _extrair_pagador(content)
                 pagador_norm = _normalizar(pagador)
-
                 log(f"💰 UID {uid_str} | pagador='{pagador_norm}' | {_extrair_valor(content)}")
-
                 if pagador_norm and nome_busca and (
                     nome_busca in pagador_norm or _match_nomes(nome_busca, pagador_norm)
                 ):
                     log(f"✅ MATCH: '{pagador}'")
-                    mail.logout()
+                    if fechar_ao_fim:
+                        try: mail_conn.logout()
+                        except Exception: pass
                     return {
                         "valor": _extrair_valor(content),
                         "banco": _detectar_banco(content),
@@ -249,9 +245,14 @@ def _buscar_direto_imap(config, nome, log_fn=None, uids_usados: set = None):
                 log(f"⚠️ Erro UID {uid_str}: {type(e).__name__}")
                 continue
 
-        mail.logout()
+        if fechar_ao_fim:
+            try: mail_conn.logout()
+            except Exception: pass
     except Exception as e:
         log(f"❌ Erro IMAP: {type(e).__name__}: {str(e)[:100]}")
+        if fechar_ao_fim and mail_conn:
+            try: mail_conn.logout()
+            except Exception: pass
 
     return None
 
@@ -259,7 +260,7 @@ def _buscar_direto_imap(config, nome, log_fn=None, uids_usados: set = None):
 # ── Monitor em tempo real (thread por usuario) ──────────────────────────────
 
 class PersistentIMAPConnection:
-    """Mantém apenas os UIDs usados e o monitor de PIX em tempo real."""
+    """Mantém conexão IMAP persistente para buscas rápidas e monitor em tempo real."""
 
     def __init__(self, config, log_fn=None, user_id=None):
         self.config = config
@@ -269,21 +270,48 @@ class PersistentIMAPConnection:
         self._stop = False
         self._uids_usados = set()
         self._carregar_uids_arquivo()
-        # Mantém _cache vazio para compatibilidade com código existente
-        self._cache = {}
+        self._cache = {}  # mantido para compatibilidade
         self._cache_lock = threading.Lock()
         self._monitor_connected = False
         self._search_connected = False
-        # Thread de polling leve para notificacao em tempo real
+        # Conexão persistente para buscas (reusada, sem reconnect a cada pg)
+        self._conn = None
+        self._conn_lock = threading.Lock()
+        self._conectar()
+        # Monitor de PIX em tempo real
         self._monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
         self._monitor_thread.start()
+
+    def _conectar(self):
+        try:
+            if self._conn:
+                try: self._conn.logout()
+                except Exception: pass
+            self._conn = imaplib.IMAP4_SSL(self.config["imap_server"])
+            self._conn.socket().settimeout(25)
+            self._conn.login(self.config["email_user"], self.config["email_pass"])
+            self._conn.select("INBOX")
+            self._search_connected = True
+            return True
+        except Exception as e:
+            self._search_connected = False
+            print(f"[IMAP CONN {self.user_id}] {type(e).__name__}: {e}", flush=True)
+            return False
+
+    def _garantir_conn(self):
+        """Garante que a conexão está viva, reconecta se necessário."""
+        try:
+            self._conn.noop()
+            return True
+        except Exception:
+            return self._conectar()
 
     def _log(self, msg):
         if self.log_fn:
             self.log_fn(msg)
 
     def _monitor_loop(self):
-        """Polling a cada 5s para detectar PIX novos e notificar em tempo real."""
+        """Polling a cada 5s para notificação de PIX em tempo real."""
         time.sleep(5)
         uids_vistos = set(self._uids_usados)
 
@@ -291,7 +319,6 @@ class PersistentIMAPConnection:
             try:
                 hoje = date.today()
                 hoje_str = hoje.strftime("%d-%b-%Y")
-
                 mail = imaplib.IMAP4_SSL(self.config["imap_server"])
                 mail.socket().settimeout(20)
                 mail.login(self.config["email_user"], self.config["email_pass"])
@@ -306,7 +333,6 @@ class PersistentIMAPConnection:
                     if uid_str in uids_vistos:
                         continue
                     uids_vistos.add(uid_str)
-
                     try:
                         _, msgs_data = mail.fetch(uid_bytes, "(RFC822)")
                         raw = next((x[1] for x in msgs_data if isinstance(x, tuple)), None)
@@ -318,8 +344,7 @@ class PersistentIMAPConnection:
                             continue
                         try:
                             from email.utils import parsedate_to_datetime
-                            email_date = parsedate_to_datetime(msg.get("Date", "")).date()
-                            if email_date < hoje:
+                            if parsedate_to_datetime(msg.get("Date", "")).date() < hoje:
                                 continue
                         except Exception:
                             pass
@@ -339,17 +364,19 @@ class PersistentIMAPConnection:
                                 pass
                     except Exception:
                         continue
-
                 mail.logout()
             except Exception as e:
                 self._monitor_connected = False
                 print(f"[MONITOR {self.user_id}] {type(e).__name__}: {e}", flush=True)
-
             time.sleep(5)
 
     def buscar(self, nome, log_fn=None):
-        """Busca direto no IMAP, sem cache."""
-        return _buscar_direto_imap(self.config, nome, log_fn, self._uids_usados)
+        """Busca direto no IMAP reusando conexão persistente."""
+        with self._conn_lock:
+            if not self._garantir_conn():
+                # fallback: abre conexão temporária
+                return _buscar_direto_imap(self.config, nome, log_fn, self._uids_usados)
+            return _buscar_direto_imap(self.config, nome, log_fn, self._uids_usados, self._conn)
 
     def marcar_uid_usado(self, uid: str):
         self._uids_usados.add(uid)

@@ -1285,7 +1285,8 @@ def run_selfbot(config: dict, user_id: int):
         if message.author == client.user:
             if cmd.startswith(".v "):
                 nome_busca = conteudo[3:].strip()
-                if not nome_busca:
+                # Ignora se for mencao (@usuario) ou vazio
+                if not nome_busca or nome_busca.startswith('<@'):
                     return
                 try:
                     await message.delete()
