@@ -1116,6 +1116,19 @@ def run_selfbot(config: dict, user_id: int):
         cmd = conteudo.lower()
 
 # Comandos de sala - aceita de qualquer mensagem (selfbot nao dispara on_message para si mesmo)
+        if cmd == ".go":
+            if channel.id in salas_ativas:
+                pedidoid = salas_ativas[channel.id]
+                try:
+                    await message.delete()
+                except Exception:
+                    pass
+                log_msg(user_id, f"🎮 .go forçado na thread {channel.id}")
+                await _dar_go(channel, pedidoid)
+            else:
+                await _digitar_e_enviar(channel, "⚠️ Nenhuma sala ativa nesta thread.")
+            return
+
         if cmd in ("!normal", "!infinito"):
             log_msg(user_id, f"Comando {cmd} detectado de {message.author}")
             # Check limit before creating room
