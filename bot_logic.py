@@ -178,10 +178,12 @@ def _incrementar_sala(user_id: int):
         from sqlalchemy import text
         engine = _get_db_engine()
         with engine.begin() as con:
+            # Apenas incrementa salas_usadas — nunca altera limite_salas
             con.execute(text(
                 "INSERT INTO bot_status (user_id, ativo, salas_usadas, limite_salas) "
-                "VALUES (:uid, false, 1, 0) ON CONFLICT (user_id) DO UPDATE SET salas_usadas = bot_status.salas_usadas + 1"
-            ), {"uid": user_id})
+                "VALUES (:uid, false, 1, :default_limite) "
+                "ON CONFLICT (user_id) DO UPDATE SET salas_usadas = bot_status.salas_usadas + 1"
+            ), {"uid": user_id, "default_limite": _DEFAULT_LIMITE_SALAS})
             con.execute(text(
                 "CREATE TABLE IF NOT EXISTS sala_historico "
                 "(id SERIAL PRIMARY KEY, user_id INTEGER, criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"
