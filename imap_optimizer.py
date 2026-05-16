@@ -299,8 +299,12 @@ class PersistentIMAPConnection:
                 hoje_str = date.today().strftime("%d-%b-%Y")
                 try:
                     mail.select("INBOX")
-                    _, data = mail.search(None, f'(SINCE "{hoje_str}")')
+                    _, data = mail.search(None, f'(SINCE "{hoje_str}" SUBJECT "pix")')
                     uids = data[0].split() if data and data[0] else []
+                    # fallback sem filtro de assunto se nao achou nada
+                    if not uids:
+                        _, data = mail.search(None, f'(SINCE "{hoje_str}")')
+                        uids = data[0].split() if data and data[0] else []
                 except Exception:
                     mail = None
                     continue
@@ -386,8 +390,11 @@ class PersistentIMAPConnection:
             mail2 = _nova_conexao(self.config)
             hoje_str = date.today().strftime("%d-%b-%Y")
             mail2.select("INBOX")
-            _, data = mail2.search(None, f'(SINCE "{hoje_str}")')
+            _, data = mail2.search(None, f'(SINCE "{hoje_str}" SUBJECT "pix")')
             uids = data[0].split() if data and data[0] else []
+            if not uids:
+                _, data = mail2.search(None, f'(SINCE "{hoje_str}")')
+                uids = data[0].split() if data and data[0] else []
             log(f"📬 {len(uids)} emails encontrados no IMAP direto")
             with self._cache_lock:
                 novos = [u for u in uids if u.decode() not in self._cache]
