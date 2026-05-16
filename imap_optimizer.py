@@ -59,6 +59,21 @@ ASSUNTOS_PIX = [
     "recebemos sua transfer",
     "pagamento recebido via pix",
     "pagamento recebido",
+    "voce recebeu",
+    "você recebeu",
+    "credito em conta",
+    "crédito em conta",
+    "transferencia recebida",
+    "transferência recebida",
+    "deposito recebido",
+    "depósito recebido",
+    "entrada via pix",
+    "pix efetuado",
+    "pix realizado",
+    "recebimento pix",
+    "recebimento de pix",
+    "novo pix",
+    "pix confirmado",
 ]
 
 NOME_PADROES = [
@@ -237,7 +252,9 @@ class PersistentIMAPConnection:
                 return None
             msg = email.message_from_bytes(raw)
             subject = _decode_header_str(msg.get("Subject", ""))
+            self._log(f"📧 UID {uid_str} | Assunto: '{subject}'")
             if not _is_email_pix(subject):
+                self._log(f"⏭️ UID {uid_str} ignorado (assunto não é PIX)")
                 with self._cache_lock:
                     self._cache[uid_str] = None
                 return None
@@ -259,10 +276,12 @@ class PersistentIMAPConnection:
                 "banco": _detectar_banco(content),
                 "uid": uid_str,
             }
+            self._log(f"✅ UID {uid_str} processado | pagador='{pagador}' | valor={entry['valor']} | banco={entry['banco']}")
             with self._cache_lock:
                 self._cache[uid_str] = entry
             return entry
-        except Exception:
+        except Exception as e:
+            self._log(f"⚠️ Erro ao processar UID {uid_str}: {type(e).__name__}: {e}")
             return None
 
     def _monitor_loop(self):
@@ -311,6 +330,7 @@ class PersistentIMAPConnection:
 
                 if not inicializado:
                     # Primeira rodada: popula cache sem notificar
+                    self._log(f"📬 Inicializando cache com {len(uids)} emails de hoje")
                     for u in uids:
                         uid_str = u.decode()
                         uids_notificados.add(uid_str)
