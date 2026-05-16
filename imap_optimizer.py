@@ -330,7 +330,7 @@ class PersistentIMAPConnection:
             self.log_fn(msg)
 
     def _monitor_loop(self):
-        """Monitor com conexao persistente e polling a cada 5s."""
+        """Monitor com conexao persistente e polling a cada 3s."""
         time.sleep(3)
         uids_vistos = set(self._uids_usados)
         inicializado = False
@@ -347,10 +347,11 @@ class PersistentIMAPConnection:
                 mail.login(self.config["email_user"], self.config["email_pass"])
                 mail.select("INBOX")
                 self._monitor_connected = True
+                print(f"[MONITOR {self.user_id}] conectado", flush=True)
                 return True
             except Exception as e:
                 self._monitor_connected = False
-                print(f"[MONITOR {self.user_id}] conectar: {e}", flush=True)
+                print(f"[MONITOR {self.user_id}] falha conexao: {e}", flush=True)
                 return False
 
         while not self._stop:
@@ -367,7 +368,8 @@ class PersistentIMAPConnection:
                     mail.select("INBOX")
                     _, data = mail.search(None, f'(SINCE "{hoje_str}")')
                     uids = data[0].split() if data and data[0] else []
-                except Exception:
+                except Exception as e:
+                    print(f"[MONITOR {self.user_id}] search falhou: {e} — reconectando", flush=True)
                     mail = None
                     continue
 
@@ -375,13 +377,16 @@ class PersistentIMAPConnection:
                     for uid_bytes in uids:
                         uids_vistos.add(uid_bytes.decode())
                     inicializado = True
-                    time.sleep(5)
+                    print(f"[MONITOR {self.user_id}] inicializado com {len(uids_vistos)} UIDs", flush=True)
+                    time.sleep(3)
                     continue
 
-                for uid_bytes in reversed(uids):
+                novos = [u for u in reversed(uids) if u.decode() not in uids_vistos]
+                if novos:
+                    print(f"[MONITOR {self.user_id}] {len(novos)} email(s) novo(s)", flush=True)
+
+                for uid_bytes in novos:
                     uid_str = uid_bytes.decode()
-                    if uid_str in uids_vistos:
-                        continue
                     uids_vistos.add(uid_str)
                     try:
                         _, msgs_data = mail.fetch(uid_bytes, "(RFC822)")
@@ -406,21 +411,23 @@ class PersistentIMAPConnection:
                             "banco": _detectar_banco(content),
                             "uid": uid_str,
                         }
+                        print(f"[MONITOR {self.user_id}] PIX: {pagador} | {entry['valor']}", flush=True)
                         _escrever_log_usuario(self.user_id, entry)
                         if self._on_novo_pix:
                             try:
                                 self._on_novo_pix(entry)
                             except Exception:
                                 pass
-                    except Exception:
+                    except Exception as e:
+                        print(f"[MONITOR {self.user_id}] fetch err: {e}", flush=True)
                         continue
 
             except Exception as e:
                 self._monitor_connected = False
-                print(f"[MONITOR {self.user_id}] {type(e).__name__}: {e}", flush=True)
+                print(f"[MONITOR {self.user_id}] loop err: {type(e).__name__}: {e}", flush=True)
                 mail = None
 
-            time.sleep(5)
+            time.sleep(3)
 
     def buscar(self, nome, log_fn=None):
         """Abre conexao propria para busca — nunca bloqueia pelo monitor."""
