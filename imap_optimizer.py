@@ -318,12 +318,8 @@ class PersistentIMAPConnection:
                 hoje_str = date.today().strftime("%d-%b-%Y")
                 try:
                     mail.select("INBOX")
-                    _, data = mail.search(None, f'(SINCE "{hoje_str}" SUBJECT "pix")')
+                    _, data = mail.search(None, f'(SINCE "{hoje_str}")')
                     uids = data[0].split() if data and data[0] else []
-                    # fallback sem filtro de assunto se nao achou nada
-                    if not uids:
-                        _, data = mail.search(None, f'(SINCE "{hoje_str}")')
-                        uids = data[0].split() if data and data[0] else []
                 except Exception:
                     mail = None
                     continue
@@ -391,10 +387,13 @@ class PersistentIMAPConnection:
             if uid_str in self._uids_usados:
                 continue
             pagador_norm = entry.get("pagador_norm", "")
-            log(f"💰 UID {uid_str} | pagador='{pagador_norm}' | {entry.get('valor')}")
-            if pagador_norm and nome_busca and (
-                nome_busca in pagador_norm or _match_nomes(nome_busca, pagador_norm)
-            ):
+            log(f"🔎 UID {uid_str} | pagador='{pagador_norm}' | buscando='{nome_busca}'")
+            match = (
+                nome_busca in pagador_norm
+                or pagador_norm in nome_busca
+                or _match_nomes(nome_busca, pagador_norm)
+            )
+            if pagador_norm and nome_busca and match:
                 log(f"✅ MATCH: '{entry['pagador']}'")
                 self.marcar_uid_usado(uid_str)
                 return {
@@ -410,11 +409,8 @@ class PersistentIMAPConnection:
             mail2 = _nova_conexao(self.config)
             hoje_str = date.today().strftime("%d-%b-%Y")
             mail2.select("INBOX")
-            _, data = mail2.search(None, f'(SINCE "{hoje_str}" SUBJECT "pix")')
+            _, data = mail2.search(None, f'(SINCE "{hoje_str}")')
             uids = data[0].split() if data and data[0] else []
-            if not uids:
-                _, data = mail2.search(None, f'(SINCE "{hoje_str}")')
-                uids = data[0].split() if data and data[0] else []
             log(f"📬 {len(uids)} emails encontrados no IMAP direto")
             with self._cache_lock:
                 novos = [u for u in uids if u.decode() not in self._cache]
@@ -441,9 +437,12 @@ class PersistentIMAPConnection:
             if uid_str in self._uids_usados:
                 continue
             pagador_norm = entry.get("pagador_norm", "")
-            if pagador_norm and nome_busca and (
-                nome_busca in pagador_norm or _match_nomes(nome_busca, pagador_norm)
-            ):
+            match = (
+                nome_busca in pagador_norm
+                or pagador_norm in nome_busca
+                or _match_nomes(nome_busca, pagador_norm)
+            )
+            if pagador_norm and nome_busca and match:
                 log(f"✅ MATCH (refresh): '{entry['pagador']}'")
                 self.marcar_uid_usado(uid_str)
                 return {
