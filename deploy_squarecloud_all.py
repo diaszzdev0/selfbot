@@ -87,6 +87,7 @@ def main() -> int:
 
     status_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "deploy_squarecloud_all_status.txt")
 
+
     lines: list[str] = []
     lines.append("=" * 70)
     lines.append("DEPLOY ORQUESTADOR - SQUARE CLOUD")
