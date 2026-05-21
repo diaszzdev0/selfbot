@@ -1,7 +1,7 @@
 import requests, os
 
-API_KEY = '7a9131befcdc938552460cab541b28d56fcfbb2a-d9729f5757fcc261043691aabca91bd35b33f19f210390335793566a066ded69'
-APP_ID = 'd676168381434cdfb3126b40296de390'
+API_KEY = '7a9131befcdc938552460cab541b28d56fcfbb2a-7b9d750bd4d78dcd0eabcb9d7f2d20615261ee2ee3a72232aa605783fcdfc544'
+APP_ID = 'aef7374303dd46bcb0f02051c52541a5'
 result_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'deploy_status.txt')
 
 lines = []
