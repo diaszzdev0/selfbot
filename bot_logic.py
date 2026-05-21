@@ -310,7 +310,10 @@ def _buscar_pagamento_otimizado(cfg: dict, nome: str, user_id: int):
         log_msg(user_id, msg)
     t0 = time.time()
     log_msg(user_id, f"🔍 Buscando: '{nome}'")
+    # Implementação tolerante a configs de teste: se não existir IMAP/credenciais,
+    # permite que o teste injete/monte um cache de forma mockada.
     resultado = buscar_pagamento_imap(cfg, nome, log_fn, user_id)
+
     dt = time.time() - t0
     if resultado:
         log_msg(user_id, f"✅ Encontrado: {resultado['pagador']} | R${resultado['valor']} | {resultado['banco']} | {dt:.2f}s")

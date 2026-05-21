@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-\"\"\"Teste completo fluxo pagamento - sala\"\"\"
+"""Teste completo fluxo pagamento - sala"""
+
 
 import json
 import os
 from unittest.mock import Mock, patch
-from imap_optimizer import imap_manager
-from bot_logic import _buscar_pagamento_otimizado, log_msg, _criar_sala_api
-from models import BotConfig
+from bot_logic import _buscar_pagamento_otimizado
+
 
 def test_pagamento_completo():
     user_id = 999  # Mock user
@@ -17,15 +17,13 @@ def test_pagamento_completo():
     }
     
     print("🧪 Teste 1: Busca pagamento mock")
-    # Mock pagamento encontrado
-    with patch('imap_optimizer.imap_manager.get_cache') as mock_cache:
-        cache_mock = Mock()
-        cache_mock.search_payment_optimized.return_value = {'uid': 123, 'valor': 50.0, 'banco': 'Nubank'}
-        mock_cache.return_value = cache_mock
-        
+    # Mock pagamento encontrado (via buscar_pagamento_imap)
+    with patch('imap_optimizer.buscar_pagamento_imap') as mock_busca:
+        mock_busca.return_value = {'uid': 123, 'valor': 50.0, 'banco': 'Nubank', 'pagador': 'João Silva'}
         resultado = _buscar_pagamento_otimizado(config, "João Silva", user_id)
         print(f"Resultado: {resultado}")
         assert resultado is not None
+
     
     print("✅ Teste 1 OK")
     
