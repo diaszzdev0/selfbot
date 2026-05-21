@@ -31,11 +31,11 @@ Salve modo → restart bot → pg teste → logs modo correto
 python test_pagamento.py
 ```
 
-### 8. ⏳ Deploy [PENDENTE]
+### 8. ✅ Deploy [FEITO]
 - Marcar ✅ todos TODO*.md
 - `python deploy_squarecloud_all.py`
 
+**Execute testes → `/next` após OK (verificar no painel/logs) → Deploy!**
 
-**Execute testes → `/next` após OK → Deploy!**
 
 
