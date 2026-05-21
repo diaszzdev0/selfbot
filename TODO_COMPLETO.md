@@ -33,7 +33,8 @@ python test_pagamento.py
 
 ### 8. ⏳ Deploy [PENDENTE]
 - Marcar ✅ todos TODO*.md
-- `git add . && python update_squarecloud.py`
+- `python deploy_squarecloud_all.py`
+
 
 **Execute testes → `/next` após OK → Deploy!**
 
