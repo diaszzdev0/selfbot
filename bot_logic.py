@@ -565,46 +565,27 @@ def run_selfbot(config: dict, user_id: int):
         cat_name = _normalizar_cat(cat_ch.name) if cat_ch else ""
         return cat_id, cat_name, parent
 
-    def _canal_monitorado(channel) -> bool:
-        """Aceita categoria OU canal alvo (e threads do canal alvo)."""
-        guild = getattr(channel, 'guild', None)
-        parent_id = getattr(channel, 'parent_id', None)
+    def _thread_deve_ser_monitorada(thread_name: str) -> bool:
+        """Regra principal: monitorar só threads com 'fila' ou 'partida'.
 
-        if parent_id and guild:
-            if CANAL_ALVO_ID and parent_id == CANAL_ALVO_ID:
-                return True
-            if parent_id in CATEGORIAS_EXTRA_IDS:
-                return True
-            parent = guild.get_channel(parent_id)
-            if parent is None:
-                return False
-            # Compara nome do canal pai com categorias extras
-            if bool(CATEGORIAS_EXTRA) and _normalizar_cat(getattr(parent, 'name', '') or '') in CATEGORIAS_EXTRA:
-                return True
-            cat_id = getattr(parent, 'category_id', None)
-            if CATEGORIA_ID and cat_id == CATEGORIA_ID:
-                return True
-            if cat_id in CATEGORIAS_EXTRA_IDS:
-                return True
-            if cat_id and bool(CATEGORIAS_EXTRA):
-                cat_ch = guild.get_channel(cat_id)
-                cat_name = _normalizar_cat(cat_ch.name) if cat_ch else ""
-                if cat_name in CATEGORIAS_EXTRA:
-                    return True
+        O filtro por servidor/já existente (SERVER_ID) continua garantindo que
+        o bot só opere no servidor configurado no painel.
+        """
+        if not thread_name:
             return False
+        tn = thread_name.lower()
+        return ("fila" in tn) or ("partida" in tn)
 
-        if CANAL_ALVO_ID and getattr(channel, "id", None) == CANAL_ALVO_ID:
-            return True
-        if getattr(channel, "id", None) in CATEGORIAS_EXTRA_IDS:
-            return True
-        cat = getattr(channel, 'category', None)
-        if cat:
-            return (
-                (CATEGORIA_ID != 0 and cat.id == CATEGORIA_ID)
-                or cat.id in CATEGORIAS_EXTRA_IDS
-                or (bool(CATEGORIAS_EXTRA) and _normalizar_cat(cat.name) in CATEGORIAS_EXTRA)
-            )
+    def _canal_monitorado(channel) -> bool:
+        """Compat: agora o filtro de monitoramento ignora canal/categoria.
+
+        - Para threads: filtra pelo nome (fila/partida)
+        - Para outros canais: retorna False (não enviamos em canal comum)
+        """
+        if isinstance(channel, discord.Thread):
+            return _thread_deve_ser_monitorada(getattr(channel, "name", ""))
         return False
+
 
     async def _digitar_e_enviar(canal, texto: str, **kwargs):
         for tentativa in range(3):
@@ -781,17 +762,11 @@ def run_selfbot(config: dict, user_id: int):
         parent_id = getattr(parent, "id", None) or getattr(thread, 'parent_id', None)
         parent_name = _normalizar_cat(getattr(parent, 'name', '') or '')
 
-        monitorada = (
-            (CANAL_ALVO_ID and parent_id == CANAL_ALVO_ID)
-            or parent_id in CATEGORIAS_EXTRA_IDS
-            or (CATEGORIA_ID != 0 and cat_id == CATEGORIA_ID)
-            or cat_id in CATEGORIAS_EXTRA_IDS
-            or (bool(CATEGORIAS_EXTRA) and cat_name in CATEGORIAS_EXTRA)
-            or (bool(CATEGORIAS_EXTRA) and parent_name in CATEGORIAS_EXTRA)
-        )
-
-        if not monitorada:
+        # Agora o filtro principal é pelo nome da thread (fila/partida).
+        # Mantém _thread_deve_ser_monitorada como regra única.
+        if not _thread_deve_ser_monitorada(getattr(thread, "name", "")):
             return
+
 
         log_msg(user_id, f"🧵 Thread: '{thread.name}' | canal_pai='{parent_name}' | cat='{cat_name}' | monitorada=True")
 
