@@ -759,7 +759,9 @@ def run_selfbot(config: dict, user_id: int):
 
     async def _enviar_em_thread(thread: discord.Thread):
         if _thread_bloqueada_por_nome_entrada(getattr(thread, "name", "")):
+            log_msg(user_id, f"⏸️ Thread bloqueada por nome (entrada): {getattr(thread, 'name', '')}")
             return
+
 
         cat_id, cat_name, parent = await _get_cat_id_name(thread)
         parent_id = getattr(parent, "id", None) or getattr(thread, 'parent_id', None)
