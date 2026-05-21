@@ -39,12 +39,10 @@ def ensure_project_root() -> None:
 
 def git_add_commit_push() -> tuple[bool, str]:
     """Retorna (ok, message)."""
-    # Add
     r_add = run(["git", "add", "."])
     if r_add.returncode != 0:
         return False, f"git add falhou: {r_add.stderr.strip()[:500]}"
 
-    # Check changes
     r_status = run(["git", "status", "--porcelain"])
     if r_status.returncode != 0:
         return False, f"git status falhou: {r_status.stderr.strip()[:500]}"
@@ -52,15 +50,15 @@ def git_add_commit_push() -> tuple[bool, str]:
     if not r_status.stdout.strip():
         return True, "Sem mudanças para commit/push."
 
-    # Commit
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     commit_msg = f"Atualizacao automacao deploy - {timestamp}"
     r_commit = run(["git", "commit", "-m", commit_msg])
     if r_commit.returncode != 0:
-        # Às vezes falha por outro motivo (ex: configurações git). Retorna erro.
-        return False, f"git commit falhou: {r_commit.stderr.strip()[:500]} || stdout={r_commit.stdout.strip()[:500]}"
+        return False, (
+            f"git commit falhou: {r_commit.stderr.strip()[:500]} "
+            f"|| stdout={r_commit.stdout.strip()[:500]}"
+        )
 
-    # Push
     r_push = run(["git", "push", "origin", "main"])
     if r_push.returncode != 0:
         return False, f"git push falhou: {r_push.stderr.strip()[:500]}"
@@ -85,8 +83,10 @@ def run_check_deploy() -> tuple[bool, str]:
 def main() -> int:
     ensure_project_root()
 
-    status_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "deploy_squarecloud_all_status.txt")
-
+    status_path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "deploy_squarecloud_all_status.txt",
+    )
 
     lines: list[str] = []
     lines.append("=" * 70)
@@ -122,13 +122,15 @@ def main() -> int:
     if not ok_check:
         lines.append("\n[4/4] Fallback: restart via deploy_now.py...")
         r_restart = run([sys.executable, "deploy_now.py"])
-        lines.append(f"RESTART_RC={r_restart.returncode} | {((r_restart.stdout or '') + (r_restart.stderr or ''))[:800]}")
+        lines.append(
+            f"RESTART_RC={r_restart.returncode} | {((r_restart.stdout or '') + (r_restart.stderr or ''))[:800]}"
+        )
 
         lines.append("\n[5/4] Após restart, tentando check_deploy.py novamente...")
         ok_check2, msg_check2 = run_check_deploy()
         lines.append(f"CHECK2_OK={ok_check2} | {msg_check2}")
 
-    lines.append("\nFim:", datetime.now().isoformat(timespec='seconds'))
+    lines.append("\nFim: " + datetime.now().isoformat(timespec='seconds'))
 
     with open(status_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
