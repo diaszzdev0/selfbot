@@ -1,0 +1,47 @@
+======================================================================
+DEPLOY ORQUESTADOR - SQUARE CLOUD
+======================================================================
+Start: 2026-05-21T16:37:24
+
+[1/4] Gerando deploy_final.zip...
+ZIP_OK=True | + app.py
++ bot_logic.py
++ bot.py
++ imap_optimizer.py
++ models.py
++ requirements.txt
++ squarecloud.app
++ ocr_comprovante.py
++ token_validator.py
+MISSING: .env
++ templates\admin.html
++ templates\cliente.html
++ templates\login.html
++ templates\login_cliente.html
++ templates\login_manager.html
++ templates\register.html
+TOTAL: 71153 bytes
+
+[2/4] Git add/commit/push...
+GIT_OK=True | Commit e push realizados com sucesso.
+
+[3/4] Executando check_deploy.py (commit forçado se running)...
+CHECK_OK=True | ============================================================
+VERIFICANDO STATUS DA APLICACAO
+============================================================
+
+STATUS DA APLICACAO:
+  Status: running
+  CPU: 0.01%
+  RAM: 70.4MB
+  Uptime: N/A
+
+Aplicacao esta rodando. Fazendo commit forcado via deploy_final.zip...
+SUCESSO! Commit forcado realizado.
+A aplicacao vai baixar o codigo atualizado do GitHub.
+
+Aguarde 2-3 minutos para o deploy completar.
+
+Acompanhe em: https://squarecloud.app/dashboard/app/aef7374303dd46bcb0f02051c52541a5
+
+Fim: 2026-05-21T16:37:29

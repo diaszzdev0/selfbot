@@ -1,0 +1,11 @@
+https://api.squarecloud.app/v2/apps/d676168381434cdfb3126b40296de390/deploy
+  -> 401: {"status":"error","code":"ACCESS_DENIED","message":"Invalid user data."}
+
+https://api.squarecloud.app/v2/apps/d676168381434cdfb3126b40296de390/upload
+  -> 401: {"status":"error","code":"ACCESS_DENIED","message":"Invalid user data."}
+
+https://api.squarecloud.app/v2/apps/d676168381434cdfb3126b40296de390/files/upload
+  -> 401: {"status":"error","code":"ACCESS_DENIED","message":"Invalid user data."}
+
+https://api.squarecloud.app/v2/apps/d676168381434cdfb3126b40296de390/redeploy
+  -> 401: {"status":"error","code":"ACCESS_DENIED","message":"Invalid user data."}

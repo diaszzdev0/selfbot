@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Cloud Maneger</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: radial-gradient(ellipse at 60% 40%, #1e1f3a 0%, #0d0e14 70%);
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      padding: 16px;
+      overflow: hidden;
+    }
+
+    /* Orbs decorativos */
+    body::before, body::after {
+      content: '';
+      position: fixed;
+      border-radius: 50%;
+      filter: blur(80px);
+      opacity: .25;
+      pointer-events: none;
+    }
+    body::before {
+      width: 400px; height: 400px;
+      background: #e0245e;
+      top: -100px; left: -100px;
+    }
+    body::after {
+      width: 350px; height: 350px;
+      background: #7c3aed;
+      bottom: -80px; right: -80px;
+    }
+
+    .card {
+      width: 100%;
+      max-width: 420px;
+      background: rgba(255,255,255,.05);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid rgba(255,255,255,.1);
+      border-radius: 20px;
+      padding: 40px 36px;
+      box-shadow: 0 25px 60px rgba(0,0,0,.5);
+      position: relative;
+      z-index: 1;
+    }
+
+    /* Ícone nuvem */
+    .cloud-icon {
+      width: 64px; height: 64px;
+      background: linear-gradient(135deg, #e0245e, #c0392b);
+      border-radius: 16px;
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 auto 20px;
+      box-shadow: 0 8px 24px rgba(224,36,94,.4);
+      font-size: 28px;
+    }
+
+    .brand {
+      text-align: center;
+      margin-bottom: 28px;
+    }
+    .brand h1 {
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: #fff;
+      letter-spacing: -.3px;
+    }
+    .brand p {
+      font-size: .85rem;
+      color: rgba(255,255,255,.45);
+      margin-top: 4px;
+    }
+
+    .alert {
+      background: rgba(224,36,94,.15);
+      border: 1px solid rgba(224,36,94,.4);
+      color: #ff6b8a;
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-size: .85rem;
+      margin-bottom: 20px;
+    }
+
+    .field { margin-bottom: 18px; }
+    .field label {
+      display: block;
+      font-size: .78rem;
+      color: rgba(255,255,255,.45);
+      margin-bottom: 7px;
+      letter-spacing: .3px;
+      text-transform: uppercase;
+    }
+    .input-wrap {
+      position: relative;
+    }
+    .input-wrap .icon {
+      position: absolute;
+      left: 14px; top: 50%;
+      transform: translateY(-50%);
+      color: rgba(255,255,255,.3);
+      font-size: 16px;
+      pointer-events: none;
+    }
+    .input-wrap input {
+      width: 100%;
+      background: rgba(255,255,255,.07);
+      border: 1px solid rgba(255,255,255,.1);
+      border-radius: 10px;
+      padding: 12px 14px 12px 42px;
+      color: #fff;
+      font-size: 15px;
+      outline: none;
+      transition: border-color .2s, box-shadow .2s;
+      -webkit-appearance: none;
+    }
+    .input-wrap input:focus {
+      border-color: rgba(224,36,94,.7);
+      box-shadow: 0 0 0 3px rgba(224,36,94,.15);
+    }
+    .input-wrap input::placeholder { color: rgba(255,255,255,.2); }
+    .input-wrap input:-webkit-autofill {
+      -webkit-box-shadow: 0 0 0 100px #1a1c2c inset;
+      -webkit-text-fill-color: #fff;
+    }
+
+    .remember {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 24px;
+    }
+    .remember input[type=checkbox] {
+      width: 16px; height: 16px;
+      accent-color: #e0245e;
+      cursor: pointer;
+    }
+    .remember label {
+      font-size: .82rem;
+      color: rgba(255,255,255,.4);
+      cursor: pointer;
+    }
+
+    .btn-entrar {
+      width: 100%;
+      padding: 13px;
+      background: linear-gradient(135deg, #e0245e, #c0392b);
+      border: none;
+      border-radius: 10px;
+      color: #fff;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      letter-spacing: .3px;
+      transition: transform .15s, box-shadow .15s;
+      box-shadow: 0 6px 20px rgba(224,36,94,.35);
+      min-height: 48px;
+    }
+    .btn-entrar:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 28px rgba(224,36,94,.55);
+    }
+    .btn-entrar:active { transform: translateY(0); }
+
+    .status-bar {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      margin-top: 24px;
+      padding-top: 20px;
+      border-top: 1px solid rgba(255,255,255,.07);
+    }
+    .status-dot {
+      width: 8px; height: 8px;
+      background: #3fb950;
+      border-radius: 50%;
+      box-shadow: 0 0 6px #3fb950;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; box-shadow: 0 0 6px #3fb950; }
+      50% { opacity: .5; box-shadow: 0 0 12px #3fb950; }
+    }
+    .status-text {
+      font-size: .78rem;
+      color: rgba(255,255,255,.35);
+    }
+    .status-text span { color: #3fb950; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="cloud-icon">☁️</div>
+    <div class="brand">
+      <h1>Cloud Maneger</h1>
+      <p>Gerencie seu ecossistema</p>
+    </div>
+
+    {% if erro %}<div class="alert">{{ erro }}</div>{% endif %}
+
+    <form method="POST" autocomplete="on">
+      <div class="field">
+        <label>Usuário</label>
+        <div class="input-wrap">
+          <span class="icon">👤</span>
+          <input name="username" type="text" placeholder="seu usuário" autocomplete="username" value="{{ saved_user }}" required>
+        </div>
+      </div>
+      <div class="field">
+        <label>Senha</label>
+        <div class="input-wrap">
+          <span class="icon">🔒</span>
+          <input name="password" type="password" placeholder="••••••••" autocomplete="current-password" required>
+        </div>
+      </div>
+      <div class="remember">
+        <input type="checkbox" id="lembrar" name="lembrar" {{ 'checked' if saved_user }}>
+        <label for="lembrar">Lembrar usuário</label>
+      </div>
+      <button class="btn-entrar" type="submit">Entrar</button>
+    </form>
+
+    <div class="status-bar">
+      <div class="status-dot"></div>
+      <div class="status-text">Status da Nuvem: <span>Conectado</span></div>
+    </div>
+  </div>
+</body>
+</html>

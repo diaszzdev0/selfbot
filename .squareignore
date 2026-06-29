@@ -1,0 +1,10 @@
+*.db
+instance/
+logs/
+__pycache__/
+*.pyc
+imap_cache/
+*.zip
+.env
+venv/
+.venv/

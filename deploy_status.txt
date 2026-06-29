@@ -1,0 +1,3 @@
+STATUS: 200 {"status":"success","response":{"cpu":"0.38%","ram":"183.97MB","status":"running","running":true,"storage":"145.59MB","network":{"total":"39.63MB ↑ 21.78MB ↓","now":"131.69KB ↑ 39.61KB ↓"},"uptime":1779363296985}}
+COMMIT: 200 {"status":"success"}
+DEPLOYMENTS: 200 {"status":"success","response":[[{"id":"5883e616db21bdd1d58b40b97d861a2526310e95","state":"pending","date":"2026-05-21T11:34:51.616Z"},{"id":"5883e616db21bdd1d58b40b97d861a2526310e95","state":"clone","date":"2026-05-21T11:34:52.833Z","branch":"main"},{"id":"5883e616db21bdd1d58b40b97d861a2526310e95",

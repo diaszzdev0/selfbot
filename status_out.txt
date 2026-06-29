@@ -1,0 +1,1 @@
+{"status":"success","response":{"cpu":"0.01%","ram":"81.05MB","status":"running","running":true,"storage":"145.49MB","network":{"total":"227.4KB ↑ 344.46KB ↓","now":"90.94KB ↑ 95.49KB ↓"},"uptime":1778816238498}}
